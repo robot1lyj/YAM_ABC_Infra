@@ -1,5 +1,10 @@
 # YAM-ABC-Reproduce
 
+本地工作站入口：[环境安装与国内镜像](docs/environment.md) ·
+[官方 YAM leader 硬件配置](docs/workstation.md) ·
+[项目记忆](docs/cache/context_index.md)。本工作站使用两台官方电动 leader；
+下方上游示例与默认 station 的被动 GELLO 配置不能直接用于该硬件。
+
 A lightweight **teleop → collect → train → deploy** pipeline for the
 [YAM](https://github.com/i2rt-robotics/i2rt) (i2rt) bimanual robot arm — the whole loop from
 one small repo with a single GUI. Teleoperate to record demonstrations, convert to a

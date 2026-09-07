@@ -1,0 +1,75 @@
+{
+  "id": "20260907-environment-audit",
+  "phase": "audit",
+  "observed_at": "2026-09-07T07:03:21.129233+00:00",
+  "code": {
+    "base_commit": "7d9f9d135a2b949de54a349856b65863f81319e1",
+    "i2rt_commit": "5d47b358bafb30c65e397f2ece506550a0db4594",
+    "tracked_dirty_patch_sha256": "a6e634403d0d3a5ae08e91e67c1bc39bc5824c6af3cc7466508b978bf75c4eeb",
+    "file_sha256": {
+      "pyproject.toml": "56846a3493c162024865c00fd4a10c14e0642d5b5b4f214386c89702f7bf1b5d",
+      "uv.lock": "828d4663a6f454a328a14887e071335f70c2fed1351cbf89d880559acefd77aa",
+      ".python-version": "f50159fad3f4319868eb38717b91d55843c41e9803014c8de05e116a6d0bcfdc",
+      "scripts/memory_gate.py": "6c02bffd5568bc5f3b639178568a26324df02a543e0760148e3ebd6fb4c0dafd",
+      "tests/test_memory_gate.py": "cde66e448476a6dc5161b105c8f2eee17e376aeeaf0cffa29e9705cef415f1f1"
+    }
+  },
+  "inputs": {
+    "dataset": null,
+    "checkpoint": null,
+    "seed": null,
+    "reason": "Environment audit; no training, data or deployment."
+  },
+  "execution": {
+    "uv": "0.12.10",
+    "python": "3.12.14",
+    "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "command": "uv sync --managed-python --python 3.12.14 --locked --extra camera --extra gui",
+    "exit_code": 0,
+    "installed_packages": 79,
+    "mirror": "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple",
+    "package_version_entries_changed": false
+  },
+  "checks": {
+    "locked_resync": "passed; checked 79 packages",
+    "uv_pip_check": "All installed packages are compatible",
+    "imports": {
+      "i2rt": "1.1.2",
+      "yam-abc-reproduce": "0.1.0",
+      "opencv-python-headless": "4.13.0.92",
+      "pyrealsense2": "2.58.3.10794",
+      "av": "15.1.0",
+      "mujoco": "3.10.0",
+      "ruckig": "0.15.3",
+      "fastapi": "0.140.0"
+    },
+    "pytest": {
+      "command": ".venv/bin/python -m pytest tests/test_memory_gate.py tests/test_can_channels.py tests/test_multi_arm.py tests/test_gui_smoke.py tests/test_recorder_mock.py tests/test_button_teleop.py tests/test_arm_telemetry.py -q",
+      "passed": 69,
+      "skipped": 1,
+      "subtests_passed": 9,
+      "warnings": 1,
+      "scope": "offline mock/software only"
+    },
+    "memory_after_import_sort": "18 unittest cases passed",
+    "ruff": "scripts/memory_gate.py and tests/test_memory_gate.py passed",
+    "git_diff_check": "passed"
+  },
+  "outputs": {
+    "evidence": [
+      "docs/evidence/20260907-uv-install.txt",
+      "docs/evidence/20260907-collection-tests.txt",
+      "docs/evidence/20260907-memory-tests.txt"
+    ]
+  },
+  "limitations": [
+    "No real robot or camera commissioning",
+    "No policy backend installed",
+    "No system CAN sudoers or udev changes",
+    "No host total-token enforcement"
+  ],
+  "confounders": [
+    "Switched from system Python 3.12.3 to managed 3.12.14 and reused download cache; no claim that mirror alone caused the measured install time."
+  ]
+}

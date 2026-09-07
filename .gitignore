@@ -28,3 +28,9 @@ venv/
 .idea/
 .vscode/
 .backup/
+
+# Local context ledgers, temporary skill references and machine diagnostics.
+/docs/cache/runtime/
+.env
+.env.*
+!.env.example

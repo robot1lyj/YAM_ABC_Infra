@@ -1,0 +1,11 @@
+Command: uv -v sync --extra camera --extra gui
+Exit: 1
+Selected diagnostic lines (not full build log):
+Resolved 400 packages in 23.57s
+DEBUG   file STRINGS file "/usr/include/python3.12/patchlevel.h" cannot be read.
+DEBUG   Could NOT find Python (missing: Development.Module) (found suitable version
+DEBUG *** CMake configuration failed
+        file STRINGS file "/usr/include/python3.12/patchlevel.h" cannot be
+        Could NOT find Python (missing: Development.Module) (found suitable
+      *** CMake configuration failed
+Independent check: /usr/include/python3.12/Python.h absent; python3.12-dev not installed.

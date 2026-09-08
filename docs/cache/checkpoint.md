@@ -1,25 +1,22 @@
-# 续作检查点
+# 当前续作：第一版控制核心与完整改造方案
 
-## 当前目标
+2026-09-08 用户授权开始实施，三模式：teleop/inference/hil；先不做RTC。
+第一版使用整套双臂按键接管；Evo默认i键，非握持感应，无单独四臂停住等待阶段。
+实现 hil/core.py、session.py、policy.py、snapshots.py 和 scripts/probe_thor_policy.py。
+尚未接入四臂驱动、GUI、异步录制和完整DAgger导出；绝不能说真机HIL已可运行。
+Kai0用户已clone：/home/wuyan-lyj/kai0，HEAD 9d93078c757840f50e75248c5c5a94ab7b41e13a。
+已审其ARX sync脚本和Agilex关键路径，采用普通块调度，协议依condapi而非ARX。
+Evo源码 /tmp/yam-evo-rl-reference，固定6f2db449a21e1bac750b996f2e27cac6739aa63f。
+condapi接口规范在docs/condapi_interface.md，来源哈希在docs/evidence；未改参考仓库。
+uv环境 .venv（Python3.12.14），增加安装deploy extra；使用绝对路径 /home/wuyan-lyj/.local/bin/uv。
+验证：全套149 passed/2 skipped/9 subtests；新HIL测试10项包含本地WebSocket往返。
+记忆使用mlops-memory，用户已覆盖严格字节停机要求；按需读取、检查点续作。
+未启动任何真机、未连接Thor；下一步依docs/dagger_architecture.md B/C接入并离线验收，再现场D。
 
-安装国内镜像 uv 采集环境，上传内网 origin/main，接入证据化项目记忆。
+最新用户补充：Thor/RK3588是现场本地边缘推理；要求审Kai0优化与成熟同步方案。
+已审Kai0 temporal_smooth/ensembling源码，确认非RTC异步/裁剪/线性融合路径；ARX采集并未时间戳配对。
+已联网核验Diffusion Policy/UMI、ros2_control、message_filters、RealSense、linuxptp原始资料。
+最新方案docs/synchronization_design.md覆盖旧“无预取作为最终方案”表述；现有无预取代码只是基准。
+相机型号与硬件同步线已异步询问，尚未获答；不能按仓库默认序列号推断现场设备。
 
-## 已处理
-
-- 清华 PyPI 镜像配置与 uv 正式生成的锁文件；包版本条目未变化。
-- 本机 uv 0.12.10；uv 管理 Python 3.12.14，替代缺开发头文件的系统 Python。
-- i2rt 子模块固定到 5d47b358bafb30c65e397f2ece506550a0db4594。
-- 项目记忆路由、规范所有者、有界读取工具与测试已接入。
-
-## 软件验收完成
-
-79 个包安装完成，locked 复现与依赖检查通过；八个关键库可导入。
-选定离线测试 69 passed、1 skipped、9 subtests passed；记忆工具 18 项测试通过。
-证据：docs/evidence/20260907-environment-audit.json。
-推送状态需用 git remote / git ls-remote 现场核对，不从旧记录推断。
-
-## 后续现场任务
-
-核验平行夹爪精确型号、控制电脑与 USB-CAN/相机序列号。
-当前上游 station 是被动 GELLO，改为官方 leader 前不能 Start Teleop。
-本任务未运行真机初始化，不执行 GELLO 清零、固件刷新或电机零位重写。
+用户已答：三路均D405。官方2025年8月数据手册7.13明确无多相机硬件同步；已更新事实与方案，不再等待型号/同步线答案。

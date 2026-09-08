@@ -12,7 +12,9 @@
 - `docs/cache/kernel.md` 只投影上述事实；进度由 `docs/cache/checkpoint.md` 管理。
 - 验收证据保存在 `docs/evidence/`，经验记录保存在 `docs/cache/records/`。
 - 使用 mlops-memory 技能；仓库提供标准库工具 `scripts/memory_gate.py`。
-  每个实际上下文仅初始化一个 ledger；每包 12,288 字节，累计 32,768 字节。
+  2026-09-08 用户明确放宽记忆读取限制：按需读取，原 12,288/32,768 字节
+  作为诊断参考，不因工具额度中止任务或要求用户压缩。保留原 ledger，不伪造重置。
+  使用短检查点和目标章节管理信息；只有宿主实际执行压缩才称为已压缩。
   按 `docs/memory.md` 操作。ledger 存在 `docs/cache/runtime/`，不提交。
 - 记录命令、实际结果、代码/配置哈希和未确认项，不记录私有推理、凭证或完整环境变量。
 - 硬件连接、进程、网络状态必须现场复查；历史通过不等于当前可用。
@@ -26,6 +28,12 @@
 - 配置/依赖改动后运行对应离线验收；不得把 mock 或导入成功写成真机通过。
 
 ## 真机边界
+
+- 产品明确三种模式：遥操作、纯推理、DAgger/HIL。HIL 内部切换策略/人工/恢复，
+  不把这些内部状态另做产品模式。方案所有者为 `docs/dagger_architecture.md`。
+- 主项目是 yam-abc-reproduce；同级 i2rt 已删除，SDK 子模块仍有效。
+- Thor 模型/微调归 condapi；RK3588 的采集、控制、仲裁与记录归本项目。
+  对接约束见 `docs/condapi_interface.md`，不把 condapi 的旧 LoRA 默认照搬到本项目。
 
 - 用户设备：2 台标准 YAM follower、2 台官方电动 YAM leader；不是被动 GELLO。
 - 官方 leader 使用 `yam_lead_left/right` 与 `yam_teaching_handle`。

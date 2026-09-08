@@ -1,0 +1,22 @@
+{
+  "observed_at": "2026-09-08T07:20:14.417279+00:00",
+  "source_root": "/home/wuyan-lyj/condapi",
+  "source_commit": "925d2ed3de37660c94694cc4bff292d721783108",
+  "source_access": "local read-only; full small routing/05 documents and selected Thor/current-candidate/code sections",
+  "memory_budget_override": "2026-09-08 user explicitly made strict retrieval budget advisory; no ledger reset or host compaction claimed",
+  "files": {
+    "AGENTS.md": "50db7c16c6cac6c8c153723cd7f86950012ee55693fa5a67ca36d42a7aa82d9a",
+    "docs/cache/kernel.md": "ef48c8251cdef1979f5143b78adba145e5169af940257f4e0a619d2f4de96546",
+    "docs/cache/context_index.md": "38cd7c7445fd5710353c65293b74c8cfa7799e5e1196c4de5f9b14f6fecefb48",
+    "docs/cache/modes/03_deployment.md": "e82ebfdf6cced5c43eff919cc2869442f76bb759a9b3b2b8a4b66c78ff1f7029",
+    "docs/05_inference_and_rollout.md": "007d5c75a7f3e984d46b4b272a76e2796f6eece33a8a2b4d2ec4982b65538b20",
+    "docs/08_thor_edge_deployment.md": "c55d0be8b1b155b149dd7e5c35e91505d3c2d69ea1f5c221c0ffb9466d5d77ce",
+    "docs/reference/thor/11_pi05_candidate_test_plan.md": "07739784e2c823bf25a7ccb126cf4ba782f231f813bb14acfa30e015e94d9066",
+    "src/openpi/policies/yam_policy.py": "e7eb4fdc219a1cb81610d3a105a4e41bcad9641d32356337c79e285dba4baeca",
+    "src/openpi/training/config.py": "300ee18be50ae0e4702324e0f8762f85a85d75b6999cf8f23cc35bc394889894"
+  },
+  "limitations": [
+    "source performance claims were not independently rerun",
+    "cross-IPC smoke and real-arm behavior not verified"
+  ]
+}

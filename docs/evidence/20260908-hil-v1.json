@@ -1,0 +1,28 @@
+{
+  "evo": {
+    "root": "/tmp/yam-evo-rl-reference",
+    "commit": "6f2db449a21e1bac750b996f2e27cac6739aa63f",
+    "files": {
+      "src/lerobot/scripts/recording_loop.py": "d7dd511e1c56207402a04d97dd2dda541bf077fb096ec7bbe68bef13865969d8",
+      "src/lerobot/scripts/recording_hil.py": "85c96ba27f042641bf6fdcedfe20e21ecb4662cfcb8a5e5283efe82a01448851",
+      "src/lerobot/utils/control_utils.py": "cd9e65e908b2924871bb25314a8cd47110263207f71e6ffb5cf281cdef28bd17"
+    }
+  },
+  "kai0": {
+    "root": "/home/wuyan-lyj/kai0",
+    "commit": "9d93078c757840f50e75248c5c5a94ab7b41e13a",
+    "files": {
+      "train_deploy_alignment/inference/arx/inference/arx_openpi_inference_sync.py": "ec440bf69bc7fbf716c1a509795dadcac7d6ab5f293ca6724d7b8cf18b37f9dd",
+      "train_deploy_alignment/inference/agilex/inference/agilex_inference_openpi_sync.py": "71b695c96d06a4f5fd05c37075aea066389ae139eaff122c75a6ac8d3f96868b",
+      "train_deploy_alignment/dagger/arx/README.md": "6f596f0a82a340ded9d0013498c898a7fd86e7b105ea648312c276cf5920ddc3"
+    }
+  },
+  "validation": {
+    "pytest": "149 passed, 2 skipped, 9 subtests passed",
+    "new_hil_tests": 10,
+    "ruff": "passed on added code",
+    "hardware_run": false,
+    "thor_run": false,
+    "scope": "core and localhost protocol only; hardware/GUI/recorder integration pending"
+  }
+}

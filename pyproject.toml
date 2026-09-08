@@ -220,6 +220,8 @@ conflicts = [
 ]
 
 [project.scripts]
+yam-workstation = "yam_abc_reproduce.hil.run:main"
+yam-export = "yam_abc_reproduce.hil.lerobot_export:main"
 yam-abc-gui = "yam_abc_reproduce.cli:gui"
 yam-abc-teleop = "yam_abc_reproduce.cli:teleop"
 yam-abc-convert = "yam_abc_reproduce.cli:convert"

@@ -1,4 +1,4 @@
-"""YAM four-mode workstation: python -m yam_abc_reproduce.hil.run --mock.
+"""YAM four-mode workstation: uv run --no-sync yam-workstation --mock.
 
 Keyboard: s start/resume, i HIL takeover, space hold, 1/2/3/4 select mode, r collection segment,
 q quit (hardware shutdown removes active motor control; support the arms first).
@@ -12,6 +12,7 @@ import json
 import queue
 import threading
 import time
+from importlib.util import find_spec
 from pathlib import Path
 
 import numpy as np
@@ -414,6 +415,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--station", default="configs/station_hil.yaml")
     p.add_argument("--mock", action="store_true")
+    p.add_argument("--check", action="store_true", help="仅检查配置和依赖，不连接设备或创建数据目录")
     p.add_argument("--mode", choices=[m.value for m in Mode], default="hil")
     p.add_argument("--url", help="Thor WebSocket URL on the local Ethernet link")
     p.add_argument("--output", type=Path)
@@ -429,6 +431,8 @@ def main():
         p.error("--demo is mock only")
     if args.duration is not None and (not np.isfinite(args.duration) or args.duration <= 0):
         p.error("duration must be finite and positive")
+    if args.web_port is not None and not 1 <= args.web_port <= 65535:
+        p.error("web-port must be between 1 and 65535")
     cfg = build_station_config(args.station)
     validate_station(cfg, mock=args.mock)
     hil_cfg = load_yaml(args.station).get("hil", {})
@@ -440,6 +444,29 @@ def main():
     for key, value in hil_cfg.items():
         if not isinstance(value, (float, int)) or not np.isfinite(value) or value <= 0:
             p.error(f"invalid hil setting: {key}")
+    # Check before constructing cameras, motors, sockets or recording threads.
+    required = {"numpy", "yaml", "av"}
+    if not args.raw_only:
+        required.update(("pyarrow", "pandas"))
+    if args.web_port:
+        required.update(("fastapi", "uvicorn"))
+    if not args.mock:
+        required.update(("i2rt", "pyrealsense2", "cv2"))
+        if args.url:
+            required.update(("openpi_client", "websockets", "msgpack"))
+    missing = sorted(name for name in required if find_spec(name) is None)
+    if missing:
+        p.error(
+            "缺少依赖 " + ", ".join(missing)
+            + "；请执行 uv sync --locked --extra camera --extra gui --extra deploy"
+        )
+    if args.check:
+        print(json.dumps({
+            "configuration": "ok", "dependencies": sorted(required),
+            "mock": args.mock, "mode": args.mode, "hardware_checked": False,
+            "note": "仅检查模块是否可发现；未验证二进制加载、设备、网络或实时性能",
+        }, ensure_ascii=False))
+        return
     output = args.output or Path(cfg.save_root) / time.strftime("hil_%Y%m%d_%H%M%S")
     recorder = RecordingSession(
         output,

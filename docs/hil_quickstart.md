@@ -1,6 +1,6 @@
 # 四模式工作站第一版
 
-本版入口为 `python -m yam_abc_reproduce.hil.run`，使用独立的四模式界面与统一执行循环。
+本版入口为 `uv run --no-sync yam-workstation`，使用独立的四模式界面与统一执行循环。
 旧 `yam-abc-gui` 保留上游采集/转换等功能；不要同时让旧会话和新工作站打开相同CAN设备。
 本次完成离线模拟与协议/驱动替身测试，尚未在四臂、D405、Thor/RK3588上验证。
 
@@ -10,8 +10,8 @@
 
 ```bash
 cd /home/wuyan-lyj/YAM/yam-abc-reproduce
-/home/wuyan-lyj/.local/bin/uv sync --locked --extra camera --extra gui --extra deploy
-.venv/bin/python -m yam_abc_reproduce.hil.run --mock --web-port 8766
+uv sync --locked --extra camera --extra gui --extra deploy
+uv run --no-sync yam-workstation --mock --web-port 8766
 ```
 
 浏览器打开 http://127.0.0.1:8766 。启动后先保持，点击“开始”执行；不需要真实机械臂或Thor。
@@ -20,7 +20,7 @@ cd /home/wuyan-lyj/YAM/yam-abc-reproduce
 自动模拟策略→人工→恢复，并录制一个短episode：
 
 ```bash
-.venv/bin/python -m yam_abc_reproduce.hil.run --mock --demo --duration 4
+uv run --no-sync yam-workstation --mock --demo --duration 4
 ```
 
 终端末尾显示状态，输出默认在 `data/episodes/hil_年月日_时分秒/`；目录已存在会拒绝覆盖。
@@ -64,13 +64,13 @@ cd /home/wuyan-lyj/YAM/yam-abc-reproduce
 完成现场固定、行程清空和人员照看后，先遥操作：
 
 ```bash
-.venv/bin/python -m yam_abc_reproduce.hil.run --mode teleop --web-port 8766
+uv run --no-sync yam-workstation --mode teleop --web-port 8766
 ```
 
 Thor已经启动condapi兼容的本地模型服务后，使用其现场IP：
 
 ```bash
-.venv/bin/python -m yam_abc_reproduce.hil.run --mode hil --url ws://THOR_IP:8000 --web-port 8766
+uv run --no-sync yam-workstation --mode hil --url ws://THOR_IP:8000 --web-port 8766
 ```
 
 `THOR_IP`替换为实际值。纯推理使用 `--mode inference`。不提供URL的真实遥操作会话不能
@@ -117,7 +117,7 @@ JSON逐步保存人工/策略/实际提交动作、最新状态、对齐状态�
 导出连续人工有效段到现有canonical格式，可继续用原转换链处理：
 
 ```bash
-.venv/bin/python -m yam_abc_reproduce.hil.export data/episodes/实际会话/episode_000001 --output data/expert/新目录
+uv run --no-sync python -m yam_abc_reproduce.hil.export data/episodes/实际会话/episode_000001 --output data/expert/新目录
 ```
 
 策略/保持段不作为专家标签；遇到非人工段或epoch变化就拆成新episode，不把过滤后的
@@ -138,3 +138,13 @@ JSON逐步保存人工/策略/实际提交动作、最新状态、对齐状态�
 ## 默认LeRobot输出
 
 会话结束、设备关闭后自动生成 `会话/lerobot/`，见 [字段和格式](convert.md)。运行时只异步录制原始数据；`--raw-only`用于暂缓格式整理和性能测量。遥操作/推理模式两个手柄按钮均无功能。
+
+## uv启动与离线检查
+
+首次安装或依赖变化后，先 `uv sync --locked --extra camera --extra gui --extra deploy`。日常命令的 `--no-sync` 使用现有环境，不重新安装；无需激活 `.venv`。
+
+```bash
+uv run --no-sync yam-workstation --mock --mode collect --check
+```
+
+检查不连接设备、不创建录制目录。真机检查去掉 `--mock`，HIL/推理提供 `--url`；配置占位会拒绝通过。模块可发现不等于驱动可加载或设备可用。详见 [环境说明](environment.md)。

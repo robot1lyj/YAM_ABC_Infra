@@ -16,7 +16,7 @@
 ## 遥操作和采集
 
 ```bash
-.venv/bin/python -m yam_abc_reproduce.hil.run --mock --mode collect --web-port 8766
+uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 ```
 
 1. 用界面/键盘选择模式，按 `s` 启动遥操作。初始关节姿态须接近；夹爪扳机保留软接管保护。

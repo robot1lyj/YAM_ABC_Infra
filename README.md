@@ -23,7 +23,8 @@ HIL 通过键盘 `i` 冻结并介入，人工阶段通过手柄①交还模型�
 
 ```bash
 uv sync --locked --extra camera --extra gui --extra deploy
-.venv/bin/python -m yam_abc_reproduce.hil.run --mock --web-port 8766
+uv run --no-sync yam-workstation --mock --mode collect --check
+uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 ```
 
 打开 [本机工作站界面](http://127.0.0.1:8766)，选择模式并点击“开始”。模拟模式不打开真实机械臂、相机或 Thor。
@@ -33,7 +34,7 @@ uv sync --locked --extra camera --extra gui --extra deploy
 自动演示策略 → 人工 → 恢复，并连续录制：
 
 ```bash
-.venv/bin/python -m yam_abc_reproduce.hil.run --mock --demo --duration 4
+uv run --no-sync yam-workstation --mock --demo --duration 4
 ```
 
 | 操作 | 终端 | 手柄 |
@@ -42,7 +43,7 @@ uv sync --locked --extra camera --extra gui --extra deploy
 | 开始或从暂停恢复 | `s` | — |
 | HIL 冻结并介入 | 单击 `i` | — |
 | HIL 人工阶段交还模型 | 界面 | 任一 Leader 按钮① |
-| 采集开始 / 结束一段 | `r` | 顶部按钮（采集模式遥操作中） |
+| 采集开始 / 结束一段 | `r` | 按钮①（采集模式遥操作中） |
 | 放弃当前采集集 | `x` | 按钮②（仅采集模式） |
 | 暂停运动 | 空格 | — |
 | 标记成功 / 失败 | `g` / `f` | — |
@@ -96,7 +97,7 @@ D405 不支持三机外部硬件同步。本版采用主机接收时间配对、
 
 ## 数据与专家导出
 
-采集示范：`.venv/bin/python -m yam_abc_reproduce.hil.run --mock --mode collect --web-port 8766`。先按 `s`，再按 `r` 录制；结束前 `g` / `f` 标记，按 `r` 收尾，摆好物体后开始下一段。手柄②放弃当前集但不暂停遥操作；空格才暂停运动。详见 [数据采集手册](docs/collect.md)。
+采集示范：`uv run --no-sync yam-workstation --mock --mode collect --web-port 8766`。先按 `s`，再按 `r` 录制；结束前 `g` / `f` 标记，按 `r` 收尾，摆好物体后开始下一段。手柄②放弃当前集但不暂停遥操作；空格才暂停运动。详见 [数据采集手册](docs/collect.md)。
 
 每次运行生成一个会话目录，默认在 `data/episodes/`；每段单独保存：
 

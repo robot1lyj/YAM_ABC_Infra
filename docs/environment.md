@@ -21,8 +21,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 source "$HOME/.local/bin/env"
 uv python install 3.12.14
 uv sync --locked --extra camera --extra gui --extra deploy
-source .venv/bin/activate
-python -c "import i2rt, yam_abc_reproduce, cv2, pyrealsense2, av; print('imports OK')"
+uv run --no-sync python -c "import i2rt, yam_abc_reproduce, cv2, pyrealsense2, av; print('imports OK')"
 ```
 
 uv 自动创建 .venv，不需要系统 pip。本工作站固定 uv 管理的 Python 3.12.14，
@@ -48,10 +47,16 @@ PyTorch 的 cpu/cu121/cu128 索引保留 explicit 及按组绑定。
 
 ## 日常操作
 
-在项目根目录运行当前四模式模拟界面：
+在项目根目录运行，不需要激活虚拟环境。首次安装或拉取依赖变更后执行上面的完整 `uv sync --locked`。
+日常 `uv run --no-sync` 直接使用已准备的项目环境，不同步依赖、不访问包索引；
+它不会验证环境与锁文件一致，不能替代安装步骤。`uv run` 默认进行非精确同步，
+而 `uv sync` 默认精确同步，会移除本次未选择的可选依赖。
+
+先检查，再启动当前四模式模拟界面：
 
 ```bash
-.venv/bin/python -m yam_abc_reproduce.hil.run --mock --web-port 8766
+uv run --no-sync yam-workstation --mock --mode collect --check
+uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 ```
 
 浏览器访问 http://127.0.0.1:8766 。真机前按 [工作站核验](workstation.md)填写
@@ -72,3 +77,7 @@ uv sync 会移除本次未选择的 extras/groups。
 ## 数据输出依赖
 
 当前基础依赖明确包含PyArrow和Pandas，用于会话结束后的LeRobot v3.0表格写入，PyAV用于视频。常规工作站sync仍无需安装PyTorch/完整LeRobot训练包；依赖由pyproject.toml和uv.lock固定。官方LeRobot读取验证使用独立临时CPU环境，不能当成本项目.venv安装了模型栈。
+
+`--check` 不创建数据目录、不启动相机或电机、不连接Thor；它检查配置和依赖模块可发现性，不能证明二进制加载或硬件可用。去掉 `--mock` 后会检查真实夹爪型号与相机序列号占位；HIL/推理还需提供 `--url`。
+
+希望一步同步并运行时：`uv run --locked --extra camera --extra gui --extra deploy yam-workstation --mock --mode collect --web-port 8766`。`.venv/bin/python` 仍是同一个环境的解释器，但教程统一通过uv启动。

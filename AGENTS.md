@@ -24,7 +24,7 @@
 - 使用 uv 和 Python 3.12。复现：`uv sync --locked --extra camera --extra gui --extra deploy`。
 - 提交 `pyproject.toml` 和 `uv.lock`；不提交 `.venv/`、数据、模型、运行时 ledger。
 - 镜像使用项目配置。保留 PyTorch 显式索引，不使用 unsafe 索引策略。
-- 新四模式入口 `python -m yam_abc_reproduce.hil.run`，配置 `configs/station_hil.yaml`，教程 `docs/hil_quickstart.md`。
+- 新四模式入口 `uv run --no-sync yam-workstation`，配置 `configs/station_hil.yaml`，教程 `docs/hil_quickstart.md`。
 - 运行四模式需追加 `--extra deploy`；模型训练后端仍需按任务选择，不能混装互斥组。
 - 配置/依赖改动后运行对应离线验收；不得把 mock 或导入成功写成真机通过。
 

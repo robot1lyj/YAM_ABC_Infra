@@ -18,3 +18,5 @@ LeRobot v3.0由hil/lerobot_export.py在设备关闭后自动生成，运行期�
 硬件仍待现场确认：2官方Leader、2平行夹爪Follower、3D405；夹爪具体型号/CAN/序列号配置占位。没有启动真实电机、没有Thor模型/任务成功率或RK性能验收。SDK状态时间不是每电机CAN到达时间，D405不是曝光同步。
 环境仍为项目.venv；uv通过现有清华镜像安装新增轻量数据依赖，pyproject和uv.lock须一起提交。历史离线record依赖变更必须标stale，不能假称仍适用；178项测试通过、2跳过、9子测试通过；官方LeRobot0.5.1回读119帧完整HIL和三路RGB。新测试与性能报告见docs/acceptance.md。
 下一步以现场逐对低速验证、三路相机/USB测试、Thor冻结观测契约核对、HIL纠正任务为序。
+
+2026-09-08后续：教程统一 `uv run --no-sync yam-workstation`，导出 `uv run --no-sync yam-export`。先完整 `uv sync --locked --extra camera --extra gui --extra deploy`；--no-sync不安装或验证锁。新增--check仅配置/模块可发现性检查，不构造设备或数据目录；真实占位仍拒绝。全套187通过/2跳过/9子测试，旧record已stale，新record为uv-cli-20260908-offline。uv.lock检查通过且无需修改，无依赖升级。

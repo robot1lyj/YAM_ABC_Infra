@@ -46,7 +46,7 @@ HIL的epoch变化不会拆episode，策略→人工→策略完整保留。真�
 重新处理须使用不存在的新目录：
 
 ```bash
-.venv/bin/python -m yam_abc_reproduce.hil.lerobot_export data/episodes/实际会话 --output data/rebuilt/新目录
+uv run --no-sync yam-export data/episodes/实际会话 --output data/rebuilt/新目录
 ```
 
 `--raw-only`可用于只测录制性能、暂缓格式整理；默认不启用。整理过程批量256行写Parquet，逐帧解码/编码，不把整段图像加载进内存。
@@ -54,5 +54,5 @@ HIL的epoch变化不会拆episode，策略→人工→策略完整保留。真�
 保留的 `hil.export` 是额外的专家筛选工具，输出旧canonical格式，不是默认LeRobot路径：
 
 ```bash
-.venv/bin/python -m yam_abc_reproduce.hil.export data/episodes/实际会话/episode_000001 --output data/expert/新目录
+uv run --no-sync python -m yam_abc_reproduce.hil.export data/episodes/实际会话/episode_000001 --output data/expert/新目录
 ```

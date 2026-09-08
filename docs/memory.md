@@ -57,7 +57,7 @@ Ledger位于被忽略的 `docs/cache/runtime/`，不提交Git。当前上下文�
 
 ```bash
 python3 scripts/check_project_memory.py
-python3 scripts/memory_gate.py validate-record --root . --record docs/cache/records/approved-modes-20260908-offline.json
+python3 scripts/memory_gate.py validate-record --root . --record docs/cache/records/uv-cli-20260908-offline.json
 ```
 
 ## 检查工具负责什么

@@ -1,0 +1,33 @@
+{
+  "id": "uv-cli-20260908",
+  "observed_at": "2026-09-08T10:43:20.377764+00:00",
+  "base_commit": "8cf343bd8fbabea355f73cca32fad4f1d8e07a94",
+  "dirty_patch_sha256": "de94c4f9b0de2b4dc0dd251e8d560b102c7469cc2198157581414eef01d212cf",
+  "commands": [
+    "uv lock --check",
+    "uv sync --locked --extra camera --extra gui --extra deploy",
+    "uv run --no-sync yam-workstation --mock --mode collect --check",
+    "uv run --no-sync pytest -q",
+    "uv run --no-sync yam-workstation --mock --demo --duration 2 --output /tmp/yam-uv-entry-20260908",
+    "uv run --no-sync yam-export --help",
+    "uv pip check"
+  ],
+  "results": {
+    "tests": "187 passed, 2 skipped, 9 subtests passed",
+    "post_format_cli_tests": "9 passed",
+    "lint": "passed",
+    "packages": "85 compatible",
+    "demo_episodes": 1,
+    "demo_frames": 59,
+    "lock": "unchanged; check passed"
+  },
+  "logs": {
+    "docs/evidence/20260908-uv-cli-tests.txt": "3160eea1372a964598a5d4ff99b21949f65b3ccfcf092eb52922ef2db6b3651c",
+    "docs/evidence/20260908-uv-cli-demo.txt": "a7590e881afabbefcedbfded8147c1f2fc2d766cd1b7099110574591f579aa3e"
+  },
+  "limits": [
+    "Only mock and local software validation; no real hardware or Thor connection",
+    "--check validates configuration/module discoverability, not binary loading",
+    "Prior official LeRobot reader and performance reports not rerun in this change"
+  ]
+}

@@ -12,7 +12,7 @@
 ## 当前命令
 
 ```bash
-.venv/bin/python -m yam_abc_reproduce.hil.run --mode inference --url ws://THOR_IP:8000 --web-port 8766
+uv run --no-sync yam-workstation --mode inference --url ws://THOR_IP:8000 --web-port 8766
 ```
 
 `THOR_IP`换为现场地址；`--mode hil`启用 Leader 接管。启动后先保持，点击开始才执行选定策略；但设备构造可能已上电/校准夹爪。

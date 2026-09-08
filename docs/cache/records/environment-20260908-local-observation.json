@@ -1,0 +1,26 @@
+{
+  "id": "environment-20260908-local-observation",
+  "kind": "observation",
+  "claim": "开发机.venv的Python/依赖版本只读快照；实际安装状态每次使用须复查，不能仅凭锁文件判断仍已安装。",
+  "owner": "docs/environment.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-x86_64",
+    "environment": "local-venv-camera-gui-deploy"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-08T08:25:38.210350+00:00",
+  "recorded_at": "2026-09-08T08:52:30.395630+00:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260908-memory-environment.json",
+      "sha256": "74a092fb0010b9ff9280a7dfc045250ee991c93f95697fdea6bbf1d06be45811"
+    }
+  ],
+  "recheck": "always",
+  "valid_until": null,
+  "depends_on": {},
+  "supersedes": [
+    "environment-20260907-collection"
+  ]
+}

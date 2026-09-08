@@ -13,9 +13,9 @@ follower 配标准平行夹爪。leader 不是被动 GELLO。
 | 左官方 leader | can_lead_l | yam_lead_left |
 | 右官方 leader | can_lead_r | yam_lead_right |
 
-官方 leader 手柄类型是 `yam_teaching_handle`。默认配置
-`configs/station_yam.yaml` 仍是上游被动 GELLO 工作站示例，不能直接启动本工作站。
-完成实物核验后再修改它，或建立专用 station 文件。
+官方 leader 手柄类型是 `yam_teaching_handle`。当前专用配置为
+[configs/station_hil.yaml](../configs/station_hil.yaml)，已绑定官方leader类型，电机型号/相机序列号仍需实物填写。
+`configs/station_yam.yaml` 是保留的上游被动GELLO示例，不能直接启动本工作站。
 
 ## 待核验
 

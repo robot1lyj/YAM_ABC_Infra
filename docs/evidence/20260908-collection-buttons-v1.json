@@ -1,0 +1,80 @@
+{
+  "observed_at": "2026-09-08T08:52:30.395630+00:00",
+  "base_commit": "1c04c832cb633f47e760e6646eed7b7592b9c446",
+  "scope": "Linux x86_64开发环境；mock四臂、三路mock相机与本机HTTP；未运行真实设备/Thor模型",
+  "changes": [
+    "collect手动多段示范",
+    "双官方Leader按键独立边沿与持续保持",
+    "后台有界片段管理",
+    "中文README/手册/记忆路由"
+  ],
+  "checks": {
+    "full_suite": {
+      "command": ".venv/bin/python -m pytest -q",
+      "result": "172 passed, 2 skipped, 9 subtests passed",
+      "log": "docs/evidence/20260908-collection-buttons-tests.txt",
+      "sha256": "e915a19c259c08fa7133da26d3dd5e7dd97cc5a66f275fa0abccfb9d7fa0d9c7"
+    },
+    "http_mock": {
+      "artifact": "/tmp/yam-four-mode-http-g074pjjc",
+      "result": "两段采集成功；teleop/inference/hil切换、接管、保持、退出；exit 0",
+      "episodes": [
+        {
+          "path": "episode_000001",
+          "steps": 7,
+          "outcome": "success"
+        },
+        {
+          "path": "episode_000002",
+          "steps": 7,
+          "outcome": "success"
+        },
+        {
+          "path": "episode_000003",
+          "steps": 2,
+          "outcome": "unknown"
+        },
+        {
+          "path": "episode_000004",
+          "steps": 5,
+          "outcome": "unknown"
+        },
+        {
+          "path": "episode_000005",
+          "steps": 7,
+          "outcome": "unknown"
+        }
+      ],
+      "session_sha256": "3f6e7d374ada86c8617b261e91ed6bb422f7b8947326d70b2b7292ad34a9e266",
+      "note": "HTTP检查在最后追加写盘错误处理前完成；最终代码由全套测试复验。/tmp不是永久归档。"
+    }
+  },
+  "files": {
+    "yam_abc_reproduce/hil/__init__.py": "5e7eb2ea1bd244fa6a392c27d654b3669799bf00ed654233989e62a9e31e9e66",
+    "yam_abc_reproduce/hil/buttons.py": "701668b26f98e813fe1031bb514c575762855ff86cbb9bb588402bee2f32ee1e",
+    "yam_abc_reproduce/hil/core.py": "750103acf0ed1d0769b9395bc4e5adb67b032a3983354216fff8a9c5333fb3eb",
+    "yam_abc_reproduce/hil/export.py": "1663ee17fdc4ea5b33b13a0b1229c0debbacf1336c1ab04a531b60a2b05e3ca8",
+    "yam_abc_reproduce/hil/keyboard.py": "458c62564a19673838c5e3d5090343444d4a3f48dfdaaf7e8a96cd4c2f79fcab",
+    "yam_abc_reproduce/hil/observation.py": "b1cc8201a2cedddfcdc59cedc1fb7976b45cdb06e794feea75f5db17a26ed537",
+    "yam_abc_reproduce/hil/policy.py": "089b7c79ec18779a5228e60bf9d7301f4638da7d2d24119116d9a38b22017b1c",
+    "yam_abc_reproduce/hil/recording.py": "2666061144fd4476695da211a72ed04ddc0c9d45b938c22f67f199052a4e170c",
+    "yam_abc_reproduce/hil/run.py": "8075504ec6ab0b569eece5f6b6ddfe1ccedd45c186176c9494b7b605ff2e49b1",
+    "yam_abc_reproduce/hil/session.py": "0ac951d7c902a4907fe5d65d43dda9bd04ce84406dda5b64e65aaeae54124e4f",
+    "yam_abc_reproduce/hil/snapshots.py": "e5f4a8f22b94e6e7ce13acc6b18afafbd5abd3b9aa7b5c5d6bb6e36bf9ac7e36",
+    "yam_abc_reproduce/hil/station.py": "06ae97aec576ba25cf52b8175767e896645d413c7761d5362ff4844d330b1641",
+    "yam_abc_reproduce/hil/web.py": "a8b3bc19a5a9331f9572ca4c1b9bd4f3ddcb97fe54c73f1af94135cd1e166782",
+    "tests/test_collection_mode.py": "200a8a8111cf49aec127c4e38c3644cfcd02a8a8a151817e7e9edc1245e8110d",
+    "tests/test_project_memory.py": "129090defb0af1cb53c8d61ad637fb91230a69cd4f66df342eac4d6655626a47",
+    "scripts/check_project_memory.py": "3fd0e31740fd4213da76544a2af2d406db8987c237a401b7448074d672c5a388",
+    "scripts/memory_gate.py": "6c02bffd5568bc5f3b639178568a26324df02a543e0760148e3ebd6fb4c0dafd",
+    "configs/station_hil.yaml": "e426704b0b3fdbdd157448409999e4c94ce1990ac57bc4f2751479c83c40f778",
+    "pyproject.toml": "56846a3493c162024865c00fd4a10c14e0642d5b5b4f214386c89702f7bf1b5d",
+    "uv.lock": "828d4663a6f454a328a14887e071335f70c2fed1351cbf89d880559acefd77aa"
+  },
+  "limitations": [
+    "未真机验收按钮/重力补偿/时延",
+    "D405仅接收时间配对",
+    "模型语义自动绑定、设备关闭结果完整落盘仍待完善",
+    "uv锁未变化；未重装模型训练栈"
+  ]
+}

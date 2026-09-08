@@ -1,6 +1,6 @@
-"""YAM three-mode workstation: python -m yam_abc_reproduce.hil.run --mock.
+"""YAM four-mode workstation: python -m yam_abc_reproduce.hil.run --mock.
 
-Keyboard: s start/resume, i toggle HIL takeover, space hold, 1/2/3 select mode,
+Keyboard: s start/resume, i toggle HIL takeover, space hold, 1/2/3/4 select mode, r collection segment,
 q quit (hardware shutdown removes active motor control; support the arms first).
 """
 
@@ -19,10 +19,11 @@ import numpy as np
 from ..camera.worker import CameraWorker
 from ..config import build_station_config, load_yaml
 from ..runtime import build_arm_units, build_cameras_from_config
+from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
 from .observation import Observations
 from .policy import PlainPolicyClient, PolicyWorker
-from .recording import Recorder
+from .recording import RecordingSession
 from .session import Session
 from .station import StationIO
 
@@ -98,8 +99,7 @@ class Runtime:
         self.stopping = threading.Event()
         self.holding = threading.Event()
         self.status = {"phase": "hold", "mode": mode, "tick": 0}
-        self._last_buttons = [False, False]
-        self._last_button_at = -1.0
+        self.handle_buttons = HandleButtons()
         self.outcome = "unknown"
 
     def event(self, event):
@@ -111,6 +111,8 @@ class Runtime:
             "mode:teleop",
             "mode:inference",
             "mode:hil",
+            "mode:collect",
+            "record",
             "success",
             "failure",
         }
@@ -118,6 +120,14 @@ class Runtime:
             raise ValueError("unknown event")
         if event in ("mode:inference", "mode:hil") and self.worker is None:
             raise ValueError("restart with --url to enable local policy inference")
+        if event == "record" and self.status.get("mode") != "collect":
+            raise ValueError("record control requires collection mode")
+        if (
+            event == "record"
+            and not getattr(self.recorder, "recording", False)
+            and self.status.get("phase") != "human"
+        ):
+            raise ValueError("start leader teleoperation before recording")
         if event in ("success", "failure"):
             if self.status.get("phase") == "fault":
                 raise ValueError("faulted recording remains aborted")
@@ -152,26 +162,24 @@ class Runtime:
                     event = self.events.get_nowait()
                 except queue.Empty:
                     event = None
-                if self.holding.is_set():
-                    self.holding.clear()
-                    while not self.events.empty():
-                        self.events.get_nowait()
-                    event = "hold"
-                elif (
-                    any(b and not old for b, old in zip(buttons[:1], self._last_buttons[:1]))
-                    and now - self._last_button_at > 0.25
-                ):
-                    event = "toggle"
-                    self._last_button_at = now
-                if len(buttons) > 1 and buttons[1] and not self._last_buttons[1]:
-                    event = "hold"
-                self._last_buttons = buttons
+                a = self.session.arbiter
+                button_event = self.handle_buttons.read(
+                    buttons, now=now, mode=a.mode, phase=a.phase
+                )
+                hold_requested = self.holding.is_set() or button_event == "hold"
+                self.holding.clear()
+                if button_event:
+                    event = button_event
                 if auto_start and snapshot is not None and demo_stage == 0:
                     event, demo_stage = "start", 1
                 if demo and demo_stage == 1 and elapsed > 1:
                     event, demo_stage = "toggle", 2
                 elif demo and demo_stage == 2 and elapsed > 2:
                     event, demo_stage = "toggle", 3
+                if hold_requested:
+                    while not self.events.empty():
+                        self.events.get_nowait()
+                    event = "hold"
                 obs_id, observed_at, obs, images, quality = (
                     (0, None, None, {}, {}) if snapshot is None else snapshot
                 )
@@ -185,6 +193,11 @@ class Runtime:
                 a = self.session.arbiter
                 if a.mode == Mode.HIL and a.phase == Phase.POLICY and error > self.mirror_error:
                     event = "hold"
+                recording_event = None
+                if a.mode == Mode.COLLECT and event == "toggle":
+                    event = "record"
+                if event == "record":
+                    recording_event, event = event, None
                 decision = self.session.tick(
                     q,
                     leader,
@@ -217,7 +230,7 @@ class Runtime:
                     "expert_valid": decision.source == "human" and snapshot is not None,
                     "policy_valid": decision.policy_valid,
                     "policy_action": decision.policy_action,
-                    "human_action": leader if decision.intervention else None,
+                    "human_action": leader if decision.source == "human" else None,
                     "selected_action": decision.selected_action,
                     "submitted_action": submitted,
                     "constraint_mask": np.abs(submitted - decision.selected_action) > 1e-8,
@@ -234,6 +247,21 @@ class Runtime:
                     "action_index": decision.action_index,
                     "submitted_at": stamps,
                 }
+                if isinstance(self.recorder, RecordingSession):
+                    previous_mode = self.recorder.mode
+                    self.recorder.set_mode(a.mode.value, self.outcome)
+                    if previous_mode != a.mode.value:
+                        self.outcome = "unknown"
+                    if a.mode == Mode.COLLECT:
+                        if event == "hold" or a.phase == Phase.FAULT:
+                            self.recorder.stop_episode("aborted")
+                        elif recording_event:
+                            if self.recorder.recording:
+                                self.recorder.stop_episode(self.outcome)
+                            elif a.phase == Phase.HUMAN and snapshot is not None:
+                                self.outcome = "unknown"
+                                self.recorder.start_episode()
+                        row["record_event"] = recording_event
                 if not self.recorder.submit(row, images):
                     raise RuntimeError(self.recorder.error or "recorder unavailable")
                 self.status = {
@@ -247,6 +275,7 @@ class Runtime:
                     "deadline_misses": missed,
                     "record_queue": self.recorder.queue.qsize(),
                     "recorded_steps": self.recorder.written,
+                    "recording": getattr(self.recorder, "recording", True),
                     "error": a.fault_reason,
                     "outcome": self.outcome,
                 }
@@ -268,6 +297,9 @@ class Runtime:
             hold_errors = self.io.hold()
             if hold_errors:
                 self.status = dict(self.status, hold_errors=hold_errors)
+            if isinstance(self.recorder, RecordingSession) and self.recorder.mode == "collect":
+                self.recorder.stop_episode("aborted")
+            self.recorder.metadata["terminal_status"] = dict(self.status)
             if self.worker:
                 self.recorder.metadata["policy_metadata"] = getattr(
                     self.worker.client, "metadata", None
@@ -331,14 +363,15 @@ def main():
     action_dt = float(hil_cfg.get("action_dt", 1 / 30))
     if not np.isfinite(action_dt) or action_dt <= 0 or not 1 <= cfg.control_hz <= 100:
         p.error("invalid action_dt/control_hz")
-    if not args.mock and args.mode != "teleop" and not args.url:
+    if not args.mock and args.mode not in ("teleop", "collect") and not args.url:
         p.error("--url is required for local edge inference")
     for key, value in hil_cfg.items():
         if not isinstance(value, (float, int)) or not np.isfinite(value) or value <= 0:
             p.error(f"invalid hil setting: {key}")
     output = args.output or Path(cfg.save_root) / time.strftime("hil_%Y%m%d_%H%M%S")
-    recorder = Recorder(
+    recorder = RecordingSession(
         output,
+        mode=args.mode,
         fps=cfg.control_hz,
         metadata={
             "station": dataclasses.asdict(cfg),
@@ -398,7 +431,7 @@ def main():
         from .keyboard import Keyboard
 
         print(
-            "s=start, i=takeover/resume, space=hold, 1/2/3=mode, q=shutdown (support arms first)",
+            "s=start, i=takeover/resume, space=hold, 1/2/3/4=mode, r=record segment, q=shutdown (support arms first)",
             flush=True,
         )
         with Keyboard(runtime.event):

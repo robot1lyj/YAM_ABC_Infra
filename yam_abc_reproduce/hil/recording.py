@@ -44,11 +44,11 @@ class Recorder:
             return False
 
     def _run(self):
-        import av
-
         videos = {}
         counts = {}
         try:
+            import av
+
             with (self.path / "steps.jsonl").open("w") as log:
                 while not self._stop.is_set() or not self.queue.empty():
                     try:
@@ -106,9 +106,12 @@ class Recorder:
                 clock="RK host monotonic; camera arrival alignment",
                 action_semantics="submitted command is not measured motion",
             )
-            (self.path / "manifest.json").write_text(
-                json.dumps(manifest, default=json_value, indent=2) + "\n"
-            )
+            try:
+                (self.path / "manifest.json").write_text(
+                    json.dumps(manifest, default=json_value, indent=2) + "\n"
+                )
+            except OSError as exc:
+                self.error = f"manifest write: {exc}"
 
     def close(self, outcome="unknown"):
         self.outcome = outcome
@@ -116,3 +119,172 @@ class Recorder:
         self._thread.join(30)
         if self._thread.is_alive():
             raise RuntimeError("recorder did not finish within 30 seconds")
+
+
+class RecordingSession:
+    """Ordered episode boundaries; all directory creation and finalization are off control.
+
+    One bounded queue feeds the writer. Collection is opt-in; other modes record
+    continuously. A mode change closes the preceding episode before opening another.
+    """
+
+    def __init__(self, path, *, mode="hil", fps=30, capacity=32, metadata=None):
+        self.path = Path(path)
+        self.path.mkdir(parents=True, exist_ok=False)
+        self.metadata = metadata or {}
+        self.fps = fps
+        self.queue = queue.Queue(maxsize=capacity)
+        self.error = None
+        self._completed_steps = 0
+        self._active = None
+        self.mode = mode
+        self.outcome = "unknown"
+        self.recording = False
+        self.episodes = []
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True, name="episode-session")
+        self._thread.start()
+        if mode != "collect":
+            self.start_episode()
+
+    @property
+    def written(self):
+        active = self._active
+        return self._completed_steps + (active.written if active else 0)
+
+    def _put(self, item):
+        if self.error or self._stop.is_set():
+            return False
+        try:
+            self.queue.put_nowait(item)
+            return True
+        except queue.Full:
+            self.error = "episode queue full"
+            return False
+
+    def start_episode(self):
+        if not self.recording and self._put(("start", self.mode)):
+            self.recording = True
+
+    def stop_episode(self, outcome="unknown"):
+        if self.recording and self._put(("stop", outcome)):
+            self.recording = False
+
+    def set_mode(self, mode, outcome="unknown"):
+        if mode != self.mode:
+            self.stop_episode(outcome)
+            self.mode = mode
+            if mode != "collect":
+                self.start_episode()
+
+    def submit(self, record, images):
+        if self.error:
+            return False
+        if not self.recording:
+            return True
+        # Retain gaps and HOLD in active episodes for audit; exporter selects experts.
+        return self._put(("row", record, images))
+
+    def _run(self):
+        active = None
+        count = 0
+
+        def finish(outcome):
+            nonlocal active
+            if active is None:
+                return
+            active.metadata.update(self.metadata)
+            active.close(outcome)
+            self._completed_steps += active.written
+            self._active = None
+            self.episodes.append(
+                {
+                    "path": active.path.name,
+                    "steps": active.written,
+                    "outcome": "aborted" if active.error else outcome,
+                }
+            )
+            if active.error:
+                raise RuntimeError(active.error)
+            active = None
+
+        try:
+            while not self._stop.is_set() or not self.queue.empty():
+                try:
+                    item = self.queue.get(timeout=0.05)
+                except queue.Empty:
+                    if active and active.error:
+                        raise RuntimeError(active.error)
+                    continue
+                if item[0] == "start":
+                    if active:
+                        raise RuntimeError("episode already open")
+                    count += 1
+                    active = Recorder(
+                        self.path / f"episode_{count:06d}",
+                        fps=self.fps,
+                        metadata=dict(self.metadata, collection_mode=item[1]),
+                    )
+                    self._active = active
+                elif item[0] == "stop":
+                    finish(item[1])
+                elif item[0] == "row":
+                    if active is None:
+                        raise RuntimeError("episode writer unavailable")
+                    while True:
+                        if active.error or not active._thread.is_alive():
+                            raise RuntimeError(active.error or "episode writer stopped")
+                        try:
+                            active.queue.put((item[1], item[2]), timeout=0.05)
+                            break
+                        except queue.Full:
+                            continue
+            finish("aborted" if self.error else self.outcome)
+        except Exception as exc:
+            self.error = f"{type(exc).__name__}: {exc}"
+            if active:
+                active.metadata.update(self.metadata)
+                try:
+                    active.close("aborted")
+                except Exception as close_exc:
+                    self.error += f"; close: {close_exc}"
+                if not any(e["path"] == active.path.name for e in self.episodes):
+                    self.episodes.append(
+                        {
+                            "path": active.path.name,
+                            "steps": active.written,
+                            "outcome": "aborted",
+                            "error": self.error,
+                        }
+                    )
+        finally:
+            self._write_manifest()
+
+    def _write_manifest(self):
+        try:
+            (self.path / "session.json").write_text(
+                json.dumps(
+                    dict(
+                        self.metadata,
+                        schema="yam_session_v1",
+                        episodes=self.episodes,
+                        error=self.error,
+                        outcome="aborted" if self.error else self.outcome,
+                    ),
+                    default=json_value,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n"
+            )
+
+        except OSError as exc:
+            self.error = f"session manifest write: {exc}"
+
+    def close(self, outcome="unknown"):
+        self.outcome = outcome
+        self.recording = False
+        self._stop.set()
+        self._thread.join(35)
+        if self._thread.is_alive():
+            raise RuntimeError("session writer did not finish within 35 seconds")

@@ -35,12 +35,12 @@ class StationIO:
             if self._manual:
                 self._mock_t += 1
                 self._mock_leaders[[0, 7]] += 0.001 * np.cos(self._mock_t / 30)
-            return q, self._mock_leaders.copy(), [False, False], [0.0] * 4
-        leaders, buttons, ages = [], [False, False], []
+            return q, self._mock_leaders.copy(), [[False, False], [False, False]], [0.0] * 4
+        leaders, buttons, ages = [], [], []
         for u in self.units:
             leader, keys, age = u.agent.hil_read()
             leaders.append(leader)
-            buttons = [a or b for a, b in zip(buttons, keys[:2])]
+            buttons.append([bool(key) for key in keys[:2]])
             ages.extend([u.robot.feedback_age(), age])
         return q, vector(np.concatenate(leaders)), buttons, ages
 

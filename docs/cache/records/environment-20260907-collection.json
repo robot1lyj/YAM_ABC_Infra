@@ -8,7 +8,7 @@
     "platform": "linux-x86_64",
     "environment": "python3.12.14-camera-gui"
   },
-  "status": "verified",
+  "status": "superseded",
   "observed_at": "2026-09-07T07:03:21.129233+00:00",
   "recorded_at": "2026-09-07T07:03:21.129233+00:00",
   "evidence": [

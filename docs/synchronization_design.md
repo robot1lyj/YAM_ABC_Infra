@@ -1,102 +1,58 @@
-# 本地边缘推理与同步架构（2026-09-08）
+# 同步与性能：当前实现及升级边界
 
-## 决策与实现状态
+用户明确以实用为先，允许合理放宽同步要求。当前目标是稳定采集、可响应接管、可追溯数据，不追求现有硬件不能实现的同时曝光。
 
-用户明确以实用为先，允许放宽同步容差。当前实现见 [第一版教程](hil_quickstart.md)。
-已接入统一四臂控制、官方leader镜像/重力补偿、非RTC异步重规划、连续录制和专家段导出。
-现场 Thor 与 RK3588 通过以太网连接：Thor做本地模型推理，RK3588采集和控制。
-第一版保留线程架构，增加有界历史与时间配对；当前采用主机接收时间，曝光时间映射尚未标定。
-以下多进程/共享内存与完整时钟方案保留为有实测需求后的升级方向，不阻挡当前迭代。
+## 硬件边界
 
-## Kai0 非RTC优化审核
+三路均为 RealSense D405。官方 D400 数据手册第 7.13 节明确 D405 不支持多相机硬件同步信号。单台 RGB/深度匹配不等于三台相机同步；相同帧率、统一主机时间和 PTP 都不能使三台 D405 同时曝光。[官方数据手册](https://realsenseai.com/wp-content/uploads/2025/08/Intel-RealSense-D400-Series-Datasheet-August-2025.pdf)
 
-本地提交 9d93078c757840f50e75248c5c5a94ab7b41e13a。
-目录 train_deploy_alignment/inference/arx/inference：
+因此当前使用软件配对，记录实际偏差；若未来任务确实要求同时曝光，需另评估支持触发的硬件，当前不因此更换相机或阻断开发。
 
-| 路径 | 实际优化 | 采用方式 |
+## 当前实现
+
+| 层 | 实际行为 | 不能声称的能力 |
 |---|---|---|
-| arx_openpi_inference_sync.py | 每块同步推理/顺序执行，启动预热 | 保留为基准回归路径 |
-| arx_openpi_inference_temporal_smooth.py | 独立推理线程；新块裁剪；旧新块线性权重融合 | 作为首选非RTC调度参考，但重新实现时间锚点和epoch |
-| arx_openpi_inference_temporal_ensembling.py | naive_async按推理起始tick裁剪；或同一tick多预测加权 | 时间对齐采用，ensemble先可选关闭 |
-| arx_openpi_inference_rtc.py | 开关开启时发送prefix/推理延迟并使用RTC模型 | 用户明确暂不采用 |
+| 相机 | 每路独立线程，8 帧历史，保存设备时间、时间域、帧号和主机接收时间 | 无三机曝光同步；未标定设备到主机时钟映射 |
+| 观测 | 以较慢一路最新接收时间为参考，选择附近图像；从 128 条关节历史插值状态 | 插值不是该时刻重新测量，也不消除曝光误差 |
+| 机械臂 | 同一上层 tick 选择目标，逐臂向 SDK 提交，记录提交时间 | 无跨 CAN 原子执行、硬件定时到达保证 |
+| 推理 | 独立线程，一个在途请求；按时间轴消费非 RTC 动作块 | 不保证每次预测都能赶上执行时间 |
+| 记录 | 会话管理线程32项队列、独立编码线程8 tick队列，JSONL 持续写入 | 未完成文件不保证断电完整恢复 |
 
-不能把“不要RTC”等同于“只能等待整块执行完再推理”。目标路径是普通模型的异步重规划：
-执行有效旧块时请求新块，按观测时刻对齐，切入人工立即使在途请求与动作队列失效。
-当前已实现并测试非RTC异步调度，保留无预取基准作比较。
+模型使用对齐后的状态；本地跟踪误差与命令限幅使用最新实际状态，不能用旧图像时刻的插值状态替代控制反馈。
 
-源码审计细节：
-- temporal_smooth 的实际重叠权重为 linspace(1,0)，不是所有名称/参数暗示的指数平滑。
-- 裁剪用自上次整合以来的消费计数k，且受latency_k上限约束；不是严格以每次观测时间为原点。
-- ensembling 中较老预测排序在前，正exp_weight_m给较老预测更大权重；不能称为偏重新预测。
-- ARX get_frame 取最新左右关节再逐台wait_for_frames，无时间戳配对；不能证明“同步”。
-- 当前相机配置采集rgb8，而payload又BGR→RGB；本项目必须明确颜色契约并用色卡验收，不能照抄。
+## 阈值策略
 
-YAM改进：每块保存obs_time、request_id、epoch、action_dt。动作i的目标时间为
-obs_time + (i + offset_steps) * action_dt，其中offset_steps必须从训练样本的obs/action对齐核验，不能猜。
-过期前缀按本地执行时间丢弃，无剩余则HOLD并重新请求。新块只替换尚未执行的未来区间；
-可选短时关节融合需先做任务评估，夹爪不默认平滑；完整保存raw/selected/submitted。
-只保留一个在途请求和有界未来动作，禁止无限累积。模型采样周期、上层重规划周期、
-执行器插值周期分离；更快下发不能把训练动作时间轴加速。
+默认值由 [station_hil.yaml](../configs/station_hil.yaml)维护，操作解释见 [教程](hil_quickstart.md)。
 
-## 成熟参考与适配边界
+- 小幅帧偏差只诊断，不停止工作；配对明显不合格时跳过该次新观测。
+- 短时图像配对失败可继续有效动作块，持续过期再保持。
+- 普通控制周期 miss 只统计，不补发一串旧周期；严重超时锁定故障。
+- 超时、epoch 错误、NaN、维数错误不能通过“放宽同步”绕过。
+- `sdk_state_age_s` 是 SDK 状态更新时间差，不能冒充每个电机 CAN 接收年龄。
 
-- [Diffusion Policy 实机结构](https://github.com/real-stanford/diffusion_policy#sharedmemoryringbuffer)：
-  每相机独立进程、共享内存环形缓冲；get_obs返回观测与时间戳；exec_actions提交带时间的动作，执行器异步运行。
-- [UMI 双臂环境源码](https://github.com/real-stanford/universal_manipulation_interface/blob/main/umi/real_world/bimanual_umi_env.py)：
-  相机历史匹配，低维状态插值，对未来时间点调度多机器人与夹爪，支持经测量的延迟补偿。
-  其末端位姿/UR RTDE接口不能直接作为YAM关节/CAN接口。
-- [ros2_control Controller Manager](https://control.ros.org/jazzy/doc/ros2_control/controller_manager/doc/userdoc.html)：
-  read/update/write控制周期、资源所有权、生命周期与周期诊断。参考机制不等于已经移植该框架。
-- [ROS2 message_filters](https://docs.ros.org/en/ros2_packages/rolling/api/message_filters/message_filters.html)：
-  Exact/Approximate时间戳配对用于数据匹配，不会使相机同时曝光；arrival time受传输与调度影响。
-- [RealSense 多相机官方文档](https://dev.realsenseai.com/docs/multiple-depth-cameras-configuration/)：
-  硬件同步、带宽/USB拓扑与验证分别处理。具体RGB/深度触发能力按型号、固件与启用流核验。
-- [linuxptp](https://www.linuxptp.org/documentation/ptp4l/)：硬件时间戳与PHC需网卡支持。
-  PTP帮助跨机日志对齐，不能令USB相机曝光或CAN伺服自动同步。
+所有默认门限都是开发设置，尚未由 RK3588 实测定标；只在真实任务需要时调整，不以调大门限掩盖设备持续失联。
 
-## 四层时间契约
+## 非 RTC 推理优化
 
-1. 时钟：RK3588 monotonic作为本机调度时间轴；设备曝光时钟通过测量映射，保存映射版本、偏差与不确定度。
-   同时存设备原始时间、主机接收时间；时间跳变/重连使同步状态失效，重新初始化。
-   Thor请求往返先由RK本地计时；只有核验网卡支持和同步误差后才启用跨机PTP分段统计。
-2. 观测：相机进程发布有限历史，选择公共参考时刻t_obs与各相机最近有效帧；
-   高频左右关节历史在t_obs前后插值。禁止无界外推；缺乏包围样本或误差超限则拒绝新观测。
-   插值状态只给模型/记录使用；本地碰撞/跟随误差检查使用最新真实状态，不能用旧图像时刻的状态。
-3. 执行：同一个双臂轨迹携带target_time；本地执行器在固定周期给四臂生成同一时间轴目标。
-   四臂分别记录实际提交时间、反馈时间和跟踪误差。SDK目前未证明支持硬件定时触发/跨总线原子执行，
-   因而先提供可测的软件协调；不得承诺微秒级或硬同步。任一关键臂故障，全站退出策略。
-4. 数据：保存原始观测/时间、配对索引、插值状态和原始样本索引、各臂目标与提交/反馈时间、
-   干预事件、同步质量；在线模型快照和离线训练对齐必须使用相同规则。
+参考 Kai0 的异步路径，当前采用独立推理与动作时间裁剪。每个动作块绑定观测参考时间、request_id、epoch 和动作采样间隔；新块替换尚未执行的计划。
 
-## 进程划分与验收
+`action_dt` 必须与训练数据匹配，不能把模型的 50 步预测长度、去噪次数或控制频率混为一谈。第一版使用动作索引 0 对应观测参考时刻的约定，真实部署前要核验训练样本的观测/动作对齐；不匹配时应改契约，不靠增大超时解决。
 
-RK3588：控制/手柄进程；三路相机采集进程；观测封装与网络进程；记录编码进程；GUI。
-同机大图像走共享内存，命令/事件走有界小消息；共享内存需序列号/读者快照协议，防止覆盖时读到半帧。
-不能把当前线程内deque称为进程共享或无锁实现。先做性能基准再决定控制插值是否移到C++。
+本版不采用 RTC 前缀条件、不做时间集成或块间加权融合。现有步长限幅改善的是提交目标变化，不构成机械臂实际速度/加速度保证。
 
-验收分别统计：
-- 三路曝光差（可测时）、映射不确定度、接收差、帧龄、丢帧率；不把它们合成一个sync值。
-- 左右臂状态差、四臂发布时间差、目标时间误差、跟踪误差、控制周期p99与deadline miss。
-- 观测到首次有效动作的端到端延迟；按钮到最后策略/第一人工命令的时延。
-- 注入延迟/乱序/丢帧/时间跳变/编码变慢/一臂异常，验证无旧epoch执行、无无界队列增长。
-- 持续30分钟四臂三相机录制，报告RAM、CPU、USB吞吐、磁盘与网络吞吐。
+## 成熟参考的取舍
 
-具体容差需要结合任务速度和测量确定：例如关节误差近似速度×时间差，可用允许误差反推同步预算。
-相机型号现已确认三台D405；序列号/USB拓扑待核验，没有硬件性能验收数字。
+- [Diffusion Policy](https://github.com/real-stanford/diffusion_policy#sharedmemoryringbuffer)：独立采集与历史缓冲，非阻塞观测/执行接口。借鉴分工；共享内存多进程待实测需要再引入。
+- [UMI 双臂实现](https://github.com/real-stanford/universal_manipulation_interface/blob/main/umi/real_world/bimanual_umi_env.py)：相机配对、状态插值、带时间的轨迹提交。借鉴时间契约；不能直接套用其 UR 末端控制接口。
+- [ros2_control](https://control.ros.org/jazzy/doc/ros2_control/controller_manager/doc/userdoc.html)：借鉴 read/update/write 和资源生命周期，当前没有迁移 ROS2。
+- [ROS2 message_filters](https://docs.ros.org/en/ros2_packages/rolling/api/message_filters/message_filters.html)：时间戳配对与同时曝光是不同问题。
+- [linuxptp](https://www.linuxptp.org/documentation/ptp4l/)：若需跨机分段统计，再核验网卡硬件时间戳支持；当前先用 RK 本机请求年龄/往返时间。
 
-## 三台D405的最终边界（用户补充后更新）
+## 现场测量顺序
 
-用户确认三路均为D405。官方2025年8月D400数据手册第7.13节（文档第114页）明确：
-D405不支持多相机硬件同步信号。因此本配置采用自由运行采集 + 校准时间戳软件对齐，
-不配置外部master/slave同步线，不把global_time_enabled或同帧率宣称为同时曝光。
-单台D405的RGB来自左成像器经ISP处理，单机RGB/深度匹配不等于三台同步。
+1. 确认三台 D405 枚举、角色和 USB 拓扑，做连续录制，检查帧龄、接收偏差、丢帧和编码队列。
+2. 单对再双对机械臂，测 SDK 提交偏差、Leader 跟踪误差、控制周期 miss 和接管响应。
+3. Thor 用冻结观测核对模型输出，再接入运行；分开记录模型时间、网络时间和控制等待。
+4. 短测通过后做持续运行，观察 CPU、RAM、USB、磁盘和队列走势。根据测量决定是否优化，不预设必须升级架构。
 
-来源：[D400官方数据手册](https://realsenseai.com/wp-content/uploads/2025/08/Intel-RealSense-D400-Series-Datasheet-August-2025.pdf)，
-[D405官方规格](https://www.realsenseai.com/products/stereo-depth-camera-d405/)。
-
-落地步骤：识别三台序列号/USB控制器 → 相同受支持stream profile与稳定曝光 →
-独立采集并记录设备/主机时间与frame_number → 确认时间域和校准漂移 → 有界历史配对 →
-关节历史插值 → 报告每组帧的实际时间差和质量 → 阈值超限不生成新模型观测。
-30fps周期约33.3ms，自由运行相位差不会因CPU优化归零；更高帧率仅在支持的profile、
-曝光与USB预算实测后选用，也不构成硬同步。若任务要求严格同时曝光，现有三台D405无法
-仅靠软件达成，届时需按明确精度需求评估硬件；当前先完成软件对齐与误差验收。
+曝光偏差、接收偏差、命令提交偏差和实际跟踪误差分别报告，不压成一个笼统的“同步精度”。当前尚无真机验收数值。

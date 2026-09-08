@@ -17,6 +17,7 @@ class Mode(StrEnum):
     TELEOP = "teleop"
     INFERENCE = "inference"
     HIL = "hil"
+    COLLECT = "collect"
 
 
 class Phase(StrEnum):
@@ -143,7 +144,7 @@ class Arbiter:
         if self.phase == Phase.FAULT:
             raise RuntimeError("fault requires explicit session rebuild")
         self._transition(Phase.RESUME, state)
-        if self.mode == Mode.TELEOP:
+        if self.mode in (Mode.TELEOP, Mode.COLLECT):
             self._human(state, leader)
 
     def _human(self, state, leader):
@@ -288,7 +289,7 @@ class Arbiter:
             self.phase,
             source,
             self.epoch,
-            self.phase == Phase.HUMAN,
+            self.phase == Phase.HUMAN and self.mode == Mode.HIL,
             policy is not None,
             self.phase in (Phase.HUMAN, Phase.HOLD, Phase.FAULT),
             tuple(self._pickup),

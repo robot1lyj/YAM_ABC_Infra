@@ -1,20 +1,27 @@
-# 上下文路由
+# 项目记忆路由
 
-只选择当前决策所需的文档，通过 memory_gate 有界读取。
+先明确本次任务，再读对应规范。下面的“规范所有者”是当前入口；历史英文归档和旧工具不进入默认检索。
+本表由人工维护，`scripts/check_project_memory.py` 检查其链接和记录指纹，不自动判断语义正确性。
 
-| 模式 | 规范所有者 | 按需证据 |
+| 任务 | 规范所有者 | 何时补充读取 |
 |---|---|---|
-| 环境安装/复现 | docs/environment.md | docs/evidence/ |
-| 三模式/HIL架构 | docs/dagger_architecture.md | docs/condapi_interface.md |
-| 真机初始化 | docs/workstation.md | configs/ 与现场重新检查 |
-| 采集 | docs/collect.md + docs/workstation.md | 具体 episode，勿全量读取数据 |
-| 训练/评估 | docs/training.md | 具体运行 manifest、数据及模型哈希 |
-| 部署 | docs/deploy.md + docs/workstation.md | 对应模型验收，需现场状态 |
-| 记忆维护 | docs/memory.md | docs/cache/records/ |
+| 项目主题、已接受的取舍 | [项目决策](../decisions.md) | 用户更改范围时 |
+| 安装、uv、镜像、代码托管 | [环境](../environment.md) | 当前机器状态需重新检查 |
+| 设备、CAN、序列号、初始化 | [硬件事实](../workstation.md) | 真机动作前现场核验 |
+| 四模式使用、配置、操作 | [运行手册](../hil_quickstart.md) | 对照实际配置和CLI帮助 |
+| 接管、状态机、模块职责 | [架构](../dagger_architecture.md) | 修改核心/运行循环时 |
+| D405配对、多臂同步、性能 | [同步设计](../synchronization_design.md) | 先看实测，再决定升级 |
+| Thor/condapi模型接口 | [模型契约](../condapi_interface.md) | 再读condapi对应章节，不全量搬库 |
+| 示范采集、双按钮、片段管理 | [采集手册](../collect.md) | 操作与事件仲裁变更时 |
+| 专家导出、格式转换 | [转换手册](../convert.md) | 核对具体episode和转换产物 |
+| 软件/真机验收与下一步 | [验收边界](../acceptance.md) | 具体证据和现场状态 |
+| 架构/代码改进建议 | [优化评审](../optimization_review.md) | 建议是待办，不等于已修复 |
+| 外部参考与源码来源 | [参考记录](../reference_sources.md) | 依赖源变更时重新核对 |
+| 记忆维护 | [记忆规则](../memory.md) | 证据/记录验证工具 |
+| 上游兼容工具 | [保留工具](../legacy_tools.md) | 明确需要旧功能才读 |
 
-短期续作读取 `docs/cache/checkpoint.md`；稳定摘要读取 `docs/cache/kernel.md`。
-规范文档优先于摘要，当前版本证据优先于历史经验。
+[稳定摘要](kernel.md)只投影上述事实；[续作检查点](checkpoint.md)只记最近完成范围和下一步。
+检查点不能把未验证方案提升为事实。设备在线、进程、网络、模型版本不从旧检查点直接继承。
 
-- Kai0非RTC优化、UMI/Diffusion Policy同步与本地边缘部署：`docs/synchronization_design.md`。
-
-- 当前三模式运行、配置、接管按键、模拟测试与专家导出：`docs/hil_quickstart.md`。
+按需证据放在 `docs/evidence/`，带范围的记录放在 `docs/cache/records/`。
+所有路径相对本仓库；外部大模型/数据仅记录身份与引用，不复制到记忆目录。

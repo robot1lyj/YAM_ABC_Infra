@@ -32,6 +32,8 @@ class Keyboard:
             "1": "mode:teleop",
             "2": "mode:inference",
             "3": "mode:hil",
+            "4": "mode:collect",
+            "r": "record",
             "g": "success",
             "f": "failure",
         }

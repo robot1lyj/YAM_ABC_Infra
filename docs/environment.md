@@ -20,7 +20,7 @@ sudo apt install build-essential python3-dev git curl iproute2 can-utils
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source "$HOME/.local/bin/env"
 uv python install 3.12.14
-uv sync --locked --extra camera --extra gui
+uv sync --locked --extra camera --extra gui --extra deploy
 source .venv/bin/activate
 python -c "import i2rt, yam_abc_reproduce, cv2, pyrealsense2, av; print('imports OK')"
 ```
@@ -48,15 +48,20 @@ PyTorch 的 cpu/cu121/cu128 索引保留 explicit 及按组绑定。
 
 ## 日常操作
 
+在项目根目录运行当前四模式模拟界面：
+
 ```bash
-source .venv/bin/activate
-yam-abc-gui --host 127.0.0.1
+.venv/bin/python -m yam_abc_reproduce.hil.run --mock --web-port 8766
 ```
 
-浏览器访问 http://127.0.0.1:8042 。首次真机启动前完成 docs/workstation.md
-的型号、CAN、安装核验；当前默认 station 仍是上游 GELLO 示例。
-需要 GUI 管理总线时再执行 `sudo bash scripts/setup_can_sudoers.sh`。
-本次环境安装不自动改系统 CAN 权限、不启动电机。
+浏览器访问 http://127.0.0.1:8766 。真机前按 [工作站核验](workstation.md)填写
+[专用配置](../configs/station_hil.yaml)。真实设备构造可能在界面出现前就施力矩和校准夹爪。
+
+本机环境路径：`/home/wuyan-lyj/YAM/yam-abc-reproduce/.venv`；uv路径：
+`/home/wuyan-lyj/.local/bin/uv`。这些路径描述当前开发机，不意味着已在RK3588/Thor安装完成。
+
+旧GUI使用8042端口，属于 [保留工具](legacy_tools.md)，不作为当前HIL入口。
+需要旧GUI管理总线时再按需配置sudoers；本任务不自动更改系统CAN权限。
 
 ## 验收边界
 

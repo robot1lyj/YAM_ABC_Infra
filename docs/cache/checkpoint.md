@@ -1,22 +1,21 @@
-# 当前续作：三模式可运行第一版
+# 当前续作：四模式、双按钮、中文文档
 
-2026-09-08 用户授权按实用方案落地，允许放宽同步容差，避免钻牛角尖。
-当前入口 python -m yam_abc_reproduce.hil.run，教程 docs/hil_quickstart.md。
-已完成：常驻四臂统一执行、官方YAM leader增益/重力补偿切换、键盘/手柄/本地Web界面、
-teleop/inference/hil模式切换先HOLD、非RTC异步重规划与时间裁剪、epoch迟到响应隔离、
-D405采集时间元数据/8帧历史/接收时间配对/状态插值、独立有界连续JSONL+MP4记录、
-连续专家段导出到原canonical格式。模型调用仍是现场Thor与RK3588以太网本地边缘推理。
-现有旧GUI未替换；新三模式有独立Web界面，不能同时打开相同CAN。
-尚未实现曝光时钟校准、共享内存多进程、RTC、时间集成/块间融合、真机性能和任务成功率验收。
-用户三台D405无外部多机硬同步，当前明确使用主机接收时刻，40ms偏差警告/120ms拒绝新观测，
-500ms持续过期保持；阈值在configs/station_hil.yaml可调。SDK状态时间不是每电机CAN接收时刻。
-配置已是2官方leader+2平行夹爪follower；实际夹爪电机型号和D405序列号仍占位，真机启动前必须填写。
-不清零、不自动机械臂回零；启动构造可能校准夹爪；故障真机会话尝试保持直到明确退出，退出可能撤力矩。
-环境 .venv，uv absolute /home/wuyan-lyj/.local/bin/uv；需要camera/gui/deploy extras，无模型训练栈。
-验证：全套161 passed、2 skipped、9 subtests；新HIL相关共22项。
-4秒模拟120tick完成policy→human→resume，视频三路可解码、专家段导出成功。
-真实HTTP模拟冒烟完成三模式切换、接管、保持、成功标记、退出，63条记录、无错误。
-12秒保持模拟360tick无deadline miss。均非RK3588硬件性能结论。
-证据 docs/evidence/20260908-hil-runtime-v1.json。
-下一步填实物映射、逐对低速核验，再Thor冻结观测回放和四臂三D405联调，不盲目改已通过离线路径。
-记忆预算用户已覆盖硬停止要求；按需读取/检查点，不伪称自动压缩。
+2026-09-08 用户新增独立数据采集，并要求设计官方 Leader 的两个按钮。本轮在三模式基线1c04c83上实现：
+
+- collect 复用 Leader 遥操作，不需要模型；明确开关录制，同一设备会话多段示范。
+- 顶部按钮：HOLD时启动；HIL运行中接管/交还；采集HUMAN中开关录制。第二按钮按住持续保持，松开不自动恢复。
+- 左右按键独立上升沿、整站250ms去抖、同时触发合并；保持取消排队启动/模式指令。
+- RecordingSession 有界后台管理片段；会话目录下 episode_000001 等独立JSONL/三路MP4/manifest，最终session.json索引。
+- 采集HOLD/退出中断活动片段，aborted默认不导出；采集human不冒充HIL干预。模式切换关闭旧段。
+- 当前README、规范手册、项目决策和优化建议中文化；旧英文说明归档docs/archive。
+- scripts/check_project_memory.py只读检查路由、链接、记录与指纹；不提升candidate、不伪造上下文压缩。
+
+验收数值和代码指纹以 docs/evidence/20260908-collection-buttons-v1.json 为准；测试包含多段视频、专家导出、按钮冲突与写盘错误。
+真实本机HTTP+mock完成两段成功采集、四模式切换、HIL接管、保持和退出；输出5个episode。没有运行真实电机或Thor模型。
+
+硬件仍为2官方电动Leader、2平行夹爪Follower、3D405；夹爪电机型号与相机序列号待填。D405采用主机接收时间配对，不是曝光同步。
+下一步：现场确认按钮位置/CAN映射/方向，逐对低速验证重力补偿和夹爪；随后三路采集、Thor冻结观测契约核验、四臂HIL联调。
+剩余架构建议见 docs/optimization_review.md：完整设备关闭结果落盘、模型语义契约、分阶段耗时统计；先测量再决定多进程/编码升级，不做RTC。
+
+环境仍在 /home/wuyan-lyj/YAM/yam-abc-reproduce/.venv，uv为 /home/wuyan-lyj/.local/bin/uv，使用camera/gui/deploy extras。
+依赖锁未变；安装环境历史记录不代表设备在线。预算按用户要求仅诊断，按需读取与真实检查点续作。

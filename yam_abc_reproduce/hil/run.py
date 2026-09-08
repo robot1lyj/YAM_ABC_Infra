@@ -528,7 +528,7 @@ class Runtime:
         return self.status
 
 
-def validate_station(cfg, *, mock):
+def validate_station(cfg, *, mock, check_cameras=True):
     if mock:
         return
     if cfg.robot.num_arm_joints != 6 or {r.type for r in cfg.robot.robots} != {
@@ -546,6 +546,8 @@ def validate_station(cfg, *, mock):
             raise ValueError("set the verified parallel gripper motor type in the station YAML")
         if cfg.robot.controller_for(r).controls != r.type:
             raise ValueError("invalid leader/follower mapping")
+    if not check_cameras:
+        return
     if len(cfg.cameras) != 3 or {c.role for c in cfg.cameras} != {"top", "left", "right"}:
         raise ValueError("configure three D405 camera roles")
     serials = [c.serial for c in cfg.cameras]
@@ -584,7 +586,7 @@ def main(argv=None, *, service=None):
     if args.web_port is not None and not 1 <= args.web_port <= 65535:
         p.error("web-port must be between 1 and 65535")
     cfg = build_station_config(args.station)
-    validate_station(cfg, mock=args.mock)
+    validate_station(cfg, mock=args.mock, check_cameras=service is None)
     hil_cfg = load_yaml(args.station).get("hil", {})
     action_dt = float(hil_cfg.get("action_dt", 1 / 30))
     if not np.isfinite(action_dt) or action_dt <= 0 or not 1 <= cfg.control_hz <= 100:
@@ -644,12 +646,15 @@ def main(argv=None, *, service=None):
     units = []
     cameras = []
     try:
-        # Cameras first; no motor constructor until capture has initialized.
-        cameras = build_cameras_from_config(cfg, mock=args.mock)
-        for camera in cameras:
-            worker = CameraWorker(camera)
-            workers.append(worker)
-            worker.start()
+        if service is None:
+            # Headless sessions own their cameras; GUI connections are independent.
+            cameras = build_cameras_from_config(cfg, mock=args.mock)
+            for camera in cameras:
+                worker = CameraWorker(camera)
+                workers.append(worker)
+                worker.start()
+        else:
+            workers = list(service.camera_slots)
         if not args.mock:
             print(
                 "Opening four YAM arms: motors may energize and grippers may calibrate. Keep leader buttons released.",
@@ -715,8 +720,9 @@ def main(argv=None, *, service=None):
                     close = getattr(device, "close_hil", None)
                     if close:
                         close()
-        for worker in workers:
-            worker.stop()
+        if service is None:
+            for worker in workers:
+                worker.stop()
         for camera in cameras[len(workers) :]:
             camera.stop()
         if policy_worker:

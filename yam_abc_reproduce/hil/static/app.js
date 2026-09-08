@@ -72,6 +72,9 @@ function activeDevice() {
     state.phase !== "fault"
   );
 }
+function camerasConnected() {
+  return online && state.camera_connection === "connected";
+}
 function render() {
   const connected = activeDevice(),
     latched = !!state.stop_latched,
@@ -79,8 +82,9 @@ function render() {
     paused = state.phase === "hold",
     mode = state.mode || "collect",
     recording = !!state.recording;
-  const canRun = connected && !latched,
-    canMaintain = canRun && paused && !recording,
+  const canRun =
+      connected && !latched && camerasConnected() && !!state.selected_task,
+    canMaintain = connected && !latched && paused && !recording,
     idle = maint === "idle";
   text("environment", state.mock ? "模拟工作站" : "真实设备");
   $("environment").className = "pill" + (state.mock ? "" : " ok");
@@ -101,12 +105,25 @@ function render() {
   const transitional = ["connecting", "disconnecting", "finalizing"].includes(
     state.connection,
   );
-  $("connect").disabled = !online || transitional;
+  $("connect").disabled =
+    !online ||
+    transitional ||
+    (!state.selected_task && state.connection !== "connected");
+  renderTask(transitional || state.connection === "connected");
+  const cameraBusy = ["connecting", "disconnecting"].includes(
+    state.camera_connection,
+  );
+  $("connect-cameras").disabled = !online || cameraBusy;
+  $("connect-cameras").querySelector("span").textContent = cameraBusy
+    ? "相机处理中…"
+    : camerasConnected()
+      ? "断开相机"
+      : "连接相机";
   $("connect").querySelector("span").textContent = transitional
     ? cNames[state.connection]
     : state.connection === "connected"
-      ? "断开并保存"
-      : "连接设备";
+      ? "断开机械臂"
+      : "连接机械臂";
   document.querySelectorAll("[data-mode]").forEach((b) => {
     b.classList.toggle("active", b.dataset.mode === mode);
     b.querySelector(".mode-state").textContent =
@@ -153,9 +170,6 @@ function render() {
     !online || state.connection !== "connected" || latched;
   $("header-reset").hidden = !latched;
   $("hold").disabled = !online || state.connection !== "connected";
-  $("emergency").disabled =
-    !online || state.connection !== "connected" || latched;
-  $("reset-stop").hidden = !latched;
   $("takeover").disabled = !(
     canRun &&
     mode === "hil" &&
@@ -212,7 +226,13 @@ function render() {
   );
   $("record-badge").className = "pill" + (recording ? " recording" : "");
   text("episode-count", String(state.episode_count || 0).padStart(2, "0"));
-  text("frame-count", (state.recorded_steps || 0).toLocaleString());
+  text(
+    "frame-count",
+    (
+      state.recorded_steps ??
+      (state.episodes || []).reduce((sum, ep) => sum + ep.steps, 0)
+    ).toLocaleString(),
+  );
   text("interventions", state.intervention_id || 0);
   text(
     "disk",
@@ -239,11 +259,12 @@ function render() {
   );
   for (const el of document.querySelectorAll("[data-camera]")) {
     const cam = (state.cameras || []).find((c) => c.role === el.dataset.camera);
-    const valid = connected && cam?.healthy && state.preview_enabled !== false;
+    const valid =
+      camerasConnected() && cam?.healthy && state.preview_enabled !== false;
     el.querySelector(".led").className =
-      "led" + (connected && cam?.healthy ? " ok" : "");
+      "led" + (camerasConnected() && cam?.healthy ? " ok" : "");
     el.querySelector(".camera-meta").textContent =
-      cam && connected
+      cam && camerasConnected()
         ? `${cam.fps?.toFixed(0) || "—"} fps　 ·　帧龄 ${Math.round(cam.age_s * 1000)} ms`
         : "— fps　 ·　帧龄 —";
     if (!valid) {
@@ -252,7 +273,7 @@ function render() {
       el.querySelector(".camera-empty span").textContent =
         state.preview_enabled === false
           ? "预览已关闭，采集不受影响"
-          : connected
+          : camerasConnected()
             ? "等待新鲜画面"
             : "等待相机连接";
     }
@@ -280,8 +301,8 @@ function render() {
   const healthy = (state.cameras || []).filter((c) => c.healthy).length;
   healthRow(
     "三路相机",
-    connected ? `${healthy} / 3 在线` : "未连接",
-    connected && healthy === 3,
+    camerasConnected() ? `${healthy} / 3 在线` : "未连接",
+    camerasConnected() && healthy === 3,
   );
   healthRow(
     "Thor 模型",
@@ -302,6 +323,8 @@ function render() {
   const errors = [
     !online ? "界面连接中断。工作台心跳超时将请求暂停；请检查现场状态。" : null,
     state.connection_error,
+    state.camera_error,
+    state.task_error,
     state.error,
     state.cleanup_error,
     state.maintenance_error,
@@ -376,7 +399,7 @@ function render() {
   $("capture-home").disabled = !(canMaintain && idle);
   $("home").disabled = !(canMaintain && idle && state.home_available);
   $("gravity").disabled = !(canMaintain && idle);
-  $("gravity-exit").disabled = !(canRun && maint === "gravity");
+  $("gravity-exit").disabled = !(connected && !latched && maint === "gravity");
   text(
     "home-status",
     maint === "homing"
@@ -432,16 +455,11 @@ function switchPage(next) {
   $("workspace-page").hidden = next !== "workspace";
   $("devices-page").hidden = next !== "devices";
   text("page-name", next === "workspace" ? "采集工作台" : "设备与调试");
-  text(
-    "heading",
-    next === "workspace"
-      ? "让每一次示范，都成为进步。"
-      : "准备就绪，从每一台设备开始。",
-  );
+  text("heading", next === "workspace" ? "采集工作台" : "设备与调试");
   text(
     "subtitle",
     next === "workspace"
-      ? "连接设备，选择工作模式，开始你的下一组采集。"
+      ? "选择任务，连接设备，让每一段示范都有清晰的归属。"
       : "查看四臂状态，示教准备位，完成采集前的设备调试。",
   );
 }
@@ -470,17 +488,15 @@ document.querySelectorAll("[data-arm]").forEach(
       render();
     }),
 );
-document
-  .querySelectorAll("[data-joint]")
-  .forEach(
-    (b) =>
-      (b.onclick = () =>
-        action("/jog", {
-          arm,
-          joint: Number(b.dataset.joint),
-          delta: (Number(b.dataset.delta) * Math.PI) / 90,
-        })),
-  );
+document.querySelectorAll("[data-joint]").forEach(
+  (b) =>
+    (b.onclick = () =>
+      action("/jog", {
+        arm,
+        joint: Number(b.dataset.joint),
+        delta: (Number(b.dataset.delta) * Math.PI) / 90,
+      })),
+);
 $("gripper-open").onclick = () => action("/jog", { arm, joint: 6, delta: 0.1 });
 $("gripper-close").onclick = () =>
   action("/jog", { arm, joint: 6, delta: -0.1 });
@@ -489,10 +505,8 @@ $("preview-toggle").onclick = () =>
     "/event/" +
       (state.preview_enabled === false ? "preview_on" : "preview_off"),
   );
-$("emergency").onclick = () => action("/event/stop");
 $("header-stop").onclick = () => action("/event/stop");
-$("header-reset").onclick = () => $("reset-stop").click();
-$("reset-stop").onclick = () =>
+$("header-reset").onclick = () =>
   confirmAction(
     "解除软件暂停锁存？",
     "确认现场已排除异常。解除后保持不动，不恢复旧动作；你可以再选择开始、回准备位或重力补偿。",
@@ -525,18 +539,22 @@ $("discard").onclick = () =>
 $("connect").onclick = () => {
   if (state.connection === "connected") {
     confirmAction(
-      "断开设备并保存会话？",
+      "断开机械臂并保存会话？",
       "结束控制可能使机械臂失去支撑，请先支撑四台机械臂。结束后后台整理LeRobot数据；未结束的采集集按中断处理。",
       () => action("/disconnect", { supported: true }),
     );
   } else {
+    text(
+      "connect-task-summary",
+      "当前任务：" + (state.selected_task?.name || "请先选择任务"),
+    );
     $("real-warning").hidden = !!state.mock;
     $("connect-dialog").showModal();
   }
 };
 $("connect-form").onsubmit = async (e) => {
   e.preventDefault();
-  const payload = { ready: true, task: $("task-input").value };
+  const payload = { ready: true };
   if ($("url-input").value.trim()) payload.url = $("url-input").value.trim();
   $("connect-dialog").close();
   await action("/connect", payload);
@@ -574,7 +592,7 @@ document.addEventListener("keydown", (e) => {
 for (const img of document.querySelectorAll(".camera img")) {
   img.onload = () => {
     delete img.dataset.loading;
-    if (activeDevice() && state.preview_enabled !== false) {
+    if (camerasConnected() && state.preview_enabled !== false) {
       img.hidden = false;
       img.nextElementSibling.hidden = true;
     }
@@ -588,7 +606,7 @@ for (const img of document.querySelectorAll(".camera img")) {
 setInterval(() => {
   if (
     page !== "workspace" ||
-    !activeDevice() ||
+    !camerasConnected() ||
     state.preview_enabled === false ||
     document.hidden
   )
@@ -605,3 +623,88 @@ setInterval(poll, 400);
 setInterval(heartbeat, 1000);
 heartbeat();
 poll();
+
+function renderTask(locked) {
+  const task = state.selected_task;
+  text("task-library-count", `${(state.tasks || []).length} 个任务`);
+  text("task-badge", task ? "当前任务" : "尚未选择");
+  text("task-category", "任务 / DATASET TASK");
+  text("task-name", task?.name || "从一个采集任务开始");
+  text(
+    "task-instruction",
+    task?.instruction || "例如创建“乐高分拣”，为示范数据设置明确的任务指令。",
+  );
+  text(
+    "task-identity",
+    task
+      ? `任务 ID · ${task.id.slice(0, 8)}`
+      : "任务名称与指令会随数据一起保存",
+  );
+  text(
+    "task-session-tip",
+    locked
+      ? "任务已锁定 · 断开机械臂并完成保存后可切换"
+      : "同一任务的每次采集会话独立保存",
+  );
+  $("create-task").disabled = !online || locked;
+  $("choose-task").disabled = !online || locked || !state.tasks?.length;
+  $("step-task").classList.toggle("done", !!task);
+  $("step-devices").classList.toggle(
+    "done",
+    activeDevice() && camerasConnected(),
+  );
+  $("step-record").classList.toggle("done", !!state.recording);
+  text(
+    "workflow-tip",
+    !task
+      ? "先创建或选择任务"
+      : !camerasConnected()
+        ? "连接三路相机，检查画面"
+        : !activeDevice()
+          ? "连接机械臂，完成准备"
+          : state.recording
+            ? "正在录制 · 数据归入当前任务"
+            : "设备就绪，选择模式后开始",
+  );
+}
+$("connect-cameras").onclick = () =>
+  action(camerasConnected() ? "/cameras/disconnect" : "/cameras/connect");
+$("create-task").onclick = () => {
+  text("task-form-error", "");
+  $("task-dialog").showModal();
+};
+$("task-form").onsubmit = async (e) => {
+  e.preventDefault();
+  $("task-submit").disabled = true;
+  try {
+    await post("/tasks", {
+      name: $("new-task-name").value.trim(),
+      instruction: $("new-task-instruction").value.trim(),
+    });
+    $("task-dialog").close();
+    $("task-form").reset();
+    await poll();
+    toast("任务已创建并选中");
+  } catch (error) {
+    text("task-form-error", error.message);
+  } finally {
+    $("task-submit").disabled = false;
+  }
+};
+$("choose-task").onclick = () => {
+  $("task-options").replaceChildren();
+  for (const task of state.tasks || []) {
+    const button = document.createElement("button");
+    button.className = "task-option";
+    const title = document.createElement("strong"),
+      detail = document.createElement("span");
+    title.textContent = task.name;
+    detail.textContent = task.instruction;
+    button.append(title, detail);
+    button.onclick = async () => {
+      if (await action(`/tasks/${task.id}/select`)) $("task-picker").close();
+    };
+    $("task-options").append(button);
+  }
+  $("task-picker").showModal();
+};

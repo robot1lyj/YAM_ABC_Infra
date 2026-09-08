@@ -24,3 +24,5 @@ LeRobot v3.0由hil/lerobot_export.py在设备关闭后自动生成，运行期�
 2026-09-08操作界面改造：workbench.py生命周期+web/static双页中文工作台；打开不连接，点击连接后保持，浏览器操作四模式与录制。maintenance.py同控制线程独占示教准备位回位/重力补偿，软件暂停锁存可解除但仍保持；物理故障不能绕过。Follower夹爪进入补偿/回位的开度保留。回位无碰撞规划，真实路径待现场验证。点动仅collect保持未录制。
 预览最多5Hz，preview.py独立低优先级进程，单槽共享内存和输出队列1，关闭预览停止编码；独立3s心跳监测请求hold。界面不显示零点标定/底层速度调参。准备位data/workstation按mock/real与station哈希隔离，不提交。
 全量200通过/2跳过/9子测试，新增夹爪漂移测试后维护专项13通过。浏览器模拟采集1082帧与官方LeRobot首尾读取通过；预览开/关各15s零deadline miss、每路452帧，非真机性能保证。离线导出RGB直方图统计经过逐像素对照，减少等待。最新verified记录operator-workbench-20260908-offline，旧uv-cli已stale。下一步仍是物理设备信息填写、逐对低速/回位路径验证、RK长时录制与Thor契约核对。
+
+2026-09-08任务工作台：白色悟演智能品牌，急停邻接独立相机/机械臂连接。Tasks本机JSON任务库+UUID会话隔离；连接机械臂前必选任务，会话保存完成才允许切换；三路预览可独立运行。原始和LeRobot provenance保存任务身份，任务文本使用指令。全量203通过/2跳过，最终任务专项5通过；浏览器493帧模拟回读。规范docs/collect.md，证据docs/evidence/20260908-task-workbench.json。

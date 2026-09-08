@@ -20,6 +20,7 @@ def measure(root, enabled, duration):
             url=None,
             station="configs/station_hil.yaml",
             output=root,
+            task_root=root / ("tasks-preview-on" if enabled else "tasks-preview-off"),
             baseline=False,
             raw_only=True,
         )
@@ -34,6 +35,9 @@ def measure(root, enabled, duration):
         assert predicate(), service.status
 
     try:
+        service.create_task("性能验证", "将积木按颜色分拣")
+        service.connect_cameras()
+        wait(lambda: service.camera_state == "connected")
         service.connect()
         wait(lambda: service.runtime is not None and service.runtime.status.get("tick", 0) > 2)
         service.event("start")

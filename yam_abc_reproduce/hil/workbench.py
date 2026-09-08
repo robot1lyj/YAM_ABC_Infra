@@ -16,7 +16,9 @@ from pathlib import Path
 from shutil import disk_usage
 from urllib.parse import urlparse
 
+from .camera_slots import CameraSlot
 from .core import Mode
+from .tasks import Tasks
 
 
 class Workbench:
@@ -45,7 +47,15 @@ class Workbench:
         self._previews = {}
         self._camera_previous = {}
         self._log = deque(maxlen=40)
-        self.task = "pick and place"
+        self.tasks = Tasks(getattr(args, "task_root", "data/tasks"))
+        self.selected_task = None
+        self.camera_slots = [CameraSlot(role) for role in ("top", "left", "right")]
+        self.camera_state = "disconnected"
+        self.camera_error = None
+        self.camera_thread = None
+        self._camera_workers = []
+        self._camera_generation = 0
+        self.task = None
         self.log("工作台已就绪，设备尚未连接")
         self._monitor = threading.Thread(target=self._observe, daemon=True, name="ui-preview")
         self._monitor.start()
@@ -73,6 +83,11 @@ class Workbench:
             **health,
             **live,
             "connection": self.state,
+            "camera_connection": self.camera_state,
+            "camera_error": self.camera_error,
+            "tasks": [dict(t) for t in self.tasks.items],
+            "selected_task": None if self.selected_task is None else dict(self.selected_task),
+            "task_error": self.tasks.error,
             "mock": self.args.mock,
             "mode": live.get("mode", self.mode),
             "connection_error": self.error,
@@ -94,10 +109,116 @@ class Workbench:
         self._heartbeat = time.monotonic()
         self._operator_lost = False
 
-    def connect(self, *, ready=False, url=None, task=None):
+    def _task_editable(self):
+        if self.thread and self.thread.is_alive():
+            raise ValueError("请先断开机械臂并完成当前会话保存，再切换任务；相机可保持连接")
+
+    def create_task(self, name, instruction):
+        with self._lock:
+            self._task_editable()
+            self.selected_task = self.tasks.create(name, instruction)
+            self.log("已创建并选择任务：" + self.selected_task["name"])
+            return dict(self.selected_task)
+
+    def select_task(self, task_id):
+        with self._lock:
+            self._task_editable()
+            self.selected_task = self.tasks.get(task_id)
+            self.log("已选择任务：" + self.selected_task["name"])
+            return dict(self.selected_task)
+
+    def connect_cameras(self):
+        with self._lock:
+            if self.camera_state in ("connected", "connecting", "disconnecting"):
+                raise ValueError("相机已连接或正在切换状态")
+            self.camera_state, self.camera_error = "connecting", None
+            self.log("正在独立连接三路相机，不启动机械臂")
+            self.camera_thread = threading.Thread(
+                target=self._open_cameras, daemon=True, name="camera-owner"
+            )
+            self.camera_thread.start()
+
+    def _open_cameras(self):
+        from ..camera.worker import CameraWorker
+        from ..config import build_station_config
+        from ..runtime import build_cameras_from_config
+
+        drivers, workers = [], []
+        try:
+            cfg = build_station_config(self.args.station)
+            if len(cfg.cameras) != 3 or {c.role for c in cfg.cameras} != {"top", "left", "right"}:
+                raise ValueError("请配置top/left/right三路相机")
+            serials = [c.serial for c in cfg.cameras]
+            if not self.args.mock and (
+                any(not s or s.startswith("REPLACE") for s in serials) or len(set(serials)) != 3
+            ):
+                raise ValueError("请填写三台D405的真实且不同的序列号")
+            drivers = build_cameras_from_config(cfg, mock=self.args.mock)
+            for driver in drivers:
+                worker = CameraWorker(driver)
+                workers.append(worker)
+                worker.start()
+            if self._closing.is_set():
+                raise RuntimeError("工作台正在关闭")
+            for slot in self.camera_slots:
+                slot.worker = next(w for w in workers if w.role == slot.role)
+            self._camera_workers = workers
+            self._camera_generation += 1
+            self.camera_state = "connected"
+            self.log("三路相机已连接，可独立预览")
+        except Exception as exc:
+            self.camera_error = str(exc)
+            for device in [*workers, *drivers[len(workers) :]]:
+                try:
+                    device.stop()
+                except Exception as cleanup:
+                    self.camera_error += "; 关闭失败：" + str(cleanup)
+            self.camera_state = "fault"
+            self.log("相机连接失败：" + self.camera_error)
+
+    def disconnect_cameras(self):
+        with self._lock:
+            if self.camera_state != "connected":
+                raise ValueError("相机尚未连接或正在切换状态")
+            runtime = self.runtime
+            if self.state in ("connecting", "disconnecting") or (
+                runtime
+                and (
+                    runtime.status.get("phase") != "hold"
+                    or runtime.recorder.recording
+                    or runtime.maintenance.state != "idle"
+                )
+            ):
+                raise ValueError("请先结束录制并暂停机械臂，再断开相机")
+            if runtime:
+                runtime.event("hold")
+            self.camera_state = "disconnecting"
+            for slot in self.camera_slots:
+                slot.worker = None
+            self._previews = {}
+            self.camera_thread = threading.Thread(
+                target=self._close_cameras, daemon=True, name="camera-close"
+            )
+            self.camera_thread.start()
+
+    def _close_cameras(self):
+        errors = []
+        for worker in self._camera_workers:
+            try:
+                worker.stop()
+            except Exception as exc:
+                errors.append(str(exc))
+        self._camera_workers = []
+        self.camera_error = "; ".join(errors) or None
+        self.camera_state = "fault" if errors else "disconnected"
+        self.log("相机已断开" if not errors else "相机关闭失败：" + self.camera_error)
+
+    def connect(self, *, ready=False, url=None):
         with self._lock:
             if self.thread and self.thread.is_alive():
                 raise ValueError("设备正在连接、运行或整理数据，请等待")
+            if self.selected_task is None:
+                raise ValueError("请先创建或选择采集任务，再连接机械臂")
             if self.cleanup_error:
                 raise ValueError("上次关闭设备失败，请现场检查并重启工作台")
             if not self.args.mock and ready is not True:
@@ -109,10 +230,8 @@ class Workbench:
                 self.args.url = url or None
             if self.mode in ("hil", "inference") and not (self.args.mock or self.args.url):
                 raise ValueError("请先填写Thor模型服务地址")
-            if task is not None:
-                if not isinstance(task, str) or not task.strip() or len(task) > 300:
-                    raise ValueError("任务说明须为1–300字")
-                self.task = task.strip()
+            # Freeze task identity for the entire arm/recording session.
+            self.task = self.selected_task["instruction"]
             self.runtime = None
             self._previews = {}
             self._snapshot = {}
@@ -120,7 +239,7 @@ class Workbench:
             self.error = None
             self.state = "connecting"
             self.heartbeat()
-            self.log("正在连接相机与四台机械臂；连接后保持，等待开始")
+            self.log("正在独立连接四台机械臂；连接后保持，等待开始")
             self.thread = threading.Thread(target=self._run, daemon=True, name="workstation-owner")
             self.thread.start()
 
@@ -136,12 +255,16 @@ class Workbench:
             argv.append("--baseline")
         if self.args.raw_only:
             argv.append("--raw-only")
-        if self.args.output:
-            output = Path(self.args.output) / (
-                time.strftime("session_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6]
+        try:
+            from ..config import build_station_config
+
+            base = Path(self.args.output or build_station_config(self.args.station).save_root)
+            output = (
+                base
+                / self.selected_task["id"]
+                / (time.strftime("session_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6])
             )
             argv.extend(("--output", str(output)))
-        try:
             main(argv, service=self)
         except (Exception, SystemExit) as exc:
             self.error = str(exc) or type(exc).__name__
@@ -155,6 +278,7 @@ class Workbench:
     def attach(self, runtime, output):
         runtime.prompt = self.task
         runtime.recorder.metadata["operator_task"] = self.task
+        runtime.recorder.metadata["task"] = dict(self.selected_task)
         runtime.recorder.metadata["station"]["task_name"] = self.task
         if self._profile_path.exists():
             try:
@@ -170,13 +294,13 @@ class Workbench:
         self.state = "connected"
         if self._closing.is_set():
             runtime.event("quit")
-        self.log("设备已连接，当前保持；点击开始进入所选模式")
+        self.log("机械臂已连接，当前保持；相机就绪后可开始任务")
 
     def finalizing(self):
         self.runtime = None
         self._previews = {}
         self.state = "finalizing"
-        self.log("设备已关闭，正在整理LeRobot数据，请勿退出程序")
+        self.log("机械臂已关闭，正在整理LeRobot数据；相机连接独立保留")
 
     def event(self, event):
         if event in ("preview_on", "preview_off"):
@@ -195,6 +319,13 @@ class Workbench:
                     return
         if self.runtime is None or self.state != "connected":
             raise ValueError("请先连接设备")
+        if event in ("start", "record", "resume_policy") and not (
+            event == "record" and self.runtime.status.get("recording")
+        ):
+            if self.selected_task is None:
+                raise ValueError("请先选择任务")
+            if self.camera_state != "connected":
+                raise ValueError("请先连接三路相机；机械臂调试可在保持状态进行")
         updated = self.runtime.status.get("updated_at", 0)
         if event not in ("stop", "hold", "quit") and time.monotonic() - updated > 0.5:
             raise ValueError("控制状态尚未就绪或已过期，请先检查设备")
@@ -223,7 +354,7 @@ class Workbench:
 
     def preview(self, role):
         if (
-            self.runtime is None
+            self.camera_state != "connected"
             or not self.preview_enabled
             or time.monotonic() - self._preview_at > 1
         ):
@@ -256,21 +387,21 @@ class Workbench:
         # Bound preview load independently of the 30 Hz acquisition/control streams.
         while not self._closing.wait(0.2):
             runtime = self.runtime
-            if runtime is None:
+            if runtime is None and self.camera_state != "connected":
                 if self._encoder:
                     self._encoder.close()
                     self._encoder = None
                 continue
-            if runtime is not self._preview_runtime:
+            if self._camera_generation != self._preview_runtime:
                 if self._encoder:
                     self._encoder.close()
                     self._encoder = None
                 self._previews = {}
                 self._preview_at = 0.0
-                self._preview_runtime = runtime
+                self._preview_runtime = self._camera_generation
             now = time.monotonic()
             cameras, frames = [], {}
-            for camera in runtime.cameras:
+            for camera in self.camera_slots:
                 frame = camera.read()
                 if frame is None:
                     cameras.append({"role": camera.role, "healthy": False})
@@ -288,11 +419,11 @@ class Workbench:
                         "role": camera.role,
                         "age_s": age,
                         "fps": round(fps, 1),
-                        "healthy": age <= runtime.max_frame_age,
+                        "healthy": age <= (runtime.max_frame_age if runtime else 0.5),
                     }
                 )
                 rgb = frame.images.get("rgb")
-                if rgb is not None and age <= runtime.max_frame_age:
+                if rgb is not None and age <= (runtime.max_frame_age if runtime else 0.5):
                     frames[camera.role] = rgb
             if self.preview_enabled:
                 if self._encoder is None:
@@ -308,7 +439,7 @@ class Workbench:
             elif self._encoder:
                 self._encoder.close()
                 self._encoder = None
-            live = runtime.status
+            live = runtime.status if runtime else {}
             version = live.get("ready_version", 0)
             if version > self._saved_version and live.get("ready_pose"):
                 try:
@@ -331,7 +462,11 @@ class Workbench:
                     self.log("准备位已保存到本机；回位前需确认运动路径清空")
                 except OSError as exc:
                     self.log("准备位保存失败：" + str(exc))
-            episodes = list(getattr(runtime.recorder, "episodes", []))
+            episodes = (
+                list(getattr(runtime.recorder, "episodes", []))
+                if runtime
+                else list(self._snapshot.get("episodes", []))
+            )
             root = Path(self.output or ".")
             try:
                 free = disk_usage(root).free / 1024**3
@@ -353,6 +488,11 @@ class Workbench:
             self.runtime.event("quit")
         if self.thread:
             self.thread.join(timeout=60)
+        if self.camera_thread:
+            self.camera_thread.join(timeout=20)
+        for slot in self.camera_slots:
+            slot.worker = None
+        self._close_cameras()
         self._monitor.join(timeout=4)
         self._watcher.join(timeout=1)
         if self._encoder:

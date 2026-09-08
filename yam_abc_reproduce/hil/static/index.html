@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>YAM · 机器人工作台</title>
+    <title>悟演智能 · 数据采集工作台</title>
     <link rel="stylesheet" href="/assets/style.css" />
   </head>
   <body>
@@ -47,8 +47,11 @@
     </svg>
     <aside class="sidebar">
       <a class="brand" href="/"
-        ><span class="brand-mark">Y</span
-        ><span>YAM<span class="brand-sub">OPERATOR STUDIO</span></span></a
+        ><span class="brand-mark"
+          ><svg viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M5 8 11 25 16 14 21 25 27 8" />
+            <path d="m12 7 4 5 4-5" /></svg></span
+        ><span>悟演智能<span class="brand-sub">WUYAN ROBOTICS</span></span></a
       >
       <div class="station-tag">
         <span class="led"></span> 双臂工作站 <span class="small-label">01</span>
@@ -70,38 +73,90 @@
           <div>RK3588 <span>控制与采集</span></div>
         </div>
         <p>本地运行 · 数据保存在工作站</p>
-        <div class="build-tag">YAM / DUAL ARM <span>v0.1</span></div>
+        <div class="build-tag">双臂采集工作站 <span>v0.1</span></div>
       </div>
     </aside>
     <div class="shell">
       <header>
         <div class="breadcrumb">
-          工作站 <span>/</span> <strong id="page-name">采集工作台</strong>
+          <strong class="mobile-brand">悟演智能</strong>工作站 <span>/</span>
+          <strong id="page-name">采集工作台</strong>
         </div>
         <div class="header-right">
           <span id="environment" class="pill">读取环境</span
           ><span class="connection-label"
             ><i id="connection-dot" class="led"></i
             ><span id="connection-text">正在连接界面</span></span
-          ><button id="header-stop" class="button danger">■ 紧急暂停</button
-          ><button id="header-reset" class="button" hidden>解除锁存</button>
+          >
         </div>
       </header>
       <main>
         <section class="page-title">
           <div>
-            <div class="eyebrow">ROBOT OPERATIONS</div>
-            <h1 id="heading">让每一次示范，都成为进步。</h1>
-            <p id="subtitle">连接设备，选择工作模式，开始你的下一组采集。</p>
+            <div class="eyebrow">DATA WORKSPACE</div>
+            <h1 id="heading">采集工作台</h1>
+            <p id="subtitle">选择任务，连接设备，让每段数据都有清晰的目标。</p>
           </div>
-          <button id="connect" class="button primary">
-            <svg><use href="#i-link" /></svg><span>连接设备</span>
-          </button>
+          <div class="connection-actions">
+            <button id="connect-cameras" class="button">
+              <svg><use href="#i-camera" /></svg><span>连接相机</span>
+            </button>
+            <button id="connect" class="button">
+              <svg><use href="#i-arm" /></svg><span>连接机械臂</span>
+            </button>
+            <span class="action-divider"></span>
+            <button id="header-stop" class="button danger">
+              <span class="stop-symbol">■</span> 急停 <small>软件</small>
+            </button>
+            <button id="header-reset" class="button" hidden>解除锁存</button>
+          </div>
         </section>
         <div id="alert" class="alert" role="alert" hidden></div>
         <div id="workspace-page">
+          <section class="task-section">
+            <div class="section-heading">
+              <h2>采集任务 <span class="step-label">STEP 01</span></h2>
+              <span id="task-library-count">本机任务库</span>
+            </div>
+            <div class="task-card">
+              <div class="task-illustration" aria-hidden="true">
+                <span></span><span></span><span></span><span></span>
+              </div>
+              <div class="task-main">
+                <div class="task-kicker">
+                  <span id="task-badge" class="pill">待选择任务</span
+                  ><span id="task-category">任务驱动的数据采集</span>
+                </div>
+                <h2 id="task-name">先定义任务，再开始采集</h2>
+                <p id="task-instruction">
+                  例如：乐高分拣。为每种采集目标建立独立任务，数据会自动归档到对应任务。
+                </p>
+                <div class="task-meta">
+                  <span id="task-identity"
+                    >任务名称 · 采集目标 · 独立数据目录</span
+                  ><span id="task-session-tip">支持多次采集会话</span>
+                </div>
+              </div>
+              <div class="task-actions">
+                <button id="create-task" class="button primary">
+                  ＋ 新建任务</button
+                ><button id="choose-task" class="button">
+                  选择已有任务 <span>↗</span>
+                </button>
+              </div>
+            </div>
+            <div class="workflow-strip">
+              <span id="step-task"><i>1</i>选择任务</span><b>→</b
+              ><span id="step-devices"><i>2</i>连接设备</span><b>→</b
+              ><span id="step-record"><i>3</i>开始采集</span
+              ><span class="workflow-tip" id="workflow-tip"
+                >先创建或选择一个任务</span
+              >
+            </div>
+          </section>
+
           <div class="section-heading">
-            <h2>工作模式</h2>
+            <h2>工作模式 <span class="step-label">STEP 02</span></h2>
             <span>切换后先保持，点击开始执行</span>
           </div>
           <section class="mode-grid" aria-label="工作模式">
@@ -304,20 +359,12 @@
                   <span>控制耗时 p95</span><b id="latency">— ms</b>
                 </div>
               </section>
-              <div class="stop-panel">
-                <button id="emergency" class="emergency">
-                  <span>■</span>
-                  <div>紧急暂停<small>SOFTWARE STOP · 锁存</small></div></button
-                ><button
-                  id="reset-stop"
-                  class="button wide"
-                  style="margin-top: 10px"
-                  hidden
-                >
-                  解除暂停锁存
-                </button>
+              <div class="operator-note">
+                <svg><use href="#i-link" /></svg>
                 <p>
-                  软件暂停不能替代物理急停。<br />检查现场后解除锁存，仍保持不动。
+                  任务与数据一一对应<br /><span
+                    >录制结束后自动归档。维护与回位不会混入采集片段。</span
+                  >
                 </p>
               </div>
             </aside>
@@ -394,7 +441,7 @@
           <div id="logs"></div>
         </section>
         <footer>
-          <span>YAM OPERATOR STUDIO</span
+          <span>悟演智能 · WUYAN ROBOTICS</span
           ><span>本地控制 · 到达时间配对，非硬件曝光同步</span
           ><span id="clock"></span>
         </footer>
@@ -403,20 +450,14 @@
     <div id="toast" role="status" hidden></div>
     <dialog id="connect-dialog">
       <form id="connect-form">
-        <div class="eyebrow">CONNECT WORKSTATION</div>
-        <h2>准备连接工作站</h2>
+        <div class="eyebrow">CONNECT ROBOT</div>
+        <h2>连接机械臂</h2>
         <p>
-          连接三路相机、两台 Leader 和两台
-          Follower。连接成功后先保持，等待你的开始指令。
+          连接两台 Leader 和两台
+          Follower。相机由独立按钮管理，机械臂连接后先保持。
         </p>
+        <div id="connect-task-summary" class="connect-task-summary"></div>
         <label
-          >任务说明<input
-            id="task-input"
-            value="pick and place"
-            maxlength="300"
-            required
-            placeholder="描述当前采集任务" /></label
-        ><label
           >Thor 模型服务地址 <span>采集 / 遥操作可留空</span
           ><input id="url-input" placeholder="ws://192.168.x.x:8000"
         /></label>
@@ -430,6 +471,49 @@
           </button>
         </div>
       </form>
+    </dialog>
+    <dialog id="task-dialog">
+      <form id="task-form">
+        <div class="eyebrow">CREATE COLLECTION TASK</div>
+        <h2>创建采集任务</h2>
+        <p>先说清楚要采什么，数据才能被准确复用。</p>
+        <label
+          >任务名称 <span>用于区分数据集</span
+          ><input
+            id="new-task-name"
+            required
+            maxlength="60"
+            placeholder="例如：乐高分拣" /></label
+        ><label
+          >采集目标 <span>将作为任务指令随数据保存</span
+          ><textarea
+            id="new-task-instruction"
+            required
+            maxlength="300"
+            rows="4"
+            placeholder="例如：将桌面上的乐高积木按颜色分拣到对应料盒中。"
+          ></textarea>
+        </label>
+        <div class="task-form-note">
+          创建后自动选择该任务。每个任务的数据独立存放，任务信息随会话保存。
+        </div>
+        <div id="task-form-error" class="form-error" role="alert"></div>
+        <div class="dialog-actions">
+          <button type="button" class="button" data-close>取消</button
+          ><button id="task-submit" class="button primary" type="submit">
+            创建并选择任务
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="task-picker">
+      <div class="eyebrow">TASK LIBRARY</div>
+      <h2>选择采集任务</h2>
+      <p>继续已有任务的下一段采集。</p>
+      <div id="task-options"></div>
+      <div class="dialog-actions">
+        <button class="button" data-close>关闭</button>
+      </div>
     </dialog>
     <dialog id="confirm-dialog">
       <h2 id="confirm-title"></h2>

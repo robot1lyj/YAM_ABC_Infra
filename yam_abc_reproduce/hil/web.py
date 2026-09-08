@@ -17,7 +17,12 @@ class Connect(BaseModel):
     model_config = ConfigDict(extra="forbid")
     ready: bool = False
     url: str | None = Field(default=None, max_length=500)
-    task: str | None = Field(default=None, max_length=300)
+
+
+class TaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=60)
+    instruction: str = Field(min_length=1, max_length=300)
 
 
 class Disconnect(BaseModel):
@@ -32,7 +37,7 @@ class JogRequest(BaseModel):
 
 
 def create_app(runtime):
-    app = FastAPI(title="YAM Operator Workbench")
+    app = FastAPI(title="悟演智能采集工作台")
     app.add_middleware(
         TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "[::1]", "testserver"]
     )
@@ -75,6 +80,24 @@ def create_app(runtime):
         if hasattr(runtime, "heartbeat"):
             runtime.heartbeat()
         return {"ok": True}
+
+    @app.post("/tasks")
+    def create_task(body: TaskCreate):
+        return invoke(runtime.create_task, body.name, body.instruction)
+
+    @app.post("/tasks/{task_id}/select")
+    def select_task(task_id: str):
+        return invoke(runtime.select_task, task_id)
+
+    @app.post("/cameras/connect")
+    def connect_cameras():
+        invoke(runtime.connect_cameras)
+        return {"queued": "cameras_connect"}
+
+    @app.post("/cameras/disconnect")
+    def disconnect_cameras():
+        invoke(runtime.disconnect_cameras)
+        return {"queued": "cameras_disconnect"}
 
     @app.post("/connect")
     def connect(body: Connect):

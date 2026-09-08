@@ -1,20 +1,28 @@
 {
-  "id": "operator-workbench-20260908-offline",
+  "id": "task-workbench-20260908-offline",
   "kind": "observation",
-  "claim": "操作工作台、示教回位/软件暂停恢复/重力补偿与预览进程隔离完成离线验证：全量200通过，最终维护专项13通过；1082帧模拟采集通过官方读取器首尾采样。未进行真机验收。",
+  "claim": "白色任务工作台与独立设备生命周期完成离线验证；全量203通过，最终任务专项5通过；浏览器493帧任务数据与三路视频及LeRobot任务身份一致。未验证真机。",
   "owner": "docs/acceptance.md",
   "scope": {
     "project": "YAM",
     "platform": "linux-x86_64",
-    "runtime": "operator-workbench-v1"
+    "runtime": "task-workbench-v1"
   },
-  "status": "stale",
-  "observed_at": "2026-09-08T11:11:47.771438+00:00",
-  "recorded_at": "2026-09-08T11:11:47.771438+00:00",
+  "status": "verified",
+  "observed_at": "2026-09-08T11:41:47.991319+00:00",
+  "recorded_at": "2026-09-08T11:41:47.991319+00:00",
   "evidence": [
     {
-      "path": "docs/evidence/20260908-operator-workbench.json",
-      "sha256": "5ff2a069a9a3b3c79c886d829708f3c5690fd5f0fa8204298ceddd14dbe55e99"
+      "path": "docs/evidence/20260908-task-workbench-tests.txt",
+      "sha256": "3fed1f6abafd2b5cb49ecf46bdaeaaab0438bfcd3c6dae91ab22223d5189efdb"
+    },
+    {
+      "path": "docs/evidence/20260908-task-validation-tests.txt",
+      "sha256": "42211a1517031bdac7ac8582d0b893f0c9bb39056f8fd677c9e735562d099fb5"
+    },
+    {
+      "path": "docs/evidence/20260908-task-workbench.json",
+      "sha256": "05a47539d7385615fd2d7c4be57c01f514af8c6bed469b9ece846a7474b0d8ac"
     }
   ],
   "recheck": "on_change",
@@ -22,40 +30,43 @@
   "depends_on": {
     "configs/station_hil.yaml": "e426704b0b3fdbdd157448409999e4c94ce1990ac57bc4f2751479c83c40f778",
     "pyproject.toml": "7561c5e5a2a4cd93dd1352dad46e29843b712893eebc3d331fa24f67e5cfe2ba",
-    "scripts/benchmark_workbench_preview.py": "88eb857dd4be3e5b752dff679b46d224c07e162b011b2d43a6e84a943f090d21",
+    "scripts/benchmark_workbench_preview.py": "9e3c6a975fcca38871c253b4cb1d3652b1b5894e2ef268d96765b18bc02cded4",
     "scripts/check_project_memory.py": "3fd0e31740fd4213da76544a2af2d406db8987c237a401b7448074d672c5a388",
     "tests/test_collection_mode.py": "51e8ac2da0c17348e6985d20b2c615fa436481413f9cda7eaee17b2730a4700b",
     "tests/test_hil.py": "9ed9a158cf6fc99b296fe8730389fc515b7e2d9da749bcde3815c69937060c84",
     "tests/test_hil_runtime.py": "dde5ae4b311f887a26b20721f7a2e70f07d3f8fa3e8993ae211d2e771e4e9b60",
     "tests/test_lerobot_export.py": "c5d1e619a9ada4b3c374a289d9ded1acffb4c362f68d95385ca8f6ba720576fa",
+    "tests/test_tasks.py": "1aad9e302ac7293331b30886191bb67be3b09ec68f9ef9c7c1f81534d646cc58",
     "tests/test_workbench.py": "08798cfa92c59a01e1214bd6491ae91868c6ad010dc03c3d0b1df277e51b553a",
     "tests/test_workstation_cli.py": "0929b6c8f85b432df5e96c07ca7252e3b3149531d8b3c59d51c1670827e04a35",
     "uv.lock": "259f9dda29e0b95e4e5c12dc2ed74bf99270583d954641151dc412e70a17ae08",
     "yam_abc_reproduce/hil/__init__.py": "5e7eb2ea1bd244fa6a392c27d654b3669799bf00ed654233989e62a9e31e9e66",
     "yam_abc_reproduce/hil/buttons.py": "44cf6706721c7007bf2dc019846518df954770580b868732e078df22708d666e",
+    "yam_abc_reproduce/hil/camera_slots.py": "f1cc9cc05d5c48bdb2a20cca8bd3846864ce069f639a75a2c5439f215c775ad2",
     "yam_abc_reproduce/hil/core.py": "e8b623458b5fc997c2abe859beeaf8e5e84ef87c5b317ca1be1a58dc90930bac",
     "yam_abc_reproduce/hil/export.py": "3e189a6d36564aeea13fa587b1379e39b7e2d9362d4bdf7ede92fd88876acb63",
     "yam_abc_reproduce/hil/jog.py": "62f1cb6a781aa1271f64c87726d978c91fe51c48ba719c6bde4f19e7497c3d87",
     "yam_abc_reproduce/hil/keyboard.py": "9c78cd29640eccfbd48d5bf5ad52763bb640d30c7815c314165a3896c53f91b5",
-    "yam_abc_reproduce/hil/lerobot_export.py": "6dd70094fc7d51d7ab066414116226775f07a194aa904a30c5b83e11a684e531",
+    "yam_abc_reproduce/hil/lerobot_export.py": "942c69f24b1a72ee456a74ab069cbe0c348472223fa290efbaf25dbe6ca84377",
     "yam_abc_reproduce/hil/maintenance.py": "b7e9061f0861043217e8131a382a6cb067f260fc79d7d2255e9972ab455ad4ca",
     "yam_abc_reproduce/hil/metrics.py": "a8f5a113441441f4a24a0596db77fc82f3e17e03dba4c17c89405e4fa8197600",
     "yam_abc_reproduce/hil/observation.py": "b1cc8201a2cedddfcdc59cedc1fb7976b45cdb06e794feea75f5db17a26ed537",
     "yam_abc_reproduce/hil/policy.py": "089b7c79ec18779a5228e60bf9d7301f4638da7d2d24119116d9a38b22017b1c",
     "yam_abc_reproduce/hil/preview.py": "8cd4bf68fd86b12fc782bc2328e9003d62c9b49c6877ba4c65d4b3ba5b41f228",
     "yam_abc_reproduce/hil/recording.py": "d4ba2b209e206f61e34d15e5e5c35cec9e4c31defc63e0a9391f65b52d11620f",
-    "yam_abc_reproduce/hil/run.py": "bc4ad5ac89613249c29ad21756de6054ffa6b72484d3d0d43e9f06a095d063ac",
+    "yam_abc_reproduce/hil/run.py": "d5580385b62b1fae69f6372fff0b677af24c1a1202d2b6d4758fef78a991e879",
     "yam_abc_reproduce/hil/session.py": "ae23b4555f2fb9114bf899a9a0834c4521aa070e3ea3274f48e63db306e3de81",
     "yam_abc_reproduce/hil/snapshots.py": "e5f4a8f22b94e6e7ce13acc6b18afafbd5abd3b9aa7b5c5d6bb6e36bf9ac7e36",
-    "yam_abc_reproduce/hil/static/app.js": "e461c3be6ad034ea48b9e70137f7933a2381ca421a5f260c10a42762e88c47c6",
-    "yam_abc_reproduce/hil/static/index.html": "4e47562cc91226975e007e144b236c7f93f4c66ebc999666a14db58d9aff07b6",
-    "yam_abc_reproduce/hil/static/style.css": "cd4766b7c7ba36d2bd739db49795941681c1520858d0aaaa737dcb5d13cc5902",
+    "yam_abc_reproduce/hil/static/app.js": "ae7b56aaa8337f205f82d43e20d582d0a87e45e1ba5e2e8305ff5dd487904a75",
+    "yam_abc_reproduce/hil/static/index.html": "ceb515a796715faf6d09422d283417cf4ac30e6a4c982d36a8893a1ac08453b5",
+    "yam_abc_reproduce/hil/static/style.css": "dc0ccddcd34cc2a81b34b962a00b79ad789e538253fdf1e025c1a2b1ea68a8c1",
     "yam_abc_reproduce/hil/station.py": "26da496568f6afb9b58e6db54469ea306091b833d204095c40aa453d0051387b",
-    "yam_abc_reproduce/hil/web.py": "a41905b6c1bf901b76b2030b5d383cb38d8c348453c7abdd3824e7df9dbb8791",
-    "yam_abc_reproduce/hil/workbench.py": "2178649928cb4aca4f9ba62245137c9a2eca99f6cf7fa86dc7f91ef2ac62a1bd",
+    "yam_abc_reproduce/hil/tasks.py": "bfc5d31985dea4d2a3c7e708c9a111bf1cb2dd8ed741f4f02b879bf251ac4c4a",
+    "yam_abc_reproduce/hil/web.py": "86d03b8a1a57fa8f8ae03b7678093e933382f81c81242106f8d2f725640e7214",
+    "yam_abc_reproduce/hil/workbench.py": "5aad2c1d641b88ec9d7f0ec7acfbbd526265595a6467062068deba20e480e2e9",
     "yam_abc_reproduce/robot/yam_adapter.py": "5b082d6fc0bba8a31c48fa3ea4fed65a6f24813d32ee008e31048cfd551a6113"
   },
   "supersedes": [
-    "uv-cli-20260908-offline"
+    "operator-workbench-20260908-offline"
   ]
 }

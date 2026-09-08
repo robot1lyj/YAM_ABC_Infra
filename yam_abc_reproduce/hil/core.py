@@ -1,6 +1,6 @@
 """Deterministic, hardware-free action arbitration for the first HIL version.
 
-No CAN, network, video IO or inference runs here. The future real-time owner calls
+No CAN, network, video IO or inference runs here. The runtime owner calls
 step once per tick and executes its decision. All angles must already be in the
 agreed hardware units. This module does not establish real-device safety.
 """
@@ -33,6 +33,7 @@ class Request:
     request_id: int
     observation_id: int
     created_at: float  # controller monotonic seconds, never Thor wall time
+    observed_at: float | None = None
 
 
 @dataclass
@@ -47,6 +48,8 @@ class Decision:
     policy_valid: bool
     leader_manual: bool
     gripper_owned: tuple[bool, bool]
+    request: Request | None = None
+    action_index: int | None = None
 
 
 def vector(value) -> np.ndarray:
@@ -59,7 +62,7 @@ def vector(value) -> np.ndarray:
 
 
 class Arbiter:
-    """Whole-station handover, ordinary chunk execution, no RTC/prefetch.
+    """Whole-station handover with baseline or timestamped asynchronous chunks; no RTC.
 
     Startup is HOLD. start() and toggle() are explicit local events. Every
     transition invalidates pending requests/chunks. A network worker must use
@@ -78,6 +81,10 @@ class Arbiter:
         max_action_age: float = 1.0,
         handover_error: float = 0.15,
         pickup_tolerance: float = 0.05,
+        streaming: bool = False,
+        action_dt: float = 1 / 30,
+        replan_period: float = 0.2,
+        tick_timeout: float = 0.1,
     ):
         values = (
             max_joint_speed,
@@ -86,6 +93,9 @@ class Arbiter:
             max_action_age,
             handover_error,
             pickup_tolerance,
+            action_dt,
+            replan_period,
+            tick_timeout,
         )
         if (
             not isinstance(execute_steps, int)
@@ -93,6 +103,12 @@ class Arbiter:
             or not all(np.isfinite(v) and v > 0 for v in values)
         ):
             raise ValueError("invalid limits")
+        self.streaming = streaming
+        self.action_dt = action_dt
+        self.replan_period = replan_period
+        self.tick_timeout = tick_timeout
+        self._last_request_at = -float("inf")
+        self._active_request = None
         self.mode = Mode(mode)
         self.phase = Phase.HOLD
         self.execute_steps = execute_steps
@@ -114,6 +130,8 @@ class Arbiter:
         self.fault_reason: str | None = None
 
     def _transition(self, phase: Phase, state: np.ndarray):
+        self._active_request = None
+        self._last_request_at = -float("inf")
         self.epoch += 1
         self.pending = None
         self._chunk = None
@@ -147,19 +165,36 @@ class Arbiter:
         else:
             self._human(state, leader)
 
+    def hold(self, state):
+        if self.phase != Phase.FAULT:
+            self._transition(Phase.HOLD, state)
+
+    def change_mode(self, mode, state):
+        if self.phase == Phase.FAULT:
+            raise RuntimeError("rebuild session after fault")
+        self.mode = Mode(mode)
+        self._transition(Phase.HOLD, state)
+
     def fail(self, state, reason: str):
         self.fault_reason = reason
         self._transition(Phase.FAULT, state)
 
-    def request(self, observation_id: int, now: float) -> Request | None:
+    def request(
+        self, observation_id: int, now: float, observed_at: float | None = None
+    ) -> Request | None:
         if self.phase not in (Phase.POLICY, Phase.RESUME) or self.pending is not None:
             return None
-        if self._chunk is not None and self._index < len(self._chunk):
+        if self.streaming:
+            if now - self._last_request_at < self.replan_period:
+                return None
+        elif self._chunk is not None and self._index < len(self._chunk):
             return None
         if not np.isfinite(now):
             raise ValueError("finite monotonic time required")
         self._serial += 1
-        self.pending = Request(self.epoch, self._serial, observation_id, now)
+        if observed_at is not None and (not np.isfinite(observed_at) or observed_at > now):
+            raise ValueError("invalid observation time")
+        self.pending = Request(self.epoch, self._serial, observation_id, now, observed_at)
         return self.pending
 
     def accept(self, token: Request, actions, now: float) -> bool:
@@ -174,8 +209,13 @@ class Arbiter:
             raise ValueError("policy response must be (50,14)")
         for row in rows:
             vector(row)
-        self._chunk = rows[: self.execute_steps].copy()
-        self._origin_time = token.created_at
+        origin = token.observed_at if token.observed_at is not None else token.created_at
+        if self.streaming and now - origin >= min(self.max_action_age, len(rows) * self.action_dt):
+            self._transition(Phase.HOLD, self._hold)
+            return False
+        self._active_request = token
+        self._chunk = rows.copy() if self.streaming else rows[: self.execute_steps].copy()
+        self._origin_time = origin
         self._index = 0
         self.pending = None
         return True
@@ -195,13 +235,14 @@ class Arbiter:
             raise ValueError("dt must be finite and positive")
         if self._hold is None:
             self._hold = q.copy()
-        if dt > 0.1:
-            self.fail(q, "control tick exceeded 100 ms")
+        if dt > self.tick_timeout:
+            self.fail(q, "control tick exceeded configured timeout")
         if self.pending and now - self.pending.created_at > self.max_request_age:
             self._transition(Phase.HOLD, q)
         if not observation_fresh and self.phase in (Phase.RESUME, Phase.POLICY):
             self._transition(Phase.HOLD, q)
         policy = None
+        action_index = None
         source = "hold"
         selected = self._hold.copy()
         if self.phase == Phase.HUMAN:
@@ -220,10 +261,16 @@ class Arbiter:
                     selected[dim] = target
             self._previous_grip = vector(leader)[[6, 13]]
         elif self.phase in (Phase.RESUME, Phase.POLICY) and self._chunk is not None:
-            if now - self._origin_time > self.max_action_age:
+            if self.streaming:
+                self._index = max(0, int((now - self._origin_time) / self.action_dt))
+            if self.streaming and self._index >= len(self._chunk):
+                self._transition(Phase.HOLD, q)
+                selected = q.copy()
+            elif now - self._origin_time > self.max_action_age:
                 self._transition(Phase.HOLD, q)
                 selected = q.copy()
             elif self._index < len(self._chunk) and (self.phase == Phase.POLICY or leader_ready):
+                action_index = self._index
                 policy = self._chunk[self._index].copy()
                 selected = policy.copy()
                 self._index += 1
@@ -245,4 +292,6 @@ class Arbiter:
             policy is not None,
             self.phase in (Phase.HUMAN, Phase.HOLD, Phase.FAULT),
             tuple(self._pickup),
+            self._active_request if policy is not None else None,
+            action_index,
         )

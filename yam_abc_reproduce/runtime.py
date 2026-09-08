@@ -146,7 +146,9 @@ def build_arm_units(
         except Exception as exc:
             for d in reversed(opened):
                 try:
-                    d.stop()
+                    close = getattr(d, "close_hil", d.stop if hasattr(d, "stop") else None)
+                    if close:
+                        close()
                 except Exception:
                     pass
             devices = f"follower={r.type}->{robot_channel_for(r)}"

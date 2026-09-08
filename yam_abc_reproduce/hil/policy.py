@@ -1,4 +1,4 @@
-"""Bounded ordinary policy RPC. No RTC, action-prefix, blending or prefetch."""
+"""Ordinary policy RPC for baseline or asynchronous replanning. No RTC protocol."""
 
 from __future__ import annotations
 

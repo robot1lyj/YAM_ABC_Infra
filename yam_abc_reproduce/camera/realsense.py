@@ -37,9 +37,7 @@ class RealSense:
             cfg.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
         profile = self._pipe.start(cfg)
         self._depth_scale = (
-            profile.get_device().first_depth_sensor().get_depth_scale()
-            if enable_depth
-            else None
+            profile.get_device().first_depth_sensor().get_depth_scale() if enable_depth else None
         )
 
     def image_keys(self) -> list[str]:
@@ -48,7 +46,7 @@ class RealSense:
     def read(self) -> CameraFrame:
         frames = self._pipe.wait_for_frames()
         color = frames.get_color_frame()
-        rgb = np.asanyarray(color.get_data())
+        rgb = np.asanyarray(color.get_data()).copy()
         depth = None
         if self._enable_depth:
             d = frames.get_depth_frame()
@@ -59,6 +57,13 @@ class RealSense:
             timestamp_ms=time.time() * 1000.0,
             depth=depth,
             depth_scale=self._depth_scale,
+            meta={
+                "device_timestamp_ms": color.get_timestamp(),
+                "timestamp_domain": str(color.get_frame_timestamp_domain()),
+                "device_frame_number": color.get_frame_number(),
+                "host_received_at": time.monotonic(),
+                "color_space": "RGB",
+            },
         )
 
     def stop(self) -> None:

@@ -1,0 +1,37 @@
+# Main YAM station: two official motorized leaders, two parallel-gripper followers.
+# Replace motor types and serials with the physical labels before hardware use.
+# Runs unchanged with --mock; no GELLO zeroing or automatic arm homing.
+robot:
+  type: yam
+  arm_type: yam
+  num_arm_joints: 6
+  leader_gripper_type: yam_teaching_handle
+  bilateral_kp: 0.0
+  robots:
+    - {type: yam_left, gripper: REPLACE_WITH_LINEAR_MOTOR_TYPE, channel: can_left}
+    - {type: yam_right, gripper: REPLACE_WITH_LINEAR_MOTOR_TYPE, channel: can_right}
+  controllers:
+    - {type: yam_lead_left, controls: yam_left, channel: can_lead_l}
+    - {type: yam_lead_right, controls: yam_right, channel: can_lead_r}
+cameras:
+  - {name: top, role: top, type: realsense, serial: REPLACE_TOP_D405, width: 640, height: 480, fps: 30}
+  - {name: left, role: left, type: realsense, serial: REPLACE_LEFT_D405, width: 640, height: 480, fps: 30}
+  - {name: right, role: right, type: realsense, serial: REPLACE_RIGHT_D405, width: 640, height: 480, fps: 30}
+control_hz: 30.0
+save_root: data/episodes
+task_name: pick and place
+hil:
+  # Model action sample interval; align with condapi training before hardware rollout.
+  action_dt: 0.03333333333333333
+  max_frame_age: 0.5
+  max_frame_skew: 0.12
+  warn_frame_skew: 0.04
+  max_state_age: 0.25
+  leader_gain: 0.2
+  leader_speed: 0.5
+  handover_error: 0.2
+  mirror_error: 0.5
+  replan_period: 0.2
+  request_timeout: 1.5
+  action_timeout: 1.5
+  tick_timeout: 0.5

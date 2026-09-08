@@ -58,6 +58,18 @@ def _build_yam(
     )
 
 
+def _feedback_age(robot) -> float:
+    # Pinned i2rt timestamps SDK state updates, not individual CAN receipt times.
+    if not robot._server_thread.is_alive():
+        raise RuntimeError("i2rt control thread stopped")
+    with robot._state_lock:
+        stamp = float(robot._joint_state.timestamp)
+    age = time.time() - stamp
+    if not np.isfinite(age) or age < -0.05:
+        raise RuntimeError("invalid motor feedback clock")
+    return max(0.0, age)
+
+
 class YamRobot(RobotInterface):
     """Follower YAM arm wrapped from i2rt's ``get_yam_robot``."""
 
@@ -120,6 +132,17 @@ class YamRobot(RobotInterface):
         except Exception:
             pass
 
+    def feedback_age(self) -> float:
+        return _feedback_age(self._robot)
+
+    def joint_limits(self) -> np.ndarray:
+        limits = np.asarray(self._robot.get_robot_info()["joint_limits"], dtype=float)
+        return limits[: self._n].copy()
+
+    def close_hil(self):
+        """Explicit session teardown; removes active motor control. Support arms first."""
+        self._robot.close()
+
     def power_off(self) -> dict:
         """Send i2rt's motor-off frame to every follower joint and gripper.
 
@@ -147,7 +170,7 @@ class YamRobot(RobotInterface):
 
 
 class YamLeaderArm:
-    """Passive YAM lead arm read through i2rt.
+    """Motorized official YAM lead arm read through i2rt.
 
     Backdrivability: with ``bilateral_kp == 0`` the PD gains are zeroed so the arm
     floats on i2rt's gravity compensation (exactly as i2rt's bimanual_lead_follower
@@ -168,6 +191,10 @@ class YamLeaderArm:
         self._n = num_arm_joints
         # Remember the arm's native kp so bilateral scaling is relative to it.
         self._native_kp = np.asarray(getattr(self._robot, "_kp", np.zeros(self._n)), dtype=float)
+        self._native_kd = np.asarray(
+            getattr(self._robot, "_kd", np.zeros(self._n)), dtype=float
+        ).copy()
+        self._hil_manual = None
         kp = self._native_kp * bilateral_kp if bilateral_kp > 0 else np.zeros(self._n)
         self._robot.update_kp_kd(kp=kp, kd=np.zeros(self._n))
 
@@ -183,10 +210,34 @@ class YamLeaderArm:
         # some idle low). Learn the idle level from the first read (assumes no
         # button held during startup) and report "pressed" as deviation from it.
         raw = [bool(b) for b in enc.io_inputs]
-        if not hasattr(self, "_btn_idle") or self._btn_idle is None or len(self._btn_idle) != len(raw):
+        if (
+            not hasattr(self, "_btn_idle")
+            or self._btn_idle is None
+            or len(self._btn_idle) != len(raw)
+        ):
             self._btn_idle = raw
         buttons = [r != i for r, i in zip(raw, self._btn_idle)]
         return arm, gripper, buttons
+
+    def feedback_age(self) -> float:
+        return _feedback_age(self._robot)
+
+    def set_manual_control(self, manual: bool, gain_scale: float = 0.2):
+        if self._hil_manual == manual:
+            return
+        if not 0 < gain_scale <= 1:
+            raise ValueError("leader gain scale must be in (0,1]")
+        if manual:
+            self._robot.update_kp_kd(kp=np.zeros(self._n), kd=np.zeros(self._n))
+            self._robot.enter_gravity_comp_idle()
+        else:
+            current = self._robot.get_joint_pos().copy()
+            self._robot.update_kp_kd(kp=self._native_kp * gain_scale, kd=self._native_kd.copy())
+            self._robot.command_joint_pos(current)
+        self._hil_manual = manual
+
+    def close_hil(self):
+        self._robot.close()
 
     def command_arm(self, arm_joints: np.ndarray) -> None:
         """Command the leader arm joints (bilateral force feedback only)."""
@@ -239,6 +290,19 @@ class YamTeleop(TeleopAgent):
     def read_inputs(self) -> tuple[list[bool], float] | None:
         _, gripper, buttons = self._read_leader()
         return buttons, gripper
+
+    def hil_read(self):
+        arm, grip, buttons = self._read_leader()
+        return np.concatenate([arm, [grip]]), buttons, self._leader.feedback_age()
+
+    def hil_leader_command(self, joints, *, manual, gain_scale=0.2):
+        leader = self._require_leader()
+        leader.set_manual_control(manual, gain_scale)
+        if not manual:
+            leader.command_arm(joints)
+
+    def close_hil(self):
+        self._require_leader().close_hil()
 
     def leader_raw(self) -> tuple[np.ndarray, np.ndarray] | None:
         """``(raw, cal)`` leader joint angles in radians for the live readout, or None for

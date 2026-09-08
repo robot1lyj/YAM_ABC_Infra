@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
+from collections import deque
 from collections.abc import Callable
 
 from .interface import CameraDriver, CameraFrame, CameraMode
@@ -28,6 +30,8 @@ class CameraWorker:
         self.name: str = driver.name
         self.role: str = driver.role
         self.mode: CameraMode = driver.mode
+        self._history = deque(maxlen=8)
+        self._sequence = 0
         self._latest: CameraFrame | None = None
         self._lock = threading.Lock()
         self._first = threading.Event()
@@ -56,17 +60,29 @@ class CameraWorker:
             except Exception:
                 # Keep the last good frame; a transient read error shouldn't kill
                 # capture. A camera that never produces trips the warmup timeout.
+                time.sleep(0.01)
                 continue
+            self._sequence += 1
+            frame.meta.setdefault("host_received_at", time.monotonic())
+            frame.meta["sequence"] = self._sequence
             with self._lock:
                 self._latest = frame
+                self._history.append(frame)
             if self._on_frame is not None:
                 self._on_frame(self.name, frame)  # feed preview at camera fps
             self._first.set()
+            # Synthetic drivers do not block on exposure.
+            if self._driver.__class__.__name__ == "MockCamera":
+                time.sleep(1 / 30)
 
     def read(self) -> CameraFrame | None:
         """Latest captured frame (never None once started + warmed up)."""
         with self._lock:
             return self._latest
+
+    def history(self) -> list[CameraFrame]:
+        with self._lock:
+            return list(self._history)
 
     def stop(self, join_timeout: float = 6.0) -> None:
         # Join long enough for an in-flight blocking read to return (RealSense
@@ -79,7 +95,8 @@ class CameraWorker:
             if self._thread is not None and self._thread.is_alive():
                 logging.warning(
                     "camera %r reader still running after %.0fs; skipping driver.stop()",
-                    self.name, join_timeout,
+                    self.name,
+                    join_timeout,
                 )
                 self._thread = None
                 return

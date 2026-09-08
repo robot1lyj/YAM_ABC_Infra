@@ -1,22 +1,22 @@
-# 当前续作：第一版控制核心与完整改造方案
+# 当前续作：三模式可运行第一版
 
-2026-09-08 用户授权开始实施，三模式：teleop/inference/hil；先不做RTC。
-第一版使用整套双臂按键接管；Evo默认i键，非握持感应，无单独四臂停住等待阶段。
-实现 hil/core.py、session.py、policy.py、snapshots.py 和 scripts/probe_thor_policy.py。
-尚未接入四臂驱动、GUI、异步录制和完整DAgger导出；绝不能说真机HIL已可运行。
-Kai0用户已clone：/home/wuyan-lyj/kai0，HEAD 9d93078c757840f50e75248c5c5a94ab7b41e13a。
-已审其ARX sync脚本和Agilex关键路径，采用普通块调度，协议依condapi而非ARX。
-Evo源码 /tmp/yam-evo-rl-reference，固定6f2db449a21e1bac750b996f2e27cac6739aa63f。
-condapi接口规范在docs/condapi_interface.md，来源哈希在docs/evidence；未改参考仓库。
-uv环境 .venv（Python3.12.14），增加安装deploy extra；使用绝对路径 /home/wuyan-lyj/.local/bin/uv。
-验证：全套149 passed/2 skipped/9 subtests；新HIL测试10项包含本地WebSocket往返。
-记忆使用mlops-memory，用户已覆盖严格字节停机要求；按需读取、检查点续作。
-未启动任何真机、未连接Thor；下一步依docs/dagger_architecture.md B/C接入并离线验收，再现场D。
-
-最新用户补充：Thor/RK3588是现场本地边缘推理；要求审Kai0优化与成熟同步方案。
-已审Kai0 temporal_smooth/ensembling源码，确认非RTC异步/裁剪/线性融合路径；ARX采集并未时间戳配对。
-已联网核验Diffusion Policy/UMI、ros2_control、message_filters、RealSense、linuxptp原始资料。
-最新方案docs/synchronization_design.md覆盖旧“无预取作为最终方案”表述；现有无预取代码只是基准。
-相机型号与硬件同步线已异步询问，尚未获答；不能按仓库默认序列号推断现场设备。
-
-用户已答：三路均D405。官方2025年8月数据手册7.13明确无多相机硬件同步；已更新事实与方案，不再等待型号/同步线答案。
+2026-09-08 用户授权按实用方案落地，允许放宽同步容差，避免钻牛角尖。
+当前入口 python -m yam_abc_reproduce.hil.run，教程 docs/hil_quickstart.md。
+已完成：常驻四臂统一执行、官方YAM leader增益/重力补偿切换、键盘/手柄/本地Web界面、
+teleop/inference/hil模式切换先HOLD、非RTC异步重规划与时间裁剪、epoch迟到响应隔离、
+D405采集时间元数据/8帧历史/接收时间配对/状态插值、独立有界连续JSONL+MP4记录、
+连续专家段导出到原canonical格式。模型调用仍是现场Thor与RK3588以太网本地边缘推理。
+现有旧GUI未替换；新三模式有独立Web界面，不能同时打开相同CAN。
+尚未实现曝光时钟校准、共享内存多进程、RTC、时间集成/块间融合、真机性能和任务成功率验收。
+用户三台D405无外部多机硬同步，当前明确使用主机接收时刻，40ms偏差警告/120ms拒绝新观测，
+500ms持续过期保持；阈值在configs/station_hil.yaml可调。SDK状态时间不是每电机CAN接收时刻。
+配置已是2官方leader+2平行夹爪follower；实际夹爪电机型号和D405序列号仍占位，真机启动前必须填写。
+不清零、不自动机械臂回零；启动构造可能校准夹爪；故障真机会话尝试保持直到明确退出，退出可能撤力矩。
+环境 .venv，uv absolute /home/wuyan-lyj/.local/bin/uv；需要camera/gui/deploy extras，无模型训练栈。
+验证：全套161 passed、2 skipped、9 subtests；新HIL相关共22项。
+4秒模拟120tick完成policy→human→resume，视频三路可解码、专家段导出成功。
+真实HTTP模拟冒烟完成三模式切换、接管、保持、成功标记、退出，63条记录、无错误。
+12秒保持模拟360tick无deadline miss。均非RK3588硬件性能结论。
+证据 docs/evidence/20260908-hil-runtime-v1.json。
+下一步填实物映射、逐对低速核验，再Thor冻结观测回放和四臂三D405联调，不盲目改已通过离线路径。
+记忆预算用户已覆盖硬停止要求；按需读取/检查点，不伪称自动压缩。

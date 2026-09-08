@@ -16,3 +16,5 @@
 规范文档优先于摘要，当前版本证据优先于历史经验。
 
 - Kai0非RTC优化、UMI/Diffusion Policy同步与本地边缘部署：`docs/synchronization_design.md`。
+
+- 当前三模式运行、配置、接管按键、模拟测试与专家导出：`docs/hil_quickstart.md`。

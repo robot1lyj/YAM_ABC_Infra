@@ -1,9 +1,18 @@
-# YAM-ABC-Reproduce
+# YAM 双臂工作站 · 遥操作 / 推理 / DAgger
 
 本地工作站入口：[环境安装与国内镜像](docs/environment.md) ·
 [官方 YAM leader 硬件配置](docs/workstation.md) ·
 [项目记忆](docs/cache/context_index.md)。本工作站使用两台官方电动 leader；
 下方上游示例与默认 station 的被动 GELLO 配置不能直接用于该硬件。
+
+当前主入口：[三模式第一版使用教程](docs/hil_quickstart.md)。
+本地边缘部署为 Thor 模型推理 + RK3588 四臂控制/三路 D405采集，经现场网线连接。
+先体验：`.venv/bin/python -m yam_abc_reproduce.hil.run --mock --web-port 8766`。
+新工作站使用 `configs/station_hil.yaml`；默认非RTC异步推理、整套双臂按键接管与持续记录。
+
+## 上游工具与历史参考
+
+以下为保留的上游工具说明，不代表本工作站已完成真机/性能验证。
 
 A lightweight **teleop → collect → train → deploy** pipeline for the
 [YAM](https://github.com/i2rt-robotics/i2rt) (i2rt) bimanual robot arm — the whole loop from

@@ -1,0 +1,64 @@
+{
+  "date": "2026-09-08",
+  "base_commit": "1f3ceb4",
+  "scope": "offline mock and localhost HTTP; no physical motors/cameras or Thor access",
+  "pytest": {
+    "passed": 161,
+    "skipped": 2,
+    "subtests_passed": 9,
+    "warnings": "existing Starlette/httpx deprecation"
+  },
+  "checks": [
+    "ruff selected modified code passed",
+    "git diff --check passed",
+    "expert export and decoded video lengths passed",
+    "final HIL suite: 22 passed after timeout configuration wiring"
+  ],
+  "smoke": {
+    "demo_seconds": 4,
+    "demo_ticks": 120,
+    "phases": [
+      "policy",
+      "human",
+      "resume"
+    ],
+    "hold_seconds": 12,
+    "hold_ticks": 360,
+    "hold_deadline_misses": 0,
+    "http_modes": [
+      "teleop",
+      "inference",
+      "hil"
+    ],
+    "http_ticks": 63,
+    "http_outcome": "success",
+    "http_error": null
+  },
+  "code_sha256": {
+    "yam_abc_reproduce/hil/recording.py": "5b86381ba0dac40d538ecb59469ff025703e62f9c87e18c8c69b47c8b84271a2",
+    "yam_abc_reproduce/hil/run.py": "bdac0ffdf1d3b17a91e72e0ba8de1164875c6c58df6ebf7704f1451b7a0ea66f",
+    "yam_abc_reproduce/hil/core.py": "366b9ba33e9db204b330d13cfb4adabc74f7e0231ca47863b7f73bcb974882d1",
+    "yam_abc_reproduce/hil/export.py": "1663ee17fdc4ea5b33b13a0b1229c0debbacf1336c1ab04a531b60a2b05e3ca8",
+    "yam_abc_reproduce/hil/policy.py": "089b7c79ec18779a5228e60bf9d7301f4638da7d2d24119116d9a38b22017b1c",
+    "yam_abc_reproduce/hil/keyboard.py": "4e841d6861db067fbebdb12cb95f39d6b055b99b70ab5012a5904d1de1ff85f9",
+    "yam_abc_reproduce/hil/observation.py": "b1cc8201a2cedddfcdc59cedc1fb7976b45cdb06e794feea75f5db17a26ed537",
+    "yam_abc_reproduce/hil/web.py": "9a4085d691e9d32d3d7fa18c7dbc09427980050c9db49c413e0a85f3ccaf83a9",
+    "yam_abc_reproduce/hil/station.py": "b8fe2bd1df99173b2e679bc6bc9de1d9853d9fb957cc893647b0292c9caba852",
+    "yam_abc_reproduce/hil/__init__.py": "5e7eb2ea1bd244fa6a392c27d654b3669799bf00ed654233989e62a9e31e9e66",
+    "yam_abc_reproduce/hil/snapshots.py": "e5f4a8f22b94e6e7ce13acc6b18afafbd5abd3b9aa7b5c5d6bb6e36bf9ac7e36",
+    "yam_abc_reproduce/hil/session.py": "0ac951d7c902a4907fe5d65d43dda9bd04ce84406dda5b64e65aaeae54124e4f",
+    "yam_abc_reproduce/robot/yam_adapter.py": "6dc916d160ef7e747eb31bae580a1ceb0079117a1de2a4aa1480748792118e51",
+    "yam_abc_reproduce/camera/worker.py": "0e03462015b8067d5e0f0d4bab34abaca63be445f1392c4fb4626836f9869363",
+    "yam_abc_reproduce/camera/realsense.py": "a8cc1d921698a68104e3862bafd3c5c172a09d0f1f5eb0d31575c3492d05f5d5",
+    "yam_abc_reproduce/runtime.py": "91aac73f88b8de9b048debee6e77496a683df573f3d698ff3ca6ca4a8379a9c0",
+    "configs/station_hil.yaml": "e426704b0b3fdbdd157448409999e4c94ce1990ac57bc4f2751479c83c40f778",
+    "tests/test_hil_runtime.py": "094f3bcfd70516cfd7e1958fd4aceaad90bc164b638d0f92e7258b35892d1fa7"
+  },
+  "http_artifacts": {
+    "/tmp/yam-hil-web-gx2fpfme/episode/top.mp4": "cfed09050dfdfeeed0f2fb2f1e5ca6025486104b5ad58d1576f6fe096515eda2",
+    "/tmp/yam-hil-web-gx2fpfme/episode/manifest.json": "6805ad730645f660dc73d40b590410b9c8b693af5d83a942354be048062510fc",
+    "/tmp/yam-hil-web-gx2fpfme/episode/steps.jsonl": "1fce30645185376555b7e1f48b576a7360ddf1c8eb43c69597ab6ce52f7d7985",
+    "/tmp/yam-hil-web-gx2fpfme/episode/left.mp4": "cfed09050dfdfeeed0f2fb2f1e5ca6025486104b5ad58d1576f6fe096515eda2",
+    "/tmp/yam-hil-web-gx2fpfme/episode/right.mp4": "cfed09050dfdfeeed0f2fb2f1e5ca6025486104b5ad58d1576f6fe096515eda2"
+  }
+}

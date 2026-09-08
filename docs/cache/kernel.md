@@ -1,6 +1,6 @@
 # 工作记忆摘要
 
-- 项目使用 uv / Python 3.12；采集入口为 yam-abc-gui。来源：pyproject.toml、docs/environment.md。
+- 项目使用 uv / Python 3.12；当前三模式入口为 python -m yam_abc_reproduce.hil.run；旧GUI保留上游工具。来源：pyproject.toml、docs/environment.md。
 - 硬件为 2 follower + 2 官方电动 leader，夹爪精确型号未确认。来源：docs/workstation.md。
 - 上游默认 station 是被动 GELLO，不能直接用于该硬件。来源：configs/station_yam.yaml。
 - 真实构造/Start Teleop 可能立即运动；本次环境安装不包含真机验收。来源：docs/workstation.md。
@@ -10,3 +10,5 @@
 - 2026-09-08用户放宽记忆硬预算，继续按需读取及写检查点；不伪称宿主已压缩。来源：AGENTS.md。
 
 - 用户2026-09-08确认三路均为D405；不支持多相机外部硬同步，采用软件时间对齐。来源docs/workstation.md、docs/synchronization_design.md。
+
+- 第一版已接通三模式/官方leader接管/非RTC异步/连续录制和专家导出；线程架构、接收时间配对、宽松可配置阈值。来源docs/hil_quickstart.md。未真机验收。

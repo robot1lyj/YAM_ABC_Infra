@@ -111,6 +111,18 @@ class YamRobot(RobotInterface):
         grip_raw = _denormalize(pos[self._n], self._g_closed, self._g_open)
         self._robot.command_joint_pos(np.concatenate([arm, [grip_raw]]))
 
+    def gravity_compensate(self, pos: np.ndarray) -> None:
+        """Arm gravity compensation with gripper position retained, control-owner only."""
+        if not self._robot.use_gravity_comp:
+            raise RuntimeError("SDK gravity compensation is not configured")
+        raw = np.asarray(pos, dtype=float).copy()
+        raw[self._n] = _denormalize(raw[self._n], self._g_closed, self._g_open)
+        kp = self._robot._kp.copy()
+        kd = self._robot._kd.copy()
+        kp[:self._n] = 0
+        kd[:self._n] = self._robot._grav_comp_kd[:self._n]
+        self._robot.command_joint_state({"pos": raw, "vel": np.zeros_like(raw), "kp": kp, "kd": kd})
+
     def get_observations(self) -> dict[str, np.ndarray]:
         full = self.get_joint_pos()
         return {"joint_pos": full[: self._n].copy(), "gripper_pos": full[self._n :].copy()}

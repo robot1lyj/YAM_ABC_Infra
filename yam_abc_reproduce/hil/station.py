@@ -44,13 +44,15 @@ class StationIO:
             ages.extend([u.robot.feedback_age(), age])
         return q, vector(np.concatenate(leaders)), buttons, ages
 
-    def apply(self, decision, q, leader, *, dt, mirror=True):
+    def apply(
+        self, decision, q, leader, *, dt, mirror=True, maintenance_leader=None, gravity=False
+    ):
         target = vector(decision.action)
         # Validate/clamp both arms before sending any part of this tick.
         for i, limits in enumerate(self._limits):
             sl = slice(i * 7, i * 7 + 6)
             target[sl] = np.clip(target[sl], limits[:, 0], limits[:, 1])
-        manual = decision.leader_manual or not mirror
+        manual = (decision.leader_manual or not mirror) and maintenance_leader is None
         leader_targets = []
         for i, limits in enumerate(self._limits):
             sl = slice(i * 7, i * 7 + 6)
@@ -60,6 +62,10 @@ class StationIO:
             )
             if decision.leader_freeze:
                 arm = leader[sl]
+            if maintenance_leader is not None:
+                arm = np.clip(
+                    maintenance_leader[sl], leader[sl] - 0.12 * dt, leader[sl] + 0.12 * dt
+                )
             leader_targets.append(np.clip(arm, limits[:, 0], limits[:, 1]))
         stamps = {}
         for i, u in enumerate(self.units):
@@ -73,7 +79,10 @@ class StationIO:
             stamps[f"{u.name}_leader"] = time.monotonic()
         self._manual = manual
         for i, u in enumerate(self.units):
-            u.robot.command_joint_pos(target[i * 7 : i * 7 + 7])
+            if gravity and not self.mock:
+                u.robot.gravity_compensate(target[i * 7 : i * 7 + 7])
+            elif not gravity:
+                u.robot.command_joint_pos(target[i * 7 : i * 7 + 7])
             stamps[f"{u.name}_follower"] = time.monotonic()
         return target, stamps
 

@@ -1,0 +1,53 @@
+{
+  "dataset": "/tmp/yam-workbench-fast-export",
+  "frames": 1082,
+  "episodes": 1,
+  "samples": {
+    "0": {
+      "observation.images.top_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.images.left_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.images.right_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.state": [
+        14
+      ],
+      "action": [
+        14
+      ]
+    },
+    "1081": {
+      "observation.images.top_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.images.left_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.images.right_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.state": [
+        14
+      ],
+      "action": [
+        14
+      ]
+    }
+  }
+}

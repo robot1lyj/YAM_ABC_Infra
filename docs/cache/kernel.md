@@ -15,3 +15,6 @@
 
 - 采集模式由Leader遥操作，手动开关多段录制；HIL键盘i冻结介入、手柄①交还，②无功能；采集①开始/结束、②放弃；遥操作/推理手柄无功能。来源：docs/collect.md。
 - 中文规范通过路由检索，历史英文手册位于docs/archive；指纹/断链检查用scripts/check_project_memory.py，不能替代语义和现场验证。来源：docs/memory.md。
+
+- 操作工作台：--web-port启动未连接，界面连接后保持；四模式与维护状态分开。软件紧急暂停→解除后保持→明确开始/回准备位/重力补偿。示教准备位绑定station哈希，mock/real分开。来源：docs/hil_quickstart.md。
+- 三路预览最多5Hz、独立低优先级进程与单槽共享内存；控制/录制不编码预览。允许丢预览，不能声称真实RK无资源竞争。来源：docs/hil_quickstart.md、docs/acceptance.md。

@@ -1,0 +1,53 @@
+{
+  "id": "operator-workbench-20260908",
+  "observed_at": "2026-09-08T11:11:47.771438+00:00",
+  "base_commit": "d30c06f695aa516c604eae3f421a88729c551dde",
+  "dirty_patch_sha256": "833fe968e7e92966e67a10035d6935c99607b8cf80bf1d110555984f780e9296",
+  "commands": [
+    "uv run --no-sync pytest -q",
+    "uv run --no-sync pytest -q tests/test_workbench.py",
+    "uv run --no-sync python scripts/benchmark_workbench_preview.py --duration 15 --output /tmp/yam-preview-ab.json",
+    "uv run --no-sync yam-export /tmp/yam-workbench-sessions/session_20260908_185651_0c3c0f --output /tmp/yam-workbench-fast-export",
+    "Official LeRobot 0.5.1 CPU reader: 1082 frames; sample 0 and 1081",
+    "uv lock --check",
+    "uv pip check",
+    "node --check yam_abc_reproduce/hil/static/app.js"
+  ],
+  "results": {
+    "full_regression": "200 passed, 2 skipped, 9 subtests passed",
+    "maintenance_suite_after_adding_gripper_drift_test": "13 passed",
+    "lint_and_js_syntax": "passed",
+    "lock": "valid, unchanged",
+    "installed_packages": "85 compatible",
+    "gui_session_frames": 1082,
+    "reader_samples": 2
+  },
+  "browser_checks": [
+    "Disconnected landing does not construct devices",
+    "Mock connect, 3 camera previews and feedback health",
+    "Start teleop, record, mark success, end episode, disconnect/export",
+    "Teach ready pose, jog left J1 from 0 to 2 degrees, software stop locks controls",
+    "Reset leaves position held; explicit home reaches configured tolerance",
+    "Gravity compensation disables jog, explicit exit returns hold",
+    "Final mock page at localhost:8766 left disconnected"
+  ],
+  "logs": {
+    "docs/evidence/20260908-operator-tests.txt": "8f2a13bb8efc71690bd38e4775c0bf1e40e38d8116f731e5010771b767ee07a1",
+    "docs/evidence/20260908-operator-maintenance-tests.txt": "4cecc8c495abba41a8b8b9c96b256d86946c0828e094a5c56f84fe995a4788de",
+    "docs/evidence/20260908-operator-preview-ab.json": "42371accd9e3b451d400a941a531d0044a69885ac11d3369724150ef3caa6c46",
+    "docs/evidence/20260908-operator-reader.json": "345013ee9da5d6d6741b307f90f695d2a6b23ff23ba86db0ece5b773d2788c19",
+    "docs/evidence/20260908-operator-export.txt": "de75ca9d082e8b7c5d5b260449ce9ad38389bc81dbb1cad8815653378890f9a6"
+  },
+  "limits": [
+    "No real hardware, Thor inference or RK3588 load test",
+    "A/B synthetic-camera benchmark preceded final UI/health refinements and offline histogram optimization; it measures mock recording, not HTTP/browser load or physical exposure sync",
+    "Previews share CPU/memory resources despite process separation; no zero-impact guarantee",
+    "Home uses joint interpolation, not collision planning; physical path needs onsite validation",
+    "Software latch is not a physical emergency-stop circuit; no multi-operator lease",
+    "Official reader verified 1082-frame metadata plus first/last samples, not every dataset frame"
+  ],
+  "artifacts": {
+    "raw": "/tmp/yam-workbench-sessions/session_20260908_185651_0c3c0f",
+    "optimized_export": "/tmp/yam-workbench-fast-export"
+  }
+}

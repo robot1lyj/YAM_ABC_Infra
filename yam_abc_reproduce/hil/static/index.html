@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>YAM · 机器人工作台</title>
+    <link rel="stylesheet" href="/assets/style.css" />
+  </head>
+  <body>
+    <svg class="icon-library" aria-hidden="true">
+      <defs>
+        <symbol id="i-grid" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="7" rx="2" />
+          <rect x="14" y="3" width="7" height="7" rx="2" />
+          <rect x="3" y="14" width="7" height="7" rx="2" />
+          <rect x="14" y="14" width="7" height="7" rx="2" />
+        </symbol>
+        <symbol id="i-arm" viewBox="0 0 24 24">
+          <path d="M4 21h16M8 21v-4l-3-5 4-7 7 3 3 6-3 2-3-5-3-1-2 3 5 4v4" />
+          <circle cx="9" cy="6" r="2" />
+          <path d="m18 13 3-2m-4 4 3 3" />
+        </symbol>
+        <symbol id="i-record" viewBox="0 0 24 24">
+          <rect x="3" y="5" width="18" height="14" rx="4" />
+          <circle cx="12" cy="12" r="3" />
+        </symbol>
+        <symbol id="i-pulse" viewBox="0 0 24 24">
+          <path d="M2 12h5l3-7 4 14 3-7h5" />
+        </symbol>
+        <symbol id="i-camera" viewBox="0 0 24 24">
+          <rect x="3" y="6" width="18" height="14" rx="3" />
+          <circle cx="12" cy="13" r="4" />
+          <path d="m8 6 1-3h6l1 3" />
+        </symbol>
+        <symbol id="i-play" viewBox="0 0 24 24">
+          <path d="m8 4 12 8-12 8Z" />
+        </symbol>
+        <symbol id="i-spark" viewBox="0 0 24 24">
+          <path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3Z" />
+        </symbol>
+        <symbol id="i-link" viewBox="0 0 24 24">
+          <path
+            d="m9 15 6-6m-5-3 2-2a5 5 0 0 1 7 7l-2 2m-3 5-2 2a5 5 0 0 1-7-7l2-2"
+          />
+        </symbol>
+      </defs>
+    </svg>
+    <aside class="sidebar">
+      <a class="brand" href="/"
+        ><span class="brand-mark">Y</span
+        ><span>YAM<span class="brand-sub">OPERATOR STUDIO</span></span></a
+      >
+      <div class="station-tag">
+        <span class="led"></span> 双臂工作站 <span class="small-label">01</span>
+      </div>
+      <div class="nav-label">WORKSPACE</div>
+      <nav>
+        <button class="nav-item active" data-page="workspace">
+          <svg><use href="#i-grid" /></svg>采集工作台<span
+            class="nav-dot"
+          ></span></button
+        ><button class="nav-item" data-page="devices">
+          <svg><use href="#i-arm" /></svg>设备与调试
+        </button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="topology">
+          <div>THOR <span>模型推理</span></div>
+          <div class="topology-line">ETHERNET · LOCAL</div>
+          <div>RK3588 <span>控制与采集</span></div>
+        </div>
+        <p>本地运行 · 数据保存在工作站</p>
+        <div class="build-tag">YAM / DUAL ARM <span>v0.1</span></div>
+      </div>
+    </aside>
+    <div class="shell">
+      <header>
+        <div class="breadcrumb">
+          工作站 <span>/</span> <strong id="page-name">采集工作台</strong>
+        </div>
+        <div class="header-right">
+          <span id="environment" class="pill">读取环境</span
+          ><span class="connection-label"
+            ><i id="connection-dot" class="led"></i
+            ><span id="connection-text">正在连接界面</span></span
+          ><button id="header-stop" class="button danger">■ 紧急暂停</button
+          ><button id="header-reset" class="button" hidden>解除锁存</button>
+        </div>
+      </header>
+      <main>
+        <section class="page-title">
+          <div>
+            <div class="eyebrow">ROBOT OPERATIONS</div>
+            <h1 id="heading">让每一次示范，都成为进步。</h1>
+            <p id="subtitle">连接设备，选择工作模式，开始你的下一组采集。</p>
+          </div>
+          <button id="connect" class="button primary">
+            <svg><use href="#i-link" /></svg><span>连接设备</span>
+          </button>
+        </section>
+        <div id="alert" class="alert" role="alert" hidden></div>
+        <div id="workspace-page">
+          <div class="section-heading">
+            <h2>工作模式</h2>
+            <span>切换后先保持，点击开始执行</span>
+          </div>
+          <section class="mode-grid" aria-label="工作模式">
+            <button class="mode-card" data-mode="collect">
+              <div>
+                <svg><use href="#i-record" /></svg
+                ><span class="mode-number">01</span>
+              </div>
+              <h3>数据采集</h3>
+              <p>Leader 示范 · 按集录制</p>
+              <span class="mode-state">选择模式 →</span>
+            </button>
+            <button class="mode-card" data-mode="hil">
+              <div>
+                <svg><use href="#i-spark" /></svg
+                ><span class="mode-number">02</span>
+              </div>
+              <h3>DAgger / HIL</h3>
+              <p>模型执行 · 人工随时接管</p>
+              <span class="mode-state">选择模式 →</span>
+            </button>
+            <button class="mode-card" data-mode="inference">
+              <div>
+                <svg><use href="#i-play" /></svg
+                ><span class="mode-number">03</span>
+              </div>
+              <h3>模型推理</h3>
+              <p>Thor 本地策略 · 自主执行</p>
+              <span class="mode-state">选择模式 →</span>
+            </button>
+            <button class="mode-card" data-mode="teleop">
+              <div>
+                <svg><use href="#i-arm" /></svg
+                ><span class="mode-number">04</span>
+              </div>
+              <h3>遥操作</h3>
+              <p>Leader 控制 · 双臂跟随</p>
+              <span class="mode-state">选择模式 →</span>
+            </button>
+          </section>
+          <div class="content-grid">
+            <div class="left-column">
+              <section class="panel camera-panel">
+                <div class="panel-heading">
+                  <h2>
+                    <svg><use href="#i-camera" /></svg>视觉工作区
+                  </h2>
+                  <button id="preview-toggle" class="button subtle">
+                    关闭预览
+                  </button>
+                </div>
+                <div class="camera-grid">
+                  <article class="camera" data-camera="top">
+                    <div class="camera-label">
+                      <span>01 / 全局视角</span><i class="led"></i>
+                    </div>
+                    <img alt="全局D405实时预览" hidden />
+                    <div class="camera-empty">
+                      <svg><use href="#i-camera" /></svg
+                      ><span>等待相机连接</span><small>TOP CAMERA</small>
+                    </div>
+                    <div class="camera-meta">— fps <span>帧龄 —</span></div>
+                  </article>
+                  <article class="camera" data-camera="left">
+                    <div class="camera-label">
+                      <span>02 / 左腕视角</span><i class="led"></i>
+                    </div>
+                    <img alt="左腕D405实时预览" hidden />
+                    <div class="camera-empty">
+                      <svg><use href="#i-camera" /></svg
+                      ><span>等待相机连接</span><small>LEFT WRIST</small>
+                    </div>
+                    <div class="camera-meta">— fps <span>帧龄 —</span></div>
+                  </article>
+                  <article class="camera" data-camera="right">
+                    <div class="camera-label">
+                      <span>03 / 右腕视角</span><i class="led"></i>
+                    </div>
+                    <img alt="右腕D405实时预览" hidden />
+                    <div class="camera-empty">
+                      <svg><use href="#i-camera" /></svg
+                      ><span>等待相机连接</span><small>RIGHT WRIST</small>
+                    </div>
+                    <div class="camera-meta">— fps <span>帧龄 —</span></div>
+                  </article>
+                </div>
+                <div class="camera-foot">
+                  <span
+                    ><i class="led" id="sync-dot"></i
+                    ><span id="sync">尚无同步观测</span></span
+                  ><span>预览 5 Hz · 原始采集独立运行</span>
+                </div>
+              </section>
+              <section class="panel session-panel">
+                <div class="panel-heading">
+                  <h2>当前会话</h2>
+                  <span id="record-badge" class="pill">未录制</span>
+                </div>
+                <div class="session-metrics">
+                  <div>
+                    <span>已完成集数</span
+                    ><strong id="episode-count">00</strong>
+                  </div>
+                  <div>
+                    <span>已写入帧数</span><strong id="frame-count">0</strong>
+                  </div>
+                  <div>
+                    <span>人工介入</span><strong id="interventions">0</strong>
+                  </div>
+                  <div>
+                    <span>可用空间</span
+                    ><strong id="disk">—<small> GB</small></strong>
+                  </div>
+                </div>
+                <div class="session-actions">
+                  <button
+                    class="button primary"
+                    id="record"
+                    data-event="record"
+                  >
+                    ● 开始录制</button
+                  ><button class="button" id="discard">放弃当前集</button
+                  ><span class="vertical-divider"></span
+                  ><button
+                    class="button subtle"
+                    id="success"
+                    data-event="success"
+                  >
+                    ✓ 标记成功</button
+                  ><button
+                    class="button subtle"
+                    id="failure"
+                    data-event="failure"
+                  >
+                    标记失败
+                  </button>
+                </div>
+                <div id="output" class="output-path">
+                  连接后创建会话目录 · 结束会话后自动整理 LeRobot 数据
+                </div>
+              </section>
+              <section class="panel recent-panel">
+                <div class="panel-heading">
+                  <h2>最近采集</h2>
+                  <span class="muted">当前连接会话</span>
+                </div>
+                <div id="episodes" class="empty-row">
+                  还没有完成的采集集。第一段示范，从这里开始。
+                </div>
+              </section>
+            </div>
+            <aside class="right-column">
+              <section class="panel control-panel">
+                <div class="panel-heading">
+                  <h2>运行控制</h2>
+                  <span class="pill" id="phase">未连接</span>
+                </div>
+                <div class="control-visual">
+                  <svg><use href="#i-arm" /></svg>
+                  <div>
+                    <strong id="mode-name">数据采集</strong
+                    ><span id="control-hint">连接设备后准备开始</span>
+                  </div>
+                </div>
+                <button
+                  class="button primary wide"
+                  id="start"
+                  data-event="start"
+                >
+                  ▶ 开始遥操作
+                </button>
+                <div class="dual-buttons">
+                  <button class="button" id="takeover" data-event="takeover">
+                    介入 <kbd>I</kbd></button
+                  ><button
+                    class="button"
+                    id="resume"
+                    data-event="resume_policy"
+                  >
+                    交还模型
+                  </button>
+                </div>
+                <button class="button wide" id="hold" data-event="hold">
+                  Ⅱ 暂停运动 <kbd>SPACE</kbd>
+                </button>
+                <div id="ownership" class="ownership">控制权：保持</div>
+                <div class="handle-hint" id="handle-hint">
+                  手柄① 开始 / 结束录制<br />手柄② 放弃当前集
+                </div>
+              </section>
+              <section class="panel health-panel">
+                <div class="panel-heading">
+                  <h2>
+                    <svg><use href="#i-pulse" /></svg>设备健康
+                  </h2>
+                  <span class="muted">实时</span>
+                </div>
+                <div id="health"></div>
+                <div class="health-footer">
+                  <span>控制耗时 p95</span><b id="latency">— ms</b>
+                </div>
+              </section>
+              <div class="stop-panel">
+                <button id="emergency" class="emergency">
+                  <span>■</span>
+                  <div>紧急暂停<small>SOFTWARE STOP · 锁存</small></div></button
+                ><button
+                  id="reset-stop"
+                  class="button wide"
+                  style="margin-top: 10px"
+                  hidden
+                >
+                  解除暂停锁存
+                </button>
+                <p>
+                  软件暂停不能替代物理急停。<br />检查现场后解除锁存，仍保持不动。
+                </p>
+              </div>
+            </aside>
+          </div>
+        </div>
+        <div id="devices-page" hidden>
+          <div class="device-layout">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>机械臂连接</h2>
+                <span class="muted">2 LEADERS + 2 FOLLOWERS</span>
+              </div>
+              <div id="device-cards" class="device-cards"></div>
+              <div class="device-note">
+                Leader 在调试时保持手动 / 重力补偿。关节点动控制
+                Follower；进入遥操作前，请将 Leader 与 Follower 姿态对齐。
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-heading"><h2>准备位与重力补偿</h2></div>
+              <div class="home-info">
+                <svg><use href="#i-arm" /></svg>
+                <h3>为下一次采集，回到准备姿态。</h3>
+                <p>
+                  先暂停并结束录制，将四台机械臂摆到准备姿态，再保存。回位独占控制，完成后保持；夹爪保留当前开度。
+                </p>
+                <div class="maintenance-buttons">
+                  <button class="button" id="capture-home">
+                    保存当前准备位</button
+                  ><button class="button primary" id="home">回准备位</button
+                  ><button class="button" id="gravity">重力补偿</button
+                  ><button class="button" id="gravity-exit" data-event="hold">
+                    结束补偿 / 保持
+                  </button>
+                </div>
+                <p id="home-status" style="margin-top: 12px">尚未保存准备位</p>
+              </div>
+            </section>
+          </div>
+          <section class="panel jog-panel">
+            <div class="panel-heading">
+              <h2>Follower 关节调试</h2>
+              <span class="pill">暂停后可调节</span>
+            </div>
+            <div class="jog-toolbar">
+              <div class="segmented">
+                <button class="active" data-arm="left">左 Follower</button
+                ><button data-arm="right">右 Follower</button>
+              </div>
+              <span>单击微调 · 夹爪单步 10%</span>
+            </div>
+            <p class="device-note">
+              仅在「数据采集」模式、已暂停且未录制时可用。每次点击为一个有限步长；无连续按住运动。暂停立即取消待执行点动。
+            </p>
+            <div id="joint-controls"></div>
+            <div class="gripper-control">
+              <div>
+                <h3>平行夹爪</h3>
+                <span id="gripper-value">开度 —</span>
+              </div>
+              <button class="button jog-button" id="gripper-close">
+                收拢 10%</button
+              ><button class="button jog-button" id="gripper-open">
+                张开 10%
+              </button>
+            </div>
+          </section>
+        </div>
+        <section class="panel log-panel">
+          <div class="panel-heading">
+            <h2>操作日志</h2>
+            <span class="muted">指令接收与实际运行状态分别显示</span>
+          </div>
+          <div id="logs"></div>
+        </section>
+        <footer>
+          <span>YAM OPERATOR STUDIO</span
+          ><span>本地控制 · 到达时间配对，非硬件曝光同步</span
+          ><span id="clock"></span>
+        </footer>
+      </main>
+    </div>
+    <div id="toast" role="status" hidden></div>
+    <dialog id="connect-dialog">
+      <form id="connect-form">
+        <div class="eyebrow">CONNECT WORKSTATION</div>
+        <h2>准备连接工作站</h2>
+        <p>
+          连接三路相机、两台 Leader 和两台
+          Follower。连接成功后先保持，等待你的开始指令。
+        </p>
+        <label
+          >任务说明<input
+            id="task-input"
+            value="pick and place"
+            maxlength="300"
+            required
+            placeholder="描述当前采集任务" /></label
+        ><label
+          >Thor 模型服务地址 <span>采集 / 遥操作可留空</span
+          ><input id="url-input" placeholder="ws://192.168.x.x:8000"
+        /></label>
+        <div id="real-warning" class="warning">
+          真实设备连接可能施加力矩并自动校准夹爪。请固定设备、清空行程，释放手柄按钮并保持有人照看。
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="button" data-close>取消</button
+          ><button class="button primary" type="submit">
+            确认现场就绪并连接
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="confirm-dialog">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-text"></p>
+      <div class="dialog-actions">
+        <button class="button" data-close>取消</button
+        ><button id="confirm-action" class="button danger">确认</button>
+      </div>
+    </dialog>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

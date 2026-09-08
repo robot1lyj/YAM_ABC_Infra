@@ -20,3 +20,7 @@ LeRobot v3.0由hil/lerobot_export.py在设备关闭后自动生成，运行期�
 下一步以现场逐对低速验证、三路相机/USB测试、Thor冻结观测契约核对、HIL纠正任务为序。
 
 2026-09-08后续：教程统一 `uv run --no-sync yam-workstation`，导出 `uv run --no-sync yam-export`。先完整 `uv sync --locked --extra camera --extra gui --extra deploy`；--no-sync不安装或验证锁。新增--check仅配置/模块可发现性检查，不构造设备或数据目录；真实占位仍拒绝。全套187通过/2跳过/9子测试，旧record已stale，新record为uv-cli-20260908-offline。uv.lock检查通过且无需修改，无依赖升级。
+
+2026-09-08操作界面改造：workbench.py生命周期+web/static双页中文工作台；打开不连接，点击连接后保持，浏览器操作四模式与录制。maintenance.py同控制线程独占示教准备位回位/重力补偿，软件暂停锁存可解除但仍保持；物理故障不能绕过。Follower夹爪进入补偿/回位的开度保留。回位无碰撞规划，真实路径待现场验证。点动仅collect保持未录制。
+预览最多5Hz，preview.py独立低优先级进程，单槽共享内存和输出队列1，关闭预览停止编码；独立3s心跳监测请求hold。界面不显示零点标定/底层速度调参。准备位data/workstation按mock/real与station哈希隔离，不提交。
+全量200通过/2跳过/9子测试，新增夹爪漂移测试后维护专项13通过。浏览器模拟采集1082帧与官方LeRobot首尾读取通过；预览开/关各15s零deadline miss、每路452帧，非真机性能保证。离线导出RGB直方图统计经过逐像素对照，减少等待。最新verified记录operator-workbench-20260908-offline，旧uv-cli已stale。下一步仍是物理设备信息填写、逐对低速/回位路径验证、RK长时录制与Thor契约核对。

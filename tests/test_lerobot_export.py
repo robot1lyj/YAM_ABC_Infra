@@ -9,14 +9,18 @@ from yam_abc_reproduce.hil.lerobot_export import export_session
 from yam_abc_reproduce.hil.recording import RecordingSession
 
 
-def make_session(path):
+def make_session(path, images=None):
     rec = RecordingSession(
         path, mode="collect", metadata={"mock": True, "station": {"task_name": "test task"}}
     )
-    images = {
-        role: np.full((32, 32, 3), fill, np.uint8)
-        for role, fill in zip(("top", "left", "right"), (30, 90, 180))
-    }
+    images = (
+        images
+        if images is not None
+        else {
+            role: np.full((32, 32, 3), fill, np.uint8)
+            for role, fill in zip(("top", "left", "right"), (30, 90, 180))
+        }
+    )
     rec.start_episode()
     for i, (source, event) in enumerate(
         zip(
@@ -100,3 +104,33 @@ def test_performance_window_does_not_grow_with_recording_length():
         report = metrics.add(i / 30, control=0.001, io=0.0002)
     assert all(len(v) == 10 for v in metrics.values.values())
     assert report["control"]["p95_ms"] == 1
+
+
+def test_rgb_histogram_statistics_match_full_decoded_pixels(tmp_path):
+    rng = np.random.default_rng(21)
+    images = {
+        role: rng.integers(0, 256, (32, 32, 3), dtype=np.uint8) for role in ("top", "left", "right")
+    }
+    source = make_session(tmp_path / "session", images)
+    out = tmp_path / "dataset"
+    export_session(source, out)
+    stats = json.loads((out / "meta/stats.json").read_text())
+    for role in images:
+        with av.open(str(source / "episode_000001" / f"{role}.mp4")) as video:
+            pixels = (
+                np.concatenate(
+                    [
+                        frame.to_ndarray(format="rgb24").reshape(-1, 3)
+                        for frame in video.decode(video=0)
+                    ]
+                ).astype(float)
+                / 255
+            )
+        actual = stats[f"observation.images.{role}_rgb"]
+        for key, expected in (
+            ("mean", pixels.mean(0)),
+            ("std", pixels.std(0)),
+            ("min", pixels.min(0)),
+            ("max", pixels.max(0)),
+        ):
+            np.testing.assert_allclose(np.asarray(actual[key]).reshape(3), expected, atol=1e-12)

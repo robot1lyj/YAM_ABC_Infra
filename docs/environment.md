@@ -60,7 +60,7 @@ uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 ```
 
 浏览器访问 http://127.0.0.1:8766 。真机前按 [工作站核验](workstation.md)填写
-[专用配置](../configs/station_hil.yaml)。真实设备构造可能在界面出现前就施力矩和校准夹爪。
+[专用配置](../configs/station_hil.yaml)。带 `--web-port` 时先打开未连接的工作台，点击“连接设备”才构造设备，构造期间可能施力矩和校准夹爪；不带界面的CLI会在启动时连接。
 
 本机环境路径：`/home/wuyan-lyj/YAM/yam-abc-reproduce/.venv`；uv路径：
 `/home/wuyan-lyj/.local/bin/uv`。这些路径描述当前开发机，不意味着已在RK3588/Thor安装完成。

@@ -45,8 +45,11 @@ class Moments:
         n = len(values)
         mean, var = values.mean(axis=0), values.var(axis=0)
         low, high = values.min(axis=0), values.max(axis=0)
+        self.merge(n, mean, var, low, high)
+
+    def merge(self, n, mean, var, low, high):
         if not self.count:
-            self.mean, self.m2, self.low, self.high = mean, var * n, low, high
+            self.mean, self.m2, self.low, self.high = mean.copy(), var * n, low.copy(), high.copy()
         else:
             delta = mean - self.mean
             self.m2 += var * n + delta**2 * self.count * n / (self.count + n)
@@ -232,13 +235,24 @@ class DatasetWriter:
                         )
                         stream.width, stream.height = image.shape[1], image.shape[0]
                         stream.pix_fmt = "yuv420p"
+                        stream.codec_context.thread_count = 1
                         encoders[role] = output, stream
                     output, stream = encoders[role]
                     for packet in stream.encode(av.VideoFrame.from_ndarray(image, format="rgb24")):
                         output.mux(packet)
-                    pixels = image.reshape(-1, 3).astype(np.float64) / 255
-                    stats.setdefault(key, Moments()).add(pixels)
-                    self.stats.setdefault(key, Moments()).add(pixels)
+                    # Exact RGB8 moments via 256-bin histograms, calculated once.
+                    # Avoid scanning two large float64 pixel matrices per camera/frame.
+                    pixel_count = image.shape[0] * image.shape[1]
+                    bins = np.arange(256, dtype=np.float64) / 255
+                    counts = np.stack(
+                        [np.bincount(image[:, :, c].ravel(), minlength=256) for c in range(3)]
+                    )
+                    mean = (counts @ bins) / pixel_count
+                    var = (counts * (bins[None, :] - mean[:, None]) ** 2).sum(axis=1) / pixel_count
+                    low = np.argmax(counts > 0, axis=1) / 255
+                    high = (255 - np.argmax(counts[:, ::-1] > 0, axis=1)) / 255
+                    stats.setdefault(key, Moments()).merge(pixel_count, mean, var, low, high)
+                    self.stats.setdefault(key, Moments()).merge(pixel_count, mean, var, low, high)
                 batch.append(record)
                 if len(batch) >= 256:
                     parquet.write_table(pa.Table.from_pylist(batch, schema=self.schema))

@@ -1,0 +1,58 @@
+{
+  "hardware": "mock, development workstation, synthetic images",
+  "limitation": "Not RK3588/D405 or a sustained load guarantee",
+  "runs": [
+    {
+      "preview": false,
+      "duration_s": 15.0,
+      "rows": 452,
+      "video_frames": {
+        "top": 452,
+        "left": 452,
+        "right": 452
+      },
+      "control_work": {
+        "p50_ms": 0.3695444902405143,
+        "p95_ms": 0.5360419832868505,
+        "p99_ms": 0.6238010677043347,
+        "max_ms": 0.701678975019604
+      },
+      "deadline_misses": 0,
+      "record_metrics": {
+        "session_queue_peak": 2,
+        "encoder_queue": 0,
+        "encoder": {
+          "queue_peak": 0,
+          "encode_max_ms": 15.864183020312339
+        }
+      },
+      "output": "/tmp/yam-preview-ab-una8qy85/session_20260908_190024_f01174"
+    },
+    {
+      "preview": true,
+      "duration_s": 15.0,
+      "rows": 452,
+      "video_frames": {
+        "top": 452,
+        "left": 452,
+        "right": 452
+      },
+      "control_work": {
+        "p50_ms": 0.35664651659317315,
+        "p95_ms": 0.4362286999821664,
+        "p99_ms": 0.5436890944838523,
+        "max_ms": 0.7050349959172308
+      },
+      "deadline_misses": 0,
+      "record_metrics": {
+        "session_queue_peak": 2,
+        "encoder_queue": 0,
+        "encoder": {
+          "queue_peak": 0,
+          "encode_max_ms": 14.042191964108497
+        }
+      },
+      "output": "/tmp/yam-preview-ab-una8qy85/session_20260908_190039_627b82"
+    }
+  ]
+}

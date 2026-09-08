@@ -216,7 +216,7 @@ def test_dashboard_events_only_enqueue():
     r = SimpleNamespace(status={"phase": "hold"}, event=called.append)
     with TestClient(create_app(r)) as client:
         assert client.get("/status").json()["phase"] == "hold"
-        assert client.post("/event/takeover").status_code == 200
+        assert client.post("/event/takeover", headers={"X-YAM-Control": "1"}).status_code == 200
         assert called == ["takeover"]
 
 

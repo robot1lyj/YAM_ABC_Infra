@@ -12,6 +12,7 @@ import json
 import queue
 import threading
 import time
+from contextlib import nullcontext
 from importlib.util import find_spec
 from pathlib import Path
 
@@ -22,6 +23,8 @@ from ..config import build_station_config, load_yaml
 from ..runtime import build_arm_units, build_cameras_from_config
 from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
+from .jog import Jog
+from .maintenance import Maintenance
 from .metrics import Latencies
 from .observation import Observations
 from .policy import PlainPolicyClient, PolicyWorker
@@ -106,10 +109,20 @@ class Runtime:
         self.handle_buttons = HandleButtons()
         self.outcome = "unknown"
         self.latencies = Latencies()
+        self.emergency = threading.Event()
+        self.jog = Jog()
+        self.maintenance = Maintenance()
+        self.operator_error = None
+        self._record_started = None
 
     def event(self, event):
         allowed = {
             "start",
+            "stop",
+            "reset_stop",
+            "home",
+            "capture_home",
+            "gravity",
             "takeover",
             "resume_policy",
             "discard",
@@ -125,6 +138,15 @@ class Runtime:
         }
         if event not in allowed:
             raise ValueError("unknown event")
+        if self.maintenance.latched and event not in ("stop", "hold", "quit", "reset_stop"):
+            raise ValueError("紧急暂停已锁存，请先检查现场并解除锁存")
+        if event in ("home", "capture_home", "gravity"):
+            if self.maintenance.state != "idle":
+                raise ValueError("请先结束当前维护操作")
+            if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
+                raise ValueError("请先暂停并结束录制，再进行设备维护")
+            if event == "home" and self.maintenance.ready is None:
+                raise ValueError("尚未保存准备位")
         if event in ("mode:inference", "mode:hil") and self.worker is None:
             raise ValueError("restart with --url to enable local policy inference")
         if event in ("record", "discard") and self.status.get("mode") not in ("collect", "teleop"):
@@ -135,7 +157,9 @@ class Runtime:
             and self.status.get("phase") != "human"
         ):
             raise ValueError("start leader teleoperation before recording")
-        if event == "quit":
+        if event == "stop":
+            self.emergency.set()
+        elif event == "quit":
             self.stopping.set()
         elif event == "hold":
             try:
@@ -149,6 +173,18 @@ class Runtime:
                 pass
         else:
             self.events.put_nowait((event, time.monotonic()))
+
+    def request_jog(self, arm, joint, delta):
+        if self.status.get("mode") != "collect" or self.status.get("phase") != "hold":
+            raise ValueError("关节点动仅在采集模式暂停状态可用")
+        if (
+            getattr(self.recorder, "recording", False)
+            or self.emergency.is_set()
+            or self.maintenance.latched
+            or self.maintenance.state != "idle"
+        ):
+            raise ValueError("录制或紧急暂停时不可点动")
+        self.jog.request(arm, joint, delta)
 
     def run(self, *, duration=None, auto_start=False, demo=False):
         period = 1 / self.hz
@@ -207,6 +243,13 @@ class Runtime:
                     while not self.takeovers.empty():
                         self.takeovers.get_nowait()
                     event, requested_at = "hold", hold_time
+                if self.emergency.is_set():
+                    event, requested_at = "stop", now
+                    self.emergency.clear()
+                    while not self.events.empty():
+                        self.events.get_nowait()
+                    while not self.takeovers.empty():
+                        self.takeovers.get_nowait()
                 obs_id, observed_at, obs, images, quality = (
                     (0, None, None, {}, {}) if snapshot is None else snapshot
                 )
@@ -232,6 +275,37 @@ class Runtime:
                     event = None
                 if event in ("record", "discard"):
                     recording_event, event = event, None
+                original_event = event
+                if event in ("home", "capture_home", "gravity") and (
+                    a.phase != Phase.HOLD
+                    or getattr(self.recorder, "recording", False)
+                    or self.maintenance.state != "idle"
+                    or self.maintenance.latched
+                ):
+                    self.operator_error = "设备状态已变化，维护指令未执行；请先暂停并结束录制"
+                    event = None
+                elif event is not None:
+                    self.operator_error = None
+                if event in ("stop", "home", "gravity", "capture_home", "reset_stop", "hold"):
+                    if isinstance(self.recorder, RecordingSession):
+                        self.recorder.stop_episode(
+                            "aborted"
+                            if event == "stop"
+                            or (event == "hold" and a.mode in (Mode.COLLECT, Mode.TELEOP))
+                            else self.outcome
+                        )
+                event = self.maintenance.command(
+                    event,
+                    q,
+                    leader,
+                    now=now,
+                    paused=(
+                        a.phase == Phase.HOLD
+                        and not getattr(self.recorder, "recording", False)
+                        and not self.maintenance.latched
+                        and self.maintenance.state == "idle"
+                    ),
+                )
                 previous_phase = a.phase
                 decision = self.session.tick(
                     q,
@@ -245,14 +319,54 @@ class Runtime:
                     leader_ready=(a.mode == Mode.INFERENCE or error <= a.handover_error),
                     event=event,
                 )
+                maintenance_action = self.maintenance.step(q, leader, now=now, dt=period)
+                jog_action = self.jog.step(
+                    q,
+                    allowed=(
+                        event is None
+                        and a.mode == Mode.COLLECT
+                        and a.phase == Phase.HOLD
+                        and not getattr(self.recorder, "recording", False)
+                        and not self.maintenance.latched
+                        and self.maintenance.state == "idle"
+                    ),
+                    now=now,
+                    dt=period,
+                )
+                if jog_action is not None:
+                    decision.action = jog_action
+                    decision.selected_action = jog_action.copy()
+                if maintenance_action is not None:
+                    decision.action = maintenance_action[0]
+                    decision.selected_action = maintenance_action[0].copy()
+                if self.maintenance.state == "gravity":
+                    decision.action[[6, 13]] = self.maintenance.grippers
+                    decision.selected_action = decision.action.copy()
                 # Never enlarge a motion step because this loop missed its deadline.
                 limits = np.full(14, a.max_joint_speed * period)
                 limits[[6, 13]] = a.max_gripper_speed * period
                 decision.action = np.clip(decision.action, q - limits, q + limits)
                 decision_done = time.monotonic()
                 submitted, stamps = self.io.apply(
-                    decision, q, leader, dt=period, mirror=a.mode == Mode.HIL
+                    decision,
+                    q,
+                    leader,
+                    dt=period,
+                    mirror=a.mode == Mode.HIL,
+                    **(
+                        {"maintenance_leader": maintenance_action[1]}
+                        if maintenance_action is not None
+                        else {}
+                    ),
+                    **({"gravity": True} if self.maintenance.state == "gravity" else {}),
                 )
+                if (
+                    jog_action is not None
+                    or maintenance_action is not None
+                    or self.maintenance.state == "gravity"
+                ):
+                    # Preserve the actual clamped target; never spring back after a jog.
+                    a.hold(submitted)
                 apply_done = time.monotonic()
                 transitions = []
                 if a.phase == Phase.TAKEOVER and previous_phase != Phase.TAKEOVER:
@@ -274,7 +388,9 @@ class Runtime:
                     "time": now,
                     "mode": a.mode.value,
                     "phase": decision.phase.value,
-                    "event": event,
+                    "event": original_event,
+                    "maintenance": self.maintenance.state,
+                    "stop_latched": self.maintenance.latched,
                     "epoch": decision.epoch,
                     "source": decision.source,
                     "is_intervention": decision.intervention,
@@ -299,6 +415,12 @@ class Runtime:
                     "submitted_at": stamps,
                 }
                 if isinstance(self.recorder, RecordingSession):
+                    if (
+                        original_event == "start"
+                        and a.phase != Phase.HOLD
+                        and a.mode != Mode.COLLECT
+                    ):
+                        self.recorder.start_episode()
                     previous_mode = self.recorder.mode
                     self.recorder.set_mode(a.mode.value, self.outcome)
                     if previous_mode != a.mode.value:
@@ -331,7 +453,27 @@ class Runtime:
                     control_work=submitted_done - now,
                     tick_interval=dt,
                 )
+                if getattr(self.recorder, "recording", False):
+                    if self._record_started is None:
+                        self._record_started = now
+                else:
+                    self._record_started = None
                 self.status = {
+                    "episode_elapsed_s": 0
+                    if self._record_started is None
+                    else now - self._record_started,
+                    "stop_latched": self.maintenance.latched,
+                    "maintenance": self.maintenance.state,
+                    "maintenance_error": self.maintenance.error,
+                    "operator_error": self.operator_error,
+                    "ready_pose": self.maintenance.ready,
+                    "ready_version": self.maintenance.ready_version,
+                    "updated_at": time.monotonic(),
+                    "follower_state": q.tolist(),
+                    "leader_state": leader.tolist(),
+                    "sdk_state_age_s": list(ages),
+                    "buttons": buttons,
+                    "jog_active": self.jog.target is not None,
                     "performance": performance,
                     "record_metrics": getattr(self.recorder, "metrics", {}),
                     "tick": tick,
@@ -411,11 +553,13 @@ def validate_station(cfg, *, mock):
         raise ValueError("set three distinct actual D405 serials")
 
 
-def main():
+def main(argv=None, *, service=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--station", default="configs/station_hil.yaml")
     p.add_argument("--mock", action="store_true")
-    p.add_argument("--check", action="store_true", help="仅检查配置和依赖，不连接设备或创建数据目录")
+    p.add_argument(
+        "--check", action="store_true", help="仅检查配置和依赖，不连接设备或创建数据目录"
+    )
     p.add_argument("--mode", choices=[m.value for m in Mode], default="hil")
     p.add_argument("--url", help="Thor WebSocket URL on the local Ethernet link")
     p.add_argument("--output", type=Path)
@@ -426,7 +570,13 @@ def main():
     p.add_argument("--demo", action="store_true", help="mock only: automated takeover/resume")
     p.add_argument("--baseline", action="store_true", help="ordinary non-prefetch baseline")
     p.add_argument("--web-port", type=int, help="optional local dashboard port")
-    args = p.parse_args()
+    args = p.parse_args(argv)
+    if args.web_port is not None and not 1 <= args.web_port <= 65535:
+        p.error("web-port must be between 1 and 65535")
+    if args.web_port and not args.check and not args.demo and service is None:
+        from .workbench import serve
+
+        return serve(args)
     if args.demo and not args.mock:
         p.error("--demo is mock only")
     if args.duration is not None and (not np.isfinite(args.duration) or args.duration <= 0):
@@ -449,7 +599,7 @@ def main():
     if not args.raw_only:
         required.update(("pyarrow", "pandas"))
     if args.web_port:
-        required.update(("fastapi", "uvicorn"))
+        required.update(("fastapi", "uvicorn", "cv2"))
     if not args.mock:
         required.update(("i2rt", "pyrealsense2", "cv2"))
         if args.url:
@@ -457,15 +607,24 @@ def main():
     missing = sorted(name for name in required if find_spec(name) is None)
     if missing:
         p.error(
-            "缺少依赖 " + ", ".join(missing)
+            "缺少依赖 "
+            + ", ".join(missing)
             + "；请执行 uv sync --locked --extra camera --extra gui --extra deploy"
         )
     if args.check:
-        print(json.dumps({
-            "configuration": "ok", "dependencies": sorted(required),
-            "mock": args.mock, "mode": args.mode, "hardware_checked": False,
-            "note": "仅检查模块是否可发现；未验证二进制加载、设备、网络或实时性能",
-        }, ensure_ascii=False))
+        print(
+            json.dumps(
+                {
+                    "configuration": "ok",
+                    "dependencies": sorted(required),
+                    "mock": args.mock,
+                    "mode": args.mode,
+                    "hardware_checked": False,
+                    "note": "仅检查模块是否可发现；未验证二进制加载、设备、网络或实时性能",
+                },
+                ensure_ascii=False,
+            )
+        )
         return
     output = args.output or Path(cfg.save_root) / time.strftime("hil_%Y%m%d_%H%M%S")
     recorder = RecordingSession(
@@ -523,6 +682,8 @@ def main():
             prompt=cfg.task_name,
             settings=hil_cfg,
         )
+        if service is not None:
+            service.attach(runtime, output)
         if args.web_port:
             from .web import start_dashboard
 
@@ -533,7 +694,7 @@ def main():
             "s=start, i=takeover, handle 1=resume policy, space=hold, 1/2/3/4=mode, r=record segment, q=shutdown (support arms first)",
             flush=True,
         )
-        with Keyboard(runtime.event):
+        with Keyboard(runtime.event) if service is None else nullcontext():
             result = runtime.run(duration=args.duration, auto_start=args.demo, demo=args.demo)
         print(json.dumps(result), flush=True)
         recorder.close(runtime.outcome)
@@ -543,7 +704,11 @@ def main():
         if dashboard:
             dashboard.should_exit = True
         if io:
-            io.close()
+            close_errors = io.close()
+            if close_errors:
+                recorder.metadata["close_errors"] = close_errors
+                if service is not None:
+                    service.cleanup_error = "; ".join(close_errors)
         else:
             for unit in units:
                 for device in (unit.agent, unit.robot):
@@ -559,6 +724,8 @@ def main():
         if recorder._thread.is_alive():
             recorder.close("aborted")
 
+    if service is not None:
+        service.finalizing()
     if not args.raw_only:
         from .lerobot_export import export_session
 

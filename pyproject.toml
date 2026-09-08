@@ -234,7 +234,7 @@ yam-abc-doctor = "yam_abc_reproduce.doctor:main"
 include = ["yam_abc_reproduce*"]
 
 [tool.setuptools.package-data]
-yam_abc_reproduce = ["gui/static/*"]
+yam_abc_reproduce = ["gui/static/*", "hil/static/*"]
 
 [tool.ruff]
 line-length = 100

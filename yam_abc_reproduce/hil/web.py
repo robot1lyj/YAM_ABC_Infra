@@ -1,31 +1,65 @@
-"""Local-only controls for the unified workstation runtime."""
+"""Same-origin local operator API; device writes belong to the runtime owner."""
 
 import queue
 import threading
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-PAGE = """<!doctype html><html lang="zh"><meta charset="utf-8"><title>YAM 工作站</title>
-<style>body{font:18px system-ui;max-width:900px;margin:48px auto;padding:0 20px;background:#101820;color:#e9f0f4}
-button{font:inherit;padding:12px 18px;margin:6px;border:0;border-radius:8px;cursor:pointer}pre{white-space:pre-wrap;background:#20303c;padding:20px}
-</style><h1>YAM 双臂工作站</h1><p>模式切换先保持；点击开始后执行。HIL用键盘i冻结介入，人工阶段用手柄①交还模型。</p>
-<div><button onclick="send('mode:teleop')">遥操作</button><button onclick="send('mode:inference')">推理</button><button onclick="send('mode:hil')">DAgger / HIL</button><button onclick="send('mode:collect')">数据采集</button></div>
-<div><button onclick="send('record')">开始 / 结束一段录制</button><button onclick="send('discard')">放弃当前集</button></div>
-<div><button onclick="send('start')">开始 / 恢复</button><button onclick="send('takeover')">键盘 i：介入（或点此）</button><button onclick="send('resume_policy')">交还模型（同手柄①）</button><button onclick="send('hold')" style="background:#ffbf69">暂停运动（空格）</button></div>
-<p>HIL：键盘 i 冻结并介入，手柄①交还模型，②无功能。采集：①开始/结束，②放弃当前集。遥操作/推理：手柄按钮无功能。退出程序会结束电机控制，请先支撑机械臂。</p>
-<div><button onclick="send('success')">标记成功</button><button onclick="send('failure')">标记失败</button></div><button onclick="send('quit')">结束会话（先支撑机械臂）</button><p id="error"></p><pre id="status">正在读取状态…</pre><script>
-async function send(event){const r=await fetch('/event/'+encodeURIComponent(event),{method:'POST'});document.getElementById('error').textContent=r.ok?'':await r.text()}
-async function poll(){try{const s=await(await fetch('/status')).json();document.getElementById('status').textContent=JSON.stringify(s,null,2)}catch(e){document.getElementById('error').textContent='工作站连接已断开'}}setInterval(poll,300);poll();
-</script></html>"""
+STATIC = Path(__file__).with_name("static")
+
+
+class Connect(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ready: bool = False
+    url: str | None = Field(default=None, max_length=500)
+    task: str | None = Field(default=None, max_length=300)
+
+
+class Disconnect(BaseModel):
+    supported: bool = False
+
+
+class JogRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    arm: str
+    joint: int = Field(strict=True, ge=0, le=6)
+    delta: float = Field(allow_inf_nan=False)
 
 
 def create_app(runtime):
-    app = FastAPI(title="YAM 四模式工作站")
+    app = FastAPI(title="YAM Operator Workbench")
+    app.add_middleware(
+        TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "[::1]", "testserver"]
+    )
+    app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
-    @app.get("/", response_class=HTMLResponse)
+    @app.middleware("http")
+    async def local_control(request: Request, call_next):
+        # Cross-origin forms cannot issue motor commands; no permissive CORS.
+        if request.method == "POST":
+            origin = request.headers.get("origin")
+            expected = str(request.base_url).rstrip("/")
+            if request.headers.get("x-yam-control") != "1" or (origin and origin != expected):
+                return JSONResponse({"detail": "拒绝跨站控制请求"}, status_code=403)
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Frame-Options"] = "DENY"
+        return response
+
+    def invoke(fn, *args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (ValueError, queue.Full) as exc:
+            raise HTTPException(409, str(exc) or "指令队列忙，请稍后重试") from exc
+
+    @app.get("/")
     def home():
-        return PAGE
+        return FileResponse(STATIC / "index.html")
 
     @app.get("/status")
     def status():
@@ -33,11 +67,40 @@ def create_app(runtime):
 
     @app.post("/event/{event}")
     def event(event: str):
-        try:
-            runtime.event(event)
-        except (ValueError, queue.Full) as exc:
-            raise HTTPException(409, str(exc)) from exc
+        invoke(runtime.event, event)
         return {"queued": event}
+
+    @app.post("/heartbeat")
+    def heartbeat():
+        if hasattr(runtime, "heartbeat"):
+            runtime.heartbeat()
+        return {"ok": True}
+
+    @app.post("/connect")
+    def connect(body: Connect):
+        if not hasattr(runtime, "connect"):
+            raise HTTPException(409, "此演示会话已连接")
+        invoke(runtime.connect, **body.model_dump())
+        return {"queued": "connect"}
+
+    @app.post("/disconnect")
+    def disconnect(body: Disconnect):
+        if not hasattr(runtime, "disconnect"):
+            raise HTTPException(409, "请在启动终端结束此演示")
+        invoke(runtime.disconnect, **body.model_dump())
+        return {"queued": "disconnect"}
+
+    @app.post("/jog")
+    def jog(body: JogRequest):
+        invoke(runtime.request_jog, **body.model_dump())
+        return {"queued": "jog"}
+
+    @app.get("/camera/{role}.jpg")
+    def camera(role: str):
+        data = runtime.preview(role) if hasattr(runtime, "preview") else None
+        if data is None:
+            raise HTTPException(404, "相机预览尚未就绪或已过期")
+        return Response(data, media_type="image/jpeg")
 
     return app
 

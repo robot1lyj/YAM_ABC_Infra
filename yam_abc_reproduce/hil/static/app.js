@@ -1,0 +1,607 @@
+"use strict";
+const $ = (id) => document.getElementById(id),
+  names = {
+    collect: "数据采集",
+    hil: "DAgger / HIL",
+    inference: "模型推理",
+    teleop: "遥操作",
+  };
+const phases = {
+  hold: "已保持",
+  human: "人工控制",
+  policy: "模型执行",
+  takeover: "冻结接管",
+  resume: "准备交还",
+  fault: "故障锁存",
+};
+let state = {},
+  page = "workspace",
+  arm = "left",
+  online = false,
+  busy = false,
+  toastTimer,
+  lastPoll = 0;
+function text(id, value) {
+  $(id).textContent = value;
+}
+function toast(message) {
+  text("toast", message);
+  $("toast").hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => ($("toast").hidden = true), 4500);
+}
+async function post(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-YAM-Control": "1" },
+    body: JSON.stringify(body || {}),
+    signal: AbortSignal.timeout(5000),
+  });
+  const result = await response.json();
+  if (!response.ok)
+    throw Error(
+      typeof result.detail === "string" ? result.detail : "请求参数无效",
+    );
+  return result;
+}
+async function action(path, body) {
+  try {
+    await post(path, body);
+    await poll();
+    return true;
+  } catch (e) {
+    toast(e.message);
+    return false;
+  }
+}
+function confirmAction(title, description, callback) {
+  text("confirm-title", title);
+  text("confirm-text", description);
+  $("confirm-action").onclick = async () => {
+    $("confirm-dialog").close();
+    await callback();
+  };
+  $("confirm-dialog").showModal();
+}
+function activeDevice() {
+  return (
+    online &&
+    state.connection === "connected" &&
+    state.control_age_s != null &&
+    state.control_age_s < 0.5 &&
+    state.phase !== "fault"
+  );
+}
+function render() {
+  const connected = activeDevice(),
+    latched = !!state.stop_latched,
+    maint = state.maintenance || "idle",
+    paused = state.phase === "hold",
+    mode = state.mode || "collect",
+    recording = !!state.recording;
+  const canRun = connected && !latched,
+    canMaintain = canRun && paused && !recording,
+    idle = maint === "idle";
+  text("environment", state.mock ? "模拟工作站" : "真实设备");
+  $("environment").className = "pill" + (state.mock ? "" : " ok");
+  const cNames = {
+    disconnected: "设备未连接",
+    connecting: "正在连接设备",
+    connected: "设备已连接",
+    disconnecting: "正在关闭设备",
+    finalizing: "正在整理数据",
+    fault: "会话失败",
+  };
+  text(
+    "connection-text",
+    online ? cNames[state.connection] || "会话运行中" : "界面连接中断",
+  );
+  $("connection-dot").className =
+    "led" + (connected ? " ok" : state.connection === "fault" ? " bad" : "");
+  const transitional = ["connecting", "disconnecting", "finalizing"].includes(
+    state.connection,
+  );
+  $("connect").disabled = !online || transitional;
+  $("connect").querySelector("span").textContent = transitional
+    ? cNames[state.connection]
+    : state.connection === "connected"
+      ? "断开并保存"
+      : "连接设备";
+  document.querySelectorAll("[data-mode]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.mode === mode);
+    b.querySelector(".mode-state").textContent =
+      b.dataset.mode === mode ? "● 当前模式" : "选择模式 →";
+    b.disabled = !online || transitional || latched || state.phase === "fault";
+  });
+  text("mode-name", names[mode]);
+  text(
+    "phase",
+    latched
+      ? "紧急暂停"
+      : maint === "homing"
+        ? "正在回位"
+        : maint === "gravity"
+          ? "重力补偿"
+          : connected
+            ? phases[state.phase] || state.phase
+            : "未就绪",
+  );
+  text(
+    "control-hint",
+    !connected
+      ? "连接设备后准备开始"
+      : latched
+        ? "检查现场后解除暂停锁存"
+        : maint === "homing"
+          ? "回位独占控制 · 可随时暂停"
+          : maint === "gravity"
+            ? "手动摆放机械臂 · 结束后保持"
+            : paused
+              ? "等待开始指令"
+              : state.phase === "human"
+                ? "Leader 正在控制 Follower"
+                : "本地策略控制中",
+  );
+  text(
+    "start",
+    mode === "collect" || mode === "teleop"
+      ? "▶ 开始遥操作"
+      : "▶ 开始模型执行",
+  );
+  $("start").disabled = !(canRun && paused && idle);
+  $("header-stop").disabled =
+    !online || state.connection !== "connected" || latched;
+  $("header-reset").hidden = !latched;
+  $("hold").disabled = !online || state.connection !== "connected";
+  $("emergency").disabled =
+    !online || state.connection !== "connected" || latched;
+  $("reset-stop").hidden = !latched;
+  $("takeover").disabled = !(
+    canRun &&
+    mode === "hil" &&
+    ["policy", "resume"].includes(state.phase)
+  );
+  $("resume").disabled = !(canRun && mode === "hil" && state.phase === "human");
+  text(
+    "handle-hint",
+    mode === "collect"
+      ? "手柄① 开始 / 结束录制　\n手柄② 放弃当前集"
+      : mode === "hil"
+        ? "键盘 I 冻结并接管　\n手柄① 交还模型 · ② 无功能"
+        : "手柄按钮不分配功能",
+  );
+  text(
+    "ownership",
+    "控制权：" +
+      (!connected
+        ? "尚未连接"
+        : latched
+          ? "紧急暂停锁存"
+          : maint === "homing"
+            ? "回位控制"
+            : maint === "gravity"
+              ? "人工摆位 / 重力补偿"
+              : paused
+                ? "姿态保持"
+                : state.source === "human"
+                  ? "Leader 遥操作"
+                  : "Thor 模型"),
+  );
+  $("record").disabled = !(
+    canRun &&
+    ["collect", "teleop"].includes(mode) &&
+    (recording || state.phase === "human")
+  );
+  text("record", recording ? "■ 结束当前录制" : "● 开始录制");
+  $("discard").disabled = !(
+    canRun &&
+    recording &&
+    ["collect", "teleop"].includes(mode)
+  );
+  text("success", state.outcome === "success" ? "✓ 已标记成功" : "✓ 标记成功");
+  text("failure", state.outcome === "failure" ? "已标记失败" : "标记失败");
+  $("success").disabled = !canRun || !recording;
+  $("failure").disabled = !canRun || !recording;
+  text(
+    "record-badge",
+    recording
+      ? "● 录制中 " + Math.floor(state.episode_elapsed_s || 0) + "s"
+      : state.connection === "finalizing"
+        ? "正在整理"
+        : "未录制",
+  );
+  $("record-badge").className = "pill" + (recording ? " recording" : "");
+  text("episode-count", String(state.episode_count || 0).padStart(2, "0"));
+  text("frame-count", (state.recorded_steps || 0).toLocaleString());
+  text("interventions", state.intervention_id || 0);
+  text(
+    "disk",
+    state.disk_free_gb == null ? "— GB" : state.disk_free_gb.toFixed(1) + " GB",
+  );
+  text(
+    "output",
+    state.output || "连接后创建会话目录 · 结束会话后自动整理 LeRobot 数据",
+  );
+  text("latency", state.performance?.control_work?.p95_ms?.toFixed(2) + " ms");
+  if (!connected) text("latency", "— ms");
+  const skew = state.arrival_skew_s;
+  text(
+    "sync",
+    connected && skew != null
+      ? "相机到达偏差 " + (skew * 1000).toFixed(0) + " ms"
+      : "尚无同步观测",
+  );
+  $("sync-dot").className =
+    "led" + (connected && skew != null && skew < 0.12 ? " ok" : "");
+  text(
+    "preview-toggle",
+    state.preview_enabled === false ? "开启预览" : "关闭预览",
+  );
+  for (const el of document.querySelectorAll("[data-camera]")) {
+    const cam = (state.cameras || []).find((c) => c.role === el.dataset.camera);
+    const valid = connected && cam?.healthy && state.preview_enabled !== false;
+    el.querySelector(".led").className =
+      "led" + (connected && cam?.healthy ? " ok" : "");
+    el.querySelector(".camera-meta").textContent =
+      cam && connected
+        ? `${cam.fps?.toFixed(0) || "—"} fps　 ·　帧龄 ${Math.round(cam.age_s * 1000)} ms`
+        : "— fps　 ·　帧龄 —";
+    if (!valid) {
+      el.querySelector("img").hidden = true;
+      el.querySelector(".camera-empty").hidden = false;
+      el.querySelector(".camera-empty span").textContent =
+        state.preview_enabled === false
+          ? "预览已关闭，采集不受影响"
+          : connected
+            ? "等待新鲜画面"
+            : "等待相机连接";
+    }
+  }
+  const ages = state.sdk_state_age_s || [];
+  const devices = [
+    ["左 Follower", 0],
+    ["右 Follower", 2],
+    ["左 Leader", 1],
+    ["右 Leader", 3],
+  ];
+  $("health").replaceChildren();
+  for (const [label, i] of devices) {
+    const ok = connected && Number.isFinite(ages[i]) && ages[i] < 0.25;
+    healthRow(
+      label,
+      ok
+        ? Math.round(ages[i] * 1000) + " ms"
+        : connected
+          ? "反馈异常"
+          : "未连接",
+      ok,
+    );
+  }
+  const healthy = (state.cameras || []).filter((c) => c.healthy).length;
+  healthRow(
+    "三路相机",
+    connected ? `${healthy} / 3 在线` : "未连接",
+    connected && healthy === 3,
+  );
+  healthRow(
+    "Thor 模型",
+    state.policy_configured
+      ? state.mock
+        ? "模拟策略"
+        : state.source === "policy" && connected
+          ? "策略执行中"
+          : "已配置 / 待验证"
+      : "未配置",
+    state.source === "policy" && connected,
+  );
+  healthRow(
+    "录制队列",
+    connected ? `${state.record_queue || 0} 帧等待` : "未启动",
+    connected && !state.error,
+  );
+  const errors = [
+    !online ? "界面连接中断。工作台心跳超时将请求暂停；请检查现场状态。" : null,
+    state.connection_error,
+    state.error,
+    state.cleanup_error,
+    state.maintenance_error,
+    state.operator_error,
+    state.operator_lost
+      ? "操作台失联已触发暂停；重新连接不会自动恢复运动。"
+      : null,
+  ];
+  const error = errors.filter(Boolean).join(" · ");
+  text("alert", error);
+  $("alert").hidden = !error;
+  $("episodes").replaceChildren();
+  const episodes = state.episodes || [];
+  if (!episodes.length) {
+    $("episodes").className = "empty-row";
+    $("episodes").textContent = "还没有完成的采集集。第一段示范，从这里开始。";
+  } else {
+    $("episodes").className = "";
+    for (const ep of [...episodes].reverse()) {
+      const row = document.createElement("div");
+      row.className = "episode-row";
+      const a = document.createElement("span"),
+        b = document.createElement("span");
+      a.textContent = ep.path;
+      b.textContent = `${ep.steps} 帧 · ${{ discarded: "已放弃", aborted: "中断", success: "成功", failure: "失败", unknown: "已结束" }[ep.outcome] || ep.outcome}`;
+      row.append(a, b);
+      $("episodes").append(row);
+    }
+  }
+  $("logs").replaceChildren();
+  for (const item of [...(state.events || [])].reverse().slice(0, 8)) {
+    const row = document.createElement("div");
+    row.className = "log-row";
+    const t = document.createElement("time");
+    t.textContent = item.time;
+    row.append(t, document.createTextNode(item.message));
+    $("logs").append(row);
+  }
+  $("device-cards").replaceChildren();
+  for (const [name, i] of devices) {
+    const card = document.createElement("article");
+    card.className = "device-card";
+    const title = document.createElement("h3"),
+      meta = document.createElement("span");
+    title.textContent = name;
+    meta.textContent = connected
+      ? `反馈 ${ages[i] == null ? "—" : Math.round(ages[i] * 1000)} ms · ${name.includes("Leader") ? "官方 YAM Leader" : "标准平行夹爪"}`
+      : "设备未连接";
+    card.append(title, meta);
+    $("device-cards").append(card);
+  }
+  const q = state.follower_state || [],
+    offset = arm === "left" ? 0 : 7;
+  document.querySelectorAll("[data-joint-value]").forEach((el) => {
+    const value = q[offset + Number(el.dataset.jointValue)];
+    el.textContent =
+      connected && value != null
+        ? ((value * 180) / Math.PI).toFixed(1) + "°"
+        : "—";
+  });
+  document
+    .querySelectorAll(".jog-button")
+    .forEach(
+      (el) => (el.disabled = !(canMaintain && idle && mode === "collect")),
+    );
+  text(
+    "gripper-value",
+    connected && q[offset + 6] != null
+      ? "当前开度 " + Math.round(q[offset + 6] * 100) + "%"
+      : "开度 —",
+  );
+  $("capture-home").disabled = !(canMaintain && idle);
+  $("home").disabled = !(canMaintain && idle && state.home_available);
+  $("gravity").disabled = !(canMaintain && idle);
+  $("gravity-exit").disabled = !(canRun && maint === "gravity");
+  text(
+    "home-status",
+    maint === "homing"
+      ? "正在回准备位，完成后保持不动"
+      : maint === "gravity"
+        ? "重力补偿中：请手扶机械臂调整姿态"
+        : state.home_available
+          ? "准备位已保存 · 回位前请清空完整运动路径"
+          : "尚未保存准备位",
+  );
+  text("clock", new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+}
+function healthRow(label, value, ok) {
+  const row = document.createElement("div");
+  row.className = "health-row";
+  const a = document.createElement("span"),
+    b = document.createElement("span"),
+    dot = document.createElement("i");
+  a.textContent = label;
+  dot.className = "led" + (ok ? " ok" : "");
+  b.append(dot, document.createTextNode(value));
+  row.append(a, b);
+  $("health").append(row);
+}
+async function poll() {
+  if (busy) return;
+  busy = true;
+  try {
+    const r = await fetch("/status", { signal: AbortSignal.timeout(2000) });
+    if (!r.ok) throw Error("状态读取失败");
+    state = await r.json();
+    online = true;
+    lastPoll = Date.now();
+  } catch (e) {
+    online = false;
+  } finally {
+    busy = false;
+    render();
+  }
+}
+async function heartbeat() {
+  try {
+    await post("/heartbeat");
+  } catch (e) {
+    /* State polling handles visible errors. */
+  }
+}
+function switchPage(next) {
+  page = next;
+  document
+    .querySelectorAll("[data-page]")
+    .forEach((b) => b.classList.toggle("active", b.dataset.page === next));
+  $("workspace-page").hidden = next !== "workspace";
+  $("devices-page").hidden = next !== "devices";
+  text("page-name", next === "workspace" ? "采集工作台" : "设备与调试");
+  text(
+    "heading",
+    next === "workspace"
+      ? "让每一次示范，都成为进步。"
+      : "准备就绪，从每一台设备开始。",
+  );
+  text(
+    "subtitle",
+    next === "workspace"
+      ? "连接设备，选择工作模式，开始你的下一组采集。"
+      : "查看四臂状态，示教准备位，完成采集前的设备调试。",
+  );
+}
+for (let j = 0; j < 6; j++) {
+  const el = document.createElement("div");
+  el.className = "joint";
+  el.innerHTML = `<div class="joint-head"><span>关节 J${j + 1}</span><strong data-joint-value="${j}">—</strong></div><div class="joint-buttons"><button class="button jog-button" data-joint="${j}" data-delta="-1">−</button><button class="button jog-button" data-joint="${j}" data-delta="1">＋</button></div>`;
+  $("joint-controls").append(el);
+}
+document
+  .querySelectorAll("[data-page]")
+  .forEach((b) => (b.onclick = () => switchPage(b.dataset.page)));
+document
+  .querySelectorAll("[data-mode]")
+  .forEach((b) => (b.onclick = () => action("/event/mode:" + b.dataset.mode)));
+document
+  .querySelectorAll("[data-event]")
+  .forEach((b) => (b.onclick = () => action("/event/" + b.dataset.event)));
+document.querySelectorAll("[data-arm]").forEach(
+  (b) =>
+    (b.onclick = () => {
+      arm = b.dataset.arm;
+      document
+        .querySelectorAll("[data-arm]")
+        .forEach((x) => x.classList.toggle("active", x === b));
+      render();
+    }),
+);
+document
+  .querySelectorAll("[data-joint]")
+  .forEach(
+    (b) =>
+      (b.onclick = () =>
+        action("/jog", {
+          arm,
+          joint: Number(b.dataset.joint),
+          delta: (Number(b.dataset.delta) * Math.PI) / 90,
+        })),
+  );
+$("gripper-open").onclick = () => action("/jog", { arm, joint: 6, delta: 0.1 });
+$("gripper-close").onclick = () =>
+  action("/jog", { arm, joint: 6, delta: -0.1 });
+$("preview-toggle").onclick = () =>
+  action(
+    "/event/" +
+      (state.preview_enabled === false ? "preview_on" : "preview_off"),
+  );
+$("emergency").onclick = () => action("/event/stop");
+$("header-stop").onclick = () => action("/event/stop");
+$("header-reset").onclick = () => $("reset-stop").click();
+$("reset-stop").onclick = () =>
+  confirmAction(
+    "解除软件暂停锁存？",
+    "确认现场已排除异常。解除后保持不动，不恢复旧动作；你可以再选择开始、回准备位或重力补偿。",
+    () => action("/event/reset_stop"),
+  );
+$("capture-home").onclick = () =>
+  confirmAction(
+    "保存当前四臂准备位？",
+    "这将覆盖本机当前配置的准备位。请确认四台机械臂姿态合适、Leader 与 Follower 对齐；保存不会运动。",
+    () => action("/event/capture_home"),
+  );
+$("home").onclick = () =>
+  confirmAction(
+    "回到准备位？",
+    "回位将独占四臂控制，并沿关节插值路径运动。请确认完整路径没有人员或障碍；夹爪保持当前开度。可随时按暂停。",
+    () => action("/event/home"),
+  );
+$("gravity").onclick = () =>
+  confirmAction(
+    "进入重力补偿？",
+    "请手扶机械臂后继续。模型和遥操作将停止；四臂关节可手动摆放，Follower夹爪保持。完成后点击“结束补偿 / 保持”。",
+    () => action("/event/gravity"),
+  );
+$("discard").onclick = () =>
+  confirmAction(
+    "放弃当前这一集？",
+    "当前集将停止写入并删除，之前已保存的集不受影响。遥操作继续。",
+    () => action("/event/discard"),
+  );
+$("connect").onclick = () => {
+  if (state.connection === "connected") {
+    confirmAction(
+      "断开设备并保存会话？",
+      "结束控制可能使机械臂失去支撑，请先支撑四台机械臂。结束后后台整理LeRobot数据；未结束的采集集按中断处理。",
+      () => action("/disconnect", { supported: true }),
+    );
+  } else {
+    $("real-warning").hidden = !!state.mock;
+    $("connect-dialog").showModal();
+  }
+};
+$("connect-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const payload = { ready: true, task: $("task-input").value };
+  if ($("url-input").value.trim()) payload.url = $("url-input").value.trim();
+  $("connect-dialog").close();
+  await action("/connect", payload);
+};
+document
+  .querySelectorAll("[data-close]")
+  .forEach((b) => (b.onclick = () => b.closest("dialog").close()));
+// Keyboard remains available on both pages; never intercept typing or open dialogs.
+document.addEventListener("keydown", (e) => {
+  if (
+    e.repeat ||
+    ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) ||
+    document.querySelector("dialog[open]")
+  )
+    return;
+  const event = {
+    i: "takeover",
+    " ": "hold",
+    s: "start",
+    r: "record",
+    x: "discard",
+    g: "success",
+    f: "failure",
+    1: "mode:teleop",
+    2: "mode:inference",
+    3: "mode:hil",
+    4: "mode:collect",
+  }[e.key.toLowerCase()];
+  if (event) {
+    e.preventDefault();
+    if (event === "discard") $("discard").click();
+    else action("/event/" + event);
+  }
+});
+for (const img of document.querySelectorAll(".camera img")) {
+  img.onload = () => {
+    delete img.dataset.loading;
+    if (activeDevice() && state.preview_enabled !== false) {
+      img.hidden = false;
+      img.nextElementSibling.hidden = true;
+    }
+  };
+  img.onerror = () => {
+    delete img.dataset.loading;
+    img.hidden = true;
+    img.nextElementSibling.hidden = false;
+  };
+}
+setInterval(() => {
+  if (
+    page !== "workspace" ||
+    !activeDevice() ||
+    state.preview_enabled === false ||
+    document.hidden
+  )
+    return;
+  for (const img of document.querySelectorAll(".camera img")) {
+    if (!img.dataset.loading) {
+      img.dataset.loading = "1";
+      img.src =
+        "/camera/" + img.parentElement.dataset.camera + ".jpg?t=" + Date.now();
+    }
+  }
+}, 250);
+setInterval(poll, 400);
+setInterval(heartbeat, 1000);
+heartbeat();
+poll();

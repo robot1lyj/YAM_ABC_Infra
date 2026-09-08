@@ -1,0 +1,78 @@
+{
+  "observed_at": "2026-09-08T09:30:14.961584+00:00",
+  "base_commit": "cfdc1ed3d1f42d28f27c0703f3758d943a228813",
+  "scope": "approved four-mode software; Linux x86_64 mocks; no real motors, cameras, Thor or RK3588 hardware validation",
+  "changes": [
+    "keyboard-only/GUI takeover priority; one-cycle freeze then relative leader motion",
+    "HIL handle1 hand-back, handle2 unused; teleop/inference handles unused",
+    "collection start/end vs discard current episode; discarded raw files removed after encoder close",
+    "full HIL episode and boundary annotations in automatic LeRobot v3.0 export after device shutdown",
+    "bounded recording queues, one encoder thread per video, bounded timing metrics",
+    "remove optimization advice document per user; refresh Chinese manuals and scoped memory"
+  ],
+  "checks": {
+    "tests": "178 passed, 2 skipped, 9 subtests passed",
+    "lint": "ruff check passed on changed runtime/tests",
+    "environment": "uv sync --locked --extra camera --extra gui --extra deploy; uv pip check: 85 packages compatible",
+    "official_reader": "LeRobot 0.5.1 read 119 frames, 1 complete HIL episode, all three RGB streams and event boundaries"
+  },
+  "evidence": [
+    {
+      "path": "docs/evidence/20260908-approved-modes-tests.txt",
+      "sha256": "832cc7efbcfc5fc02ed61ab4310d513b98441a4b3dbd79c7c42c1258df2ea6b6"
+    },
+    {
+      "path": "docs/evidence/20260908-approved-modes-performance.json",
+      "sha256": "4a683ee930e3906447801da657ac0324eaa7a8478bfbc417284c66f99a84ee81"
+    },
+    {
+      "path": "docs/evidence/20260908-approved-modes-reader.json",
+      "sha256": "0a8ca2823b497e3f37582f42930c2d0444f3a616eeb781628b088bcbf6b128ca"
+    }
+  ],
+  "source_sha256": {
+    "yam_abc_reproduce/hil/__init__.py": "5e7eb2ea1bd244fa6a392c27d654b3669799bf00ed654233989e62a9e31e9e66",
+    "yam_abc_reproduce/hil/buttons.py": "44cf6706721c7007bf2dc019846518df954770580b868732e078df22708d666e",
+    "yam_abc_reproduce/hil/core.py": "e8b623458b5fc997c2abe859beeaf8e5e84ef87c5b317ca1be1a58dc90930bac",
+    "yam_abc_reproduce/hil/export.py": "3e189a6d36564aeea13fa587b1379e39b7e2d9362d4bdf7ede92fd88876acb63",
+    "yam_abc_reproduce/hil/keyboard.py": "9c78cd29640eccfbd48d5bf5ad52763bb640d30c7815c314165a3896c53f91b5",
+    "yam_abc_reproduce/hil/lerobot_export.py": "f7f08fffc4af5a4d006804e25683fc7e7a171bee9383ee2af7092e2249ec960e",
+    "yam_abc_reproduce/hil/metrics.py": "a8f5a113441441f4a24a0596db77fc82f3e17e03dba4c17c89405e4fa8197600",
+    "yam_abc_reproduce/hil/observation.py": "b1cc8201a2cedddfcdc59cedc1fb7976b45cdb06e794feea75f5db17a26ed537",
+    "yam_abc_reproduce/hil/policy.py": "089b7c79ec18779a5228e60bf9d7301f4638da7d2d24119116d9a38b22017b1c",
+    "yam_abc_reproduce/hil/recording.py": "d4ba2b209e206f61e34d15e5e5c35cec9e4c31defc63e0a9391f65b52d11620f",
+    "yam_abc_reproduce/hil/run.py": "8c647eff747ee03fcc6382eba46abdd8003360165e8e58eb45f7c7f3a307c1a0",
+    "yam_abc_reproduce/hil/session.py": "ae23b4555f2fb9114bf899a9a0834c4521aa070e3ea3274f48e63db306e3de81",
+    "yam_abc_reproduce/hil/snapshots.py": "e5f4a8f22b94e6e7ce13acc6b18afafbd5abd3b9aa7b5c5d6bb6e36bf9ac7e36",
+    "yam_abc_reproduce/hil/station.py": "e475f1a70bae8caa5c90bc493aa71b76621a720ce0556fda780b63b51654dfeb",
+    "yam_abc_reproduce/hil/web.py": "2efc45abb4ea3a03ce7bcd04115fe1d3a29d82f10358b1edbe46991f27a69664",
+    "tests/test_hil.py": "9ed9a158cf6fc99b296fe8730389fc515b7e2d9da749bcde3815c69937060c84",
+    "tests/test_hil_runtime.py": "8b4f421b04de2e0b507efde6301c9c64e1e2aa649739f13afa652b61b9538ebd",
+    "tests/test_collection_mode.py": "51e8ac2da0c17348e6985d20b2c615fa436481413f9cda7eaee17b2730a4700b",
+    "tests/test_lerobot_export.py": "63e8794cab7a4e68b4aebfc4c7eefc2ec22dcae798a0cf194c532bd885550fbd",
+    "configs/station_hil.yaml": "e426704b0b3fdbdd157448409999e4c94ce1990ac57bc4f2751479c83c40f778",
+    "pyproject.toml": "11553bcde8dc6d0c52308fbb93efe3dee0304a3be348c596c88a48304f91f942",
+    "uv.lock": "259f9dda29e0b95e4e5c12dc2ed74bf99270583d954641151dc412e70a17ae08",
+    "scripts/check_project_memory.py": "3fd0e31740fd4213da76544a2af2d406db8987c237a401b7448074d672c5a388"
+  },
+  "environment": {
+    "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+    "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+    "packages": {
+      "numpy": "2.2.6",
+      "av": "15.1.0",
+      "pyarrow": "25.0.0",
+      "pandas": "2.3.3",
+      "pyrealsense2": "2.58.3.10794",
+      "fastapi": "0.140.0"
+    }
+  },
+  "limitations": [
+    "short mock benchmark is not RK/CAN/USB or long-term memory stability proof",
+    "first pre-camera row excluded from image-backed dataset; source row retained invalid",
+    "state feedback aligned by camera receipt time, not hardware exposure synchronization",
+    "training must use expert_valid/control-source masks; condapi training was not modified or tested",
+    "encoder/file errors are surfaced; no power-loss durability claim",
+    "temporary artifacts may be cleaned"
+  ]
+}

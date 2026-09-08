@@ -33,8 +33,10 @@ class Session:
         # Local events take precedence over a policy response arriving this tick.
         if event == "start":
             self.arbiter.start(state, leader)
-        elif event == "toggle":
-            self.arbiter.toggle(state, leader)
+        elif event == "takeover":
+            self.arbiter.takeover(state, leader)
+        elif event == "resume_policy":
+            self.arbiter.resume_policy(state)
         elif event == "hold":
             self.arbiter.hold(state)
         elif event and event.startswith("mode:"):

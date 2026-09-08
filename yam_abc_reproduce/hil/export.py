@@ -79,7 +79,7 @@ def export(source: Path, output: Path):
     manifest = json.loads((source / "manifest.json").read_text())
     if manifest.get("schema") != "yam_hil_v1":
         raise ValueError("not a YAM HIL episode")
-    if manifest.get("error") or manifest.get("outcome") == "aborted":
+    if manifest.get("error") or manifest.get("outcome") in ("aborted", "discarded"):
         raise ValueError("aborted recording requires review before expert export")
     output.mkdir(parents=True, exist_ok=False)
     fps = manifest["fps"]

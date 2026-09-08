@@ -14,6 +14,8 @@ dependencies = [
     "numpy>=1.24",
     "pyyaml>=6.0",
     "av>=12",
+    "pyarrow>=18",
+    "pandas>=2.2,<3",
     "i2rt",
 ]
 

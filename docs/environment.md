@@ -68,3 +68,7 @@ PyTorch 的 cpu/cu121/cu128 索引保留 explicit 及按组绑定。
 本次安装、离线验收结果见 docs/evidence/。mock 只验证软件路径，
 不证明电机、相机、急停或实时控制可用。训练要选择一个后端；
 uv sync 会移除本次未选择的 extras/groups。
+
+## 数据输出依赖
+
+当前基础依赖明确包含PyArrow和Pandas，用于会话结束后的LeRobot v3.0表格写入，PyAV用于视频。常规工作站sync仍无需安装PyTorch/完整LeRobot训练包；依赖由pyproject.toml和uv.lock固定。官方LeRobot读取验证使用独立临时CPU环境，不能当成本项目.venv安装了模型栈。

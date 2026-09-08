@@ -1,0 +1,213 @@
+{
+  "artifact": "/tmp/yam-recording-final-idcqa1my",
+  "exit_code": 0,
+  "scope": "x86_64 mock 3x640x480 RGB at 30Hz; not hardware benchmark",
+  "status": {
+    "performance": {
+      "io_read": {
+        "p50_ms": 0.08092503412626684,
+        "p95_ms": 0.12296782806515709,
+        "p99_ms": 0.15890233335085213,
+        "max_ms": 0.17243099864572287
+      },
+      "observation": {
+        "p50_ms": 0.07902199286036193,
+        "p95_ms": 0.13608125445898625,
+        "p99_ms": 0.15011805633548647,
+        "max_ms": 0.17949397442862391
+      },
+      "arbitration": {
+        "p50_ms": 0.10777698480524123,
+        "p95_ms": 0.4704288177890703,
+        "p99_ms": 0.5178100004559383,
+        "max_ms": 0.6085240165702999
+      },
+      "io_apply": {
+        "p50_ms": 0.049713009502738714,
+        "p95_ms": 0.0617564277490601,
+        "p99_ms": 0.07176340499427168,
+        "max_ms": 0.08396198973059654
+      },
+      "record_submit": {
+        "p50_ms": 0.0306059664580971,
+        "p95_ms": 0.0484764896100387,
+        "p99_ms": 0.05500384373590348,
+        "max_ms": 0.060510996263474226
+      },
+      "control_work": {
+        "p50_ms": 0.3568819956853986,
+        "p95_ms": 0.7191557611804456,
+        "p99_ms": 0.8537490555318071,
+        "max_ms": 1.0163590195588768
+      },
+      "tick_interval": {
+        "p50_ms": 33.333333333333336,
+        "p95_ms": 33.40465242508799,
+        "p99_ms": 33.74023227428552,
+        "max_ms": 34.108954947441816
+      }
+    },
+    "record_metrics": {
+      "session_queue_peak": 1,
+      "encoder_queue": 0,
+      "encoder": {
+        "queue_peak": 0,
+        "encode_max_ms": 15.452238032594323
+      }
+    },
+    "tick": 449,
+    "mode": "hil",
+    "phase": "policy",
+    "source": "policy",
+    "leader_error_rad": 0.002593922413938965,
+    "frame_age_s": 0.024014689028263092,
+    "arrival_skew_s": 0.00020261702593415976,
+    "deadline_misses": 0,
+    "record_queue": 1,
+    "recorded_steps": 449,
+    "intervention_id": 1,
+    "recording": true,
+    "error": null,
+    "outcome": "unknown",
+    "running": false
+  },
+  "steps": 450,
+  "video_frames": {
+    "top": 449,
+    "left": 449,
+    "right": 449
+  },
+  "recording": {
+    "queue_peak": 0,
+    "encode_max_ms": 15.452238032594323
+  },
+  "session_queue_peak": 1,
+  "rss": [
+    {
+      "elapsed_s": 9.631499415263534e-05,
+      "rss_kib": 200
+    },
+    {
+      "elapsed_s": 0.5003181269858032,
+      "rss_kib": 99752
+    },
+    {
+      "elapsed_s": 1.0005530850030482,
+      "rss_kib": 99796
+    },
+    {
+      "elapsed_s": 1.5007907199906185,
+      "rss_kib": 102660
+    },
+    {
+      "elapsed_s": 2.001100458961446,
+      "rss_kib": 102676
+    },
+    {
+      "elapsed_s": 2.501323301985394,
+      "rss_kib": 102712
+    },
+    {
+      "elapsed_s": 3.0015627359971404,
+      "rss_kib": 102736
+    },
+    {
+      "elapsed_s": 3.501755031000357,
+      "rss_kib": 102756
+    },
+    {
+      "elapsed_s": 4.001996078004595,
+      "rss_kib": 102780
+    },
+    {
+      "elapsed_s": 4.502195453969762,
+      "rss_kib": 102828
+    },
+    {
+      "elapsed_s": 5.002438147959765,
+      "rss_kib": 102836
+    },
+    {
+      "elapsed_s": 5.5026739659952,
+      "rss_kib": 102848
+    },
+    {
+      "elapsed_s": 6.002898117003497,
+      "rss_kib": 102868
+    },
+    {
+      "elapsed_s": 6.503114370978437,
+      "rss_kib": 102880
+    },
+    {
+      "elapsed_s": 7.003330873965751,
+      "rss_kib": 102896
+    },
+    {
+      "elapsed_s": 7.5035764499916695,
+      "rss_kib": 102912
+    },
+    {
+      "elapsed_s": 8.003787497989833,
+      "rss_kib": 102920
+    },
+    {
+      "elapsed_s": 8.503989345976152,
+      "rss_kib": 102924
+    },
+    {
+      "elapsed_s": 9.004220099013764,
+      "rss_kib": 102928
+    },
+    {
+      "elapsed_s": 9.5044967479771,
+      "rss_kib": 102940
+    },
+    {
+      "elapsed_s": 10.004722799989395,
+      "rss_kib": 102948
+    },
+    {
+      "elapsed_s": 10.504959448007867,
+      "rss_kib": 102948
+    },
+    {
+      "elapsed_s": 11.005183756002225,
+      "rss_kib": 102948
+    },
+    {
+      "elapsed_s": 11.505421302979812,
+      "rss_kib": 102952
+    },
+    {
+      "elapsed_s": 12.005903345998377,
+      "rss_kib": 102952
+    },
+    {
+      "elapsed_s": 12.50611267000204,
+      "rss_kib": 102952
+    },
+    {
+      "elapsed_s": 13.006351252959576,
+      "rss_kib": 102956
+    },
+    {
+      "elapsed_s": 13.506572089972906,
+      "rss_kib": 102956
+    },
+    {
+      "elapsed_s": 14.006772627995815,
+      "rss_kib": 102956
+    },
+    {
+      "elapsed_s": 14.506972628994845,
+      "rss_kib": 102960
+    },
+    {
+      "elapsed_s": 15.007276584976353,
+      "rss_kib": 102960
+    }
+  ],
+  "measurement_note": "Performance capture preceded the final pause-queue race fix/UI wording update; final functionality was rechecked by the complete suite. No later performance values are inferred.",
+  "control_work_definition": "Loop read start through recording enqueue; excludes sleep and low-frequency metrics/status formatting. Cached summary uses at most the latest 300 samples."
+}

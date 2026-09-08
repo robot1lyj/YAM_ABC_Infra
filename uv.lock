@@ -4491,10 +4491,10 @@ name = "pandas"
 version = "2.3.3"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
 dependencies = [
-    { name = "numpy", marker = "extra == 'extra-17-yam-abc-reproduce-convert' or extra == 'extra-17-yam-abc-reproduce-lerobot' or extra == 'group-17-yam-abc-reproduce-molmoact2-train' or extra == 'group-17-yam-abc-reproduce-openpi' or (extra == 'group-17-yam-abc-reproduce-abc-policy' and extra == 'group-17-yam-abc-reproduce-molmoact2')" },
-    { name = "python-dateutil", marker = "extra == 'extra-17-yam-abc-reproduce-convert' or extra == 'extra-17-yam-abc-reproduce-lerobot' or extra == 'group-17-yam-abc-reproduce-molmoact2-train' or extra == 'group-17-yam-abc-reproduce-openpi' or (extra == 'group-17-yam-abc-reproduce-abc-policy' and extra == 'group-17-yam-abc-reproduce-molmoact2')" },
-    { name = "pytz", marker = "extra == 'extra-17-yam-abc-reproduce-convert' or extra == 'extra-17-yam-abc-reproduce-lerobot' or extra == 'group-17-yam-abc-reproduce-molmoact2-train' or extra == 'group-17-yam-abc-reproduce-openpi' or (extra == 'group-17-yam-abc-reproduce-abc-policy' and extra == 'group-17-yam-abc-reproduce-molmoact2')" },
-    { name = "tzdata", marker = "extra == 'extra-17-yam-abc-reproduce-convert' or extra == 'extra-17-yam-abc-reproduce-lerobot' or extra == 'group-17-yam-abc-reproduce-molmoact2-train' or extra == 'group-17-yam-abc-reproduce-openpi' or (extra == 'group-17-yam-abc-reproduce-abc-policy' and extra == 'group-17-yam-abc-reproduce-molmoact2')" },
+    { name = "numpy" },
+    { name = "python-dateutil" },
+    { name = "pytz" },
+    { name = "tzdata" },
 ]
 sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/33/01/d40b85317f86cf08d853a4f495195c73815fdf205eef3993821720274518/pandas-2.3.3.tar.gz", hash = "sha256:e05e1af93b977f7eafa636d043f9f94c7ee3ac81af99c13508215942e64c993b", size = 4495223, upload-time = "2025-09-29T23:34:51.853Z" }
 wheels = [
@@ -5180,7 +5180,7 @@ name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
 dependencies = [
-    { name = "six", marker = "extra == 'extra-17-yam-abc-reproduce-convert' or extra == 'extra-17-yam-abc-reproduce-lerobot' or extra == 'group-17-yam-abc-reproduce-molmoact2' or extra == 'group-17-yam-abc-reproduce-molmoact2-train' or extra == 'group-17-yam-abc-reproduce-openpi'" },
+    { name = "six" },
 ]
 sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
 wheels = [
@@ -6971,6 +6971,8 @@ dependencies = [
     { name = "av" },
     { name = "i2rt" },
     { name = "numpy" },
+    { name = "pandas" },
+    { name = "pyarrow" },
     { name = "pyyaml" },
 ]
 
@@ -7087,8 +7089,10 @@ requires-dist = [
     { name = "opencv-python-headless", marker = "extra == 'camera'", specifier = ">=4.8,<5" },
     { name = "opencv-python-headless", marker = "extra == 'gui'", specifier = ">=4.8,<5" },
     { name = "openpi-client", marker = "extra == 'deploy'", editable = "third_party/policy/openpi/packages/openpi-client" },
+    { name = "pandas", specifier = ">=2.2,<3" },
     { name = "protobuf", marker = "extra == 'abc'", specifier = ">=5" },
     { name = "protobuf", marker = "extra == 'convert'", specifier = ">=5" },
+    { name = "pyarrow", specifier = ">=18" },
     { name = "pydantic", marker = "extra == 'gui'", specifier = ">=2.6" },
     { name = "pyrealsense2", marker = "extra == 'camera'", specifier = ">=2.54" },
     { name = "pyudev", marker = "extra == 'camera'", specifier = ">=0.24" },

@@ -21,10 +21,12 @@ def test_takeover_invalidates_inflight_and_requires_new_response():
     q = pose()
     a.start(q)
     old = a.request(1, 0)
-    a.toggle(q, q)
-    assert a.phase == Phase.HUMAN
+    a.takeover(q, q)
+    assert a.phase == Phase.TAKEOVER
     assert not a.accept(old, np.tile(q, (50, 1)), 0.01)
-    a.toggle(q, q)
+    a.step(q, q, now=0.011, dt=0.03)
+    a.step(q, q, now=0.012, dt=0.03)
+    a.resume_policy(q)
     assert a.phase == Phase.RESUME
     token = a.request(2, 0.02)
     assert a.accept(token, np.tile(q, (50, 1)), 0.03)
@@ -44,6 +46,7 @@ def test_soft_pickup_and_joint_mismatch():
     assert d.gripper_owned == (True, True)
     assert d.action[6] == pytest.approx(0.73)
     h[0] = 1
+    a.hold(q)
     a.start(q, h)
     assert a.phase == Phase.HOLD
 
@@ -96,8 +99,8 @@ def test_slow_network_does_not_block_manual_event():
     try:
         session.tick(**kw, now=0, event="start")
         assert entered.wait(1)
-        d = session.tick(**kw, now=0.03, event="toggle")
-        assert d.phase == Phase.HUMAN
+        d = session.tick(**kw, now=0.03, event="takeover")
+        assert d.phase == Phase.TAKEOVER
         assert not release.is_set()
         release.set()
         deadline = time.monotonic() + 1
@@ -159,3 +162,29 @@ def test_openpi_wire_protocol_round_trip():
             client.close()
             server.shutdown()
             thread.join(1)
+
+
+def test_takeover_freezes_then_uses_relative_leader_motion_and_does_not_toggle_back():
+    q, h = pose(), pose()
+    h[[0, 7]] = 0.13
+    a = Arbiter(Mode.HIL)
+    a.start(q)
+    token = a.request(1, 0)
+    a.accept(token, np.tile(q, (50, 1)), 0.01)
+    a.step(q, h, now=0.02, dt=0.03, leader_ready=True)
+    a.takeover(q, h)
+    freeze = a.step(q, h, now=0.03, dt=0.03)
+    assert freeze.source == "hold" and freeze.leader_freeze
+    np.testing.assert_array_equal(freeze.action, q)
+    manual = a.step(q, h, now=0.06, dt=0.03)
+    assert manual.source == "human" and not manual.leader_freeze
+    np.testing.assert_allclose(manual.action, q)
+    h[[0, 7]] += 0.01
+    a.takeover(q, h)  # repeated keyboard input cannot hand back
+    manual = a.step(q, h, now=0.09, dt=0.03)
+    np.testing.assert_allclose(manual.action[[0, 7]], 0.01)
+    assert a.request(2, 0.09) is None
+    a.start(q, h)  # ordinary start cannot bypass explicit hand-back either
+    assert a.phase == Phase.HUMAN
+    a.resume_policy(q)
+    assert a.phase == Phase.RESUME

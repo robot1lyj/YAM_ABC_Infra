@@ -1,21 +1,20 @@
-# 当前续作：四模式、双按钮、中文文档
+# 当前续作：确认后的四模式与DAgger事件链路
 
-2026-09-08 用户新增独立数据采集，并要求设计官方 Leader 的两个按钮。本轮在三模式基线1c04c83上实现：
+2026-09-08用户纠正按钮用途并授权完整改造：
 
-- collect 复用 Leader 遥操作，不需要模型；明确开关录制，同一设备会话多段示范。
-- 顶部按钮：HOLD时启动；HIL运行中接管/交还；采集HUMAN中开关录制。第二按钮按住持续保持，松开不自动恢复。
-- 左右按键独立上升沿、整站250ms去抖、同时触发合并；保持取消排队启动/模式指令。
-- RecordingSession 有界后台管理片段；会话目录下 episode_000001 等独立JSONL/三路MP4/manifest，最终session.json索引。
-- 采集HOLD/退出中断活动片段，aborted默认不导出；采集human不冒充HIL干预。模式切换关闭旧段。
-- 当前README、规范手册、项目决策和优化建议中文化；旧英文说明归档docs/archive。
-- scripts/check_project_memory.py只读检查路由、链接、记录与指纹；不提升candidate、不伪造上下文压缩。
+- 遥操作：Leader驱动Follower，可用界面/键盘录制；手柄无功能。
+- 纯推理：Thor驱动Follower；手柄无功能。
+- HIL：模型阶段Leader镜像跟随；键盘i优先介入，冻结本周期目标并作废旧策略；下一周期自动相对姿态遥操作。手柄①仅在人工阶段交还模型，②无功能。
+- 采集：手柄①开始/结束当前episode，②放弃当前集；均不停止遥操作。弃集后台关闭并删除，不删除之前的好集。
+- 键盘空格独立暂停，s只从HOLD启动；i不会交还模型，手柄不会启动设备。
+- HIL同一episode保留policy/hold/human全部阶段，记录干预编号、事件位、请求与实际提交时刻，不按epoch拆开。
 
-验收数值和代码指纹以 docs/evidence/20260908-collection-buttons-v1.json 为准；测试包含多段视频、专家导出、按钮冲突与写盘错误。
-真实本机HTTP+mock完成两段成功采集、四模式切换、HIL接管、保持和退出；输出5个episode。没有运行真实电机或Thor模型。
+实现位于hil/core.py、session.py、buttons.py、run.py、station.py；TAKEOVER是一周期冻结，之后HUMAN使用接管锚点偏移。夹爪软接管保留。
+录制会话队列32项/编码队列8项，后台JSONL+MP4，每个编码器单线程；metrics.py提供最近300样本的分阶段延迟与队列峰值。完整事件/失败不会由格式转换掩盖。
+LeRobot v3.0由hil/lerobot_export.py在设备关闭后自动生成，运行期不做格式整理。PyArrow/Pandas/PyAV写入，无RK PyTorch依赖；LeRobot读取器在独立/tmp CPU环境验证。转换写partial后原子改名，原始数据保留；--raw-only可测录制性能。
 
-硬件仍为2官方电动Leader、2平行夹爪Follower、3D405；夹爪电机型号与相机序列号待填。D405采用主机接收时间配对，不是曝光同步。
-下一步：现场确认按钮位置/CAN映射/方向，逐对低速验证重力补偿和夹爪；随后三路采集、Thor冻结观测契约核验、四臂HIL联调。
-剩余架构建议见 docs/optimization_review.md：完整设备关闭结果落盘、模型语义契约、分阶段耗时统计；先测量再决定多进程/编码升级，不做RTC。
+用户要求建议只在对话提出：optimization_review.md已删除，不再恢复此文档。当前中文手册/README要保持新按钮定义。
 
-环境仍在 /home/wuyan-lyj/YAM/yam-abc-reproduce/.venv，uv为 /home/wuyan-lyj/.local/bin/uv，使用camera/gui/deploy extras。
-依赖锁未变；安装环境历史记录不代表设备在线。预算按用户要求仅诊断，按需读取与真实检查点续作。
+硬件仍待现场确认：2官方Leader、2平行夹爪Follower、3D405；夹爪具体型号/CAN/序列号配置占位。没有启动真实电机、没有Thor模型/任务成功率或RK性能验收。SDK状态时间不是每电机CAN到达时间，D405不是曝光同步。
+环境仍为项目.venv；uv通过现有清华镜像安装新增轻量数据依赖，pyproject和uv.lock须一起提交。历史离线record依赖变更必须标stale，不能假称仍适用；178项测试通过、2跳过、9子测试通过；官方LeRobot0.5.1回读119帧完整HIL和三路RGB。新测试与性能报告见docs/acceptance.md。
+下一步以现场逐对低速验证、三路相机/USB测试、Thor冻结观测契约核对、HIL纠正任务为序。

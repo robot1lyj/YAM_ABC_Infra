@@ -13,5 +13,5 @@
 
 - 第一版已接通四模式/官方leader接管/非RTC异步/连续录制和专家导出；线程架构、接收时间配对、宽松可配置阈值。来源docs/hil_quickstart.md。未真机验收。
 
-- 采集模式由Leader遥操作，手动开关多段录制；顶部按模式执行主操作，第二按钮按住持续保持，释放后不自动恢复。来源：docs/collect.md。
+- 采集模式由Leader遥操作，手动开关多段录制；HIL键盘i冻结介入、手柄①交还，②无功能；采集①开始/结束、②放弃；遥操作/推理手柄无功能。来源：docs/collect.md。
 - 中文规范通过路由检索，历史英文手册位于docs/archive；指纹/断链检查用scripts/check_project_memory.py，不能替代语义和现场验证。来源：docs/memory.md。

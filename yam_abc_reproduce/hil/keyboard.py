@@ -26,7 +26,7 @@ class Keyboard:
     def _run(self):
         mapping = {
             "s": "start",
-            "i": "toggle",
+            "i": "takeover",
             " ": "hold",
             "q": "quit",
             "1": "mode:teleop",
@@ -34,6 +34,7 @@ class Keyboard:
             "3": "mode:hil",
             "4": "mode:collect",
             "r": "record",
+            "x": "discard",
             "g": "success",
             "f": "failure",
         }

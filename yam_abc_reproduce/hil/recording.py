@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import queue
+import shutil
 import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +29,7 @@ class Recorder:
         self.queue = queue.Queue(maxsize=capacity)
         self.error = None
         self.written = 0
+        self.metrics = {"queue_peak": 0, "encode_max_ms": 0}
         self.outcome = "unknown"
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True, name="hil-recorder")
@@ -55,6 +58,8 @@ class Recorder:
                         record, images = self.queue.get(timeout=0.05)
                     except queue.Empty:
                         continue
+                    encode_started = time.monotonic()
+                    self.metrics["queue_peak"] = max(self.metrics["queue_peak"], self.queue.qsize())
                     indices = {}
                     for role, im in images.items():
                         if role not in ("top", "left", "right"):
@@ -73,6 +78,7 @@ class Recorder:
                             )
                             stream.width, stream.height = im.shape[1], im.shape[0]
                             stream.pix_fmt = "yuv420p"
+                            stream.thread_count = 1
                             stream.gop_size = int(self.fps)
                             videos[role] = container, stream
                             counts[role] = 0
@@ -85,6 +91,9 @@ class Recorder:
                     log.write(json.dumps(record, default=json_value, allow_nan=False) + "\n")
                     log.flush()
                     self.written += 1
+                    self.metrics["encode_max_ms"] = max(
+                        self.metrics["encode_max_ms"], (time.monotonic() - encode_started) * 1000
+                    )
         except Exception as exc:
             self.error = f"{type(exc).__name__}: {exc}"
         finally:
@@ -99,6 +108,7 @@ class Recorder:
                 self.metadata,
                 schema="yam_hil_v1",
                 steps=self.written,
+                recording_metrics=self.metrics,
                 video_frames=counts,
                 fps=self.fps,
                 error=self.error,
@@ -135,6 +145,7 @@ class RecordingSession:
         self.fps = fps
         self.queue = queue.Queue(maxsize=capacity)
         self.error = None
+        self.queue_peak = 0
         self._completed_steps = 0
         self._active = None
         self.mode = mode
@@ -152,11 +163,21 @@ class RecordingSession:
         active = self._active
         return self._completed_steps + (active.written if active else 0)
 
+    @property
+    def metrics(self):
+        active = self._active
+        return {
+            "session_queue_peak": self.queue_peak,
+            "encoder_queue": active.queue.qsize() if active else 0,
+            "encoder": dict(active.metrics) if active else {},
+        }
+
     def _put(self, item):
         if self.error or self._stop.is_set():
             return False
         try:
             self.queue.put_nowait(item)
+            self.queue_peak = max(self.queue_peak, self.queue.qsize())
             return True
         except queue.Full:
             self.error = "episode queue full"
@@ -206,6 +227,8 @@ class RecordingSession:
             )
             if active.error:
                 raise RuntimeError(active.error)
+            if outcome == "discarded":
+                shutil.rmtree(active.path)
             active = None
 
         try:
@@ -268,6 +291,7 @@ class RecordingSession:
                         self.metadata,
                         schema="yam_session_v1",
                         episodes=self.episodes,
+                        session_queue_peak=self.queue_peak,
                         error=self.error,
                         outcome="aborted" if self.error else self.outcome,
                     ),

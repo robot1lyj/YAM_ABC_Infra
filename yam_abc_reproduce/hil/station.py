@@ -58,6 +58,8 @@ class StationIO:
             arm = np.clip(
                 q[sl], leader[sl] - self.leader_speed * dt, leader[sl] + self.leader_speed * dt
             )
+            if decision.leader_freeze:
+                arm = leader[sl]
             leader_targets.append(np.clip(arm, limits[:, 0], limits[:, 1]))
         stamps = {}
         for i, u in enumerate(self.units):

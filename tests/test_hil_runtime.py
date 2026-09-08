@@ -29,8 +29,8 @@ def test_async_chunks_align_to_observation_time_and_replan_during_execution():
     d = a.step(q, q, now=0.21, dt=0.03, leader_ready=True)
     assert d.action_index == 2 and d.policy_action[0] == 0.02
     assert a.request(2, 0.3, observed_at=0.29) is not None
-    a.toggle(q, q)
-    assert a.pending is None and a.phase == Phase.HUMAN
+    a.takeover(q, q)
+    assert a.pending is None and a.phase == Phase.TAKEOVER
 
 
 def test_model_interval_does_not_accelerate_with_control_ticks():
@@ -127,7 +127,7 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
             c.start()
         run = Runtime(io, cameras, worker, rec)
         run.event("success")
-        assert run.outcome == "success"
+        assert run.outcome == "unknown"  # consumed in the control owner
         result = run.run(duration=2.5, auto_start=True, demo=True)
         rec.close(run.outcome)
         assert not result["error"] and result["phase"] == "policy"
@@ -216,8 +216,8 @@ def test_dashboard_events_only_enqueue():
     r = SimpleNamespace(status={"phase": "hold"}, event=called.append)
     with TestClient(create_app(r)) as client:
         assert client.get("/status").json()["phase"] == "hold"
-        assert client.post("/event/toggle").status_code == 200
-        assert called == ["toggle"]
+        assert client.post("/event/takeover").status_code == 200
+        assert called == ["takeover"]
 
 
 def test_expert_export_splits_at_policy_gaps_and_preserves_video(tmp_path):
@@ -248,3 +248,107 @@ def test_expert_export_splits_at_policy_gaps_and_preserves_video(tmp_path):
         assert meta.num_frames == count
         assert len(arrays["top-images-rgb"]) == count
         assert arrays["action-left-joint"].shape == (count, 6)
+
+
+def test_freeze_targets_each_leader_current_pose_before_gravity_handover():
+    q, h = np.zeros(14), np.zeros(14)
+    h[[0, 7]] = 0.1
+    calls = []
+    units = []
+    for name in ("left", "right"):
+        robot = SimpleNamespace(
+            joint_limits=lambda: np.tile([-3.0, 3.0], (6, 1)),
+            get_joint_pos=lambda: np.zeros(7),
+            command_joint_pos=lambda target: calls.append(("follower", target.copy())),
+        )
+        agent = SimpleNamespace(
+            hil_leader_command=lambda target, **kw: calls.append(("leader", target.copy(), kw))
+        )
+        units.append(SimpleNamespace(name=name, robot=robot, agent=agent))
+    io = StationIO(units)
+    a = Arbiter(Mode.HIL)
+    a.start(q)
+    a.takeover(q, h)
+    decision = a.step(q, h, now=0, dt=1 / 30)
+    io.apply(decision, q, h, dt=1 / 30)
+    for call in calls[:2]:
+        assert call[0] == "leader" and not call[2]["manual"]
+        assert call[1][0] == 0.1
+    assert all(not np.any(call[1]) for call in calls[2:])
+
+
+def test_runtime_keyboard_priority_and_handle_only_hands_back(tmp_path):
+    import time
+
+    cfg = StationConfig()
+    io = StationIO(build_arm_units(cfg, mock=True), mock=True)
+    keys = [[False, False], [False, False]]
+    block, entered, release = threading.Event(), threading.Event(), threading.Event()
+    real_read = io.read
+
+    def read():
+        if block.is_set():
+            entered.set()
+            assert release.wait(1)
+        q, h, _, ages = real_read()
+        return q, h, [p.copy() for p in keys], ages
+
+    io.read = read
+    cameras = [
+        CameraWorker(MockCamera(r, r, width=32, height=32)) for r in ("top", "left", "right")
+    ]
+    rec = Recorder(tmp_path / "episode")
+    worker = PolicyWorker(MockPolicy())
+    runtime = Runtime(io, cameras, worker, rec)
+    thread = threading.Thread(target=runtime.run, kwargs={"duration": 5, "auto_start": True})
+
+    def wait(test):
+        end = time.monotonic() + 2
+        while not test() and time.monotonic() < end:
+            time.sleep(0.005)
+        assert test(), runtime.status
+
+    try:
+        for c in cameras:
+            c.start()
+        thread.start()
+        wait(lambda: runtime.status["phase"] == "policy")
+        block.set()
+        assert entered.wait(1)
+        for _ in range(16):
+            runtime.event("start")
+        runtime.event("takeover")  # succeeds even with full ordinary event queue
+        release.set()
+        wait(lambda: runtime.status["phase"] == "human")
+        assert runtime.events.empty()
+        runtime.event("takeover")  # repeated i cannot resume
+        tick = runtime.status["tick"]
+        wait(lambda: runtime.status["tick"] > tick + 2)
+        assert runtime.status["phase"] == "human"
+        keys[1][0] = True
+        wait(lambda: runtime.status["phase"] == "policy")
+        keys[1][1] = True
+        tick = runtime.status["tick"]
+        wait(lambda: runtime.status["tick"] > tick + 2)
+        assert runtime.status["phase"] == "policy"  # second handle button is unassigned in HIL
+        runtime.event("quit")
+        thread.join(2)
+        rec.close()
+        rows = [json.loads(line) for line in (rec.path / "steps.jsonl").read_text().splitlines()]
+        freeze = next(r for r in rows if "takeover_applied" in r["transitions"])
+        assert freeze["source"] == "hold"
+        assert freeze["event_applied_at"] >= freeze["event_requested_at"]
+        following = next(r for r in rows if r["tick"] == freeze["tick"] + 1)
+        assert following["source"] == "human" and following["expert_valid"]
+        assert "human_started" in following["transitions"]
+        assert any("resume_requested" in r["transitions"] for r in rows)
+    finally:
+        release.set()
+        runtime.event("quit")
+        thread.join(2)
+        if rec._thread.is_alive():
+            rec.close("aborted")
+        for c in cameras:
+            c.stop()
+        worker.close()
+        io.close()

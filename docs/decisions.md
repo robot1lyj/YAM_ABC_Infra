@@ -8,16 +8,17 @@
 | 主项目 | yam-abc-reproduce 为主仓库；保留上游历史，SDK只用子模块 | [环境](environment.md) |
 | 硬件 | 2标准YAM Follower、2官方电动Leader、3台D405；平行夹爪电机型号待实物核验 | [工作站](workstation.md) |
 | 产品 | 遥操作、推理、DAgger/HIL、数据采集四模式 | [架构](dagger_architecture.md) |
-| 接管 | 第一版整套双臂按键接管，Leader人工阶段重力补偿 | [运行手册](hil_quickstart.md) |
+| 接管 | 键盘i冻结并自动相对遥操作，HIL人工阶段手柄①交还模型；②无功能 | [运行手册](hil_quickstart.md) |
 | 推理位置 | 现场Thor模型服务，经网线连接RK3588；RK采集/控制/记录 | [接口](condapi_interface.md) |
 | 推理算法 | 第一版不做RTC；采用非RTC异步重规划，保留普通基准 | [同步](synchronization_design.md) |
 | 性能取舍 | 以实用为先，允许放宽小偏差；实测前不重构ROS2/共享内存/C++ | [同步](synchronization_design.md) |
-| 数据 | 采集模式手动多段示范；其余模式连续记录；有效人工段导出为专家片段 | [转换](convert.md) |
+| 数据 | 采集①开始/结束、②放弃；默认自动LeRobot，保存Follower反馈/提交动作/三路图像/HIL完整阶段 | [转换](convert.md) |
 | 模型/微调 | 归condapi；本仓库保留适配规范，不另建训练事实来源 | [接口](condapi_interface.md) |
 | 环境 | uv、Python3.12、国内镜像；提交pyproject/uv.lock，不提交.venv | [环境](environment.md) |
+| 手柄范围 | 遥操作/推理不分配手柄按钮；空格单独暂停 | [采集手册](collect.md) |
 | 文档语言 | 当前README、用户手册、记忆与评审使用中文，保留命令/API原名 | [README](../README.md) |
 | 上下文 | 按需读取与检查点续作；字节额度仅诊断，不因此暂停工作 | [记忆](memory.md) |
 
 “代码已实现”“模拟已通过”“真机已通过”必须分别说明。放宽同步要求不授权忽略NaN、错epoch、错误单位或设备失联。
 
-优化评审已区分本轮完成项与剩余建议，剩余建议不能作为已完成事实引用。历史变化由Git保留，不再在当前规范中堆叠互相矛盾的版本。
+用户要求优化建议只在对话中提出，不另建建议文档。历史变化由Git保留，不再在当前规范中堆叠互相矛盾的版本。

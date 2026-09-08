@@ -24,6 +24,7 @@ class Phase(StrEnum):
     HOLD = "hold"
     POLICY = "policy"
     HUMAN = "human"
+    TAKEOVER = "takeover"
     RESUME = "resume"
     FAULT = "fault"
 
@@ -51,6 +52,7 @@ class Decision:
     gripper_owned: tuple[bool, bool]
     request: Request | None = None
     action_index: int | None = None
+    leader_freeze: bool = False
 
 
 def vector(value) -> np.ndarray:
@@ -65,7 +67,7 @@ def vector(value) -> np.ndarray:
 class Arbiter:
     """Whole-station handover with baseline or timestamped asynchronous chunks; no RTC.
 
-    Startup is HOLD. start() and toggle() are explicit local events. Every
+    Startup is HOLD. start(), takeover() and resume_policy() are explicit local events. Every
     transition invalidates pending requests/chunks. A network worker must use
     Request tokens and must never call motor APIs. Deadlines include network
     latency; responses do not reset the originating observation's age.
@@ -129,6 +131,8 @@ class Arbiter:
         self._pickup = [False, False]
         self._previous_grip: np.ndarray | None = None
         self.fault_reason: str | None = None
+        self._offset = np.zeros(14)
+        self._freeze_tick = False
 
     def _transition(self, phase: Phase, state: np.ndarray):
         self._active_request = None
@@ -143,6 +147,8 @@ class Arbiter:
     def start(self, state, leader=None):
         if self.phase == Phase.FAULT:
             raise RuntimeError("fault requires explicit session rebuild")
+        if self.phase != Phase.HOLD:
+            return
         self._transition(Phase.RESUME, state)
         if self.mode in (Mode.TELEOP, Mode.COLLECT):
             self._human(state, leader)
@@ -155,16 +161,24 @@ class Arbiter:
             self._transition(Phase.HOLD, q)
             return
         self._transition(Phase.HUMAN, q)
+        self._offset = np.zeros(14)
         self._pickup = [False, False]
         self._previous_grip = h[[6, 13]].copy()
 
-    def toggle(self, state, leader):
-        if self.mode != Mode.HIL or self.phase == Phase.FAULT:
+    def takeover(self, state, leader):
+        if self.mode != Mode.HIL or self.phase not in (Phase.POLICY, Phase.RESUME):
             return
-        if self.phase == Phase.HUMAN:
+        q, h = vector(state), vector(leader)
+        self._transition(Phase.TAKEOVER, q)
+        self._offset = q - h
+        self._offset[[6, 13]] = 0
+        self._pickup = [False, False]
+        self._previous_grip = h[[6, 13]].copy()
+        self._freeze_tick = True
+
+    def resume_policy(self, state):
+        if self.mode == Mode.HIL and self.phase == Phase.HUMAN:
             self._transition(Phase.RESUME, state)
-        else:
-            self._human(state, leader)
 
     def hold(self, state):
         if self.phase != Phase.FAULT:
@@ -242,12 +256,17 @@ class Arbiter:
             self._transition(Phase.HOLD, q)
         if not observation_fresh and self.phase in (Phase.RESUME, Phase.POLICY):
             self._transition(Phase.HOLD, q)
+        if self.phase == Phase.TAKEOVER:
+            if self._freeze_tick:
+                self._freeze_tick = False
+            else:
+                self.phase = Phase.HUMAN
         policy = None
         action_index = None
         source = "hold"
         selected = self._hold.copy()
         if self.phase == Phase.HUMAN:
-            selected = vector(leader)
+            selected = vector(leader) + self._offset
             source = "human"
             for j, dim in enumerate((6, 13)):
                 old = self._previous_grip[j]
@@ -295,4 +314,5 @@ class Arbiter:
             tuple(self._pickup),
             self._active_request if policy is not None else None,
             action_index,
+            self.phase == Phase.TAKEOVER,
         )

@@ -1,0 +1,72 @@
+{
+  "artifact": "/tmp/yam-approved-flow-ulouqkkx",
+  "reader_version": "0.5.1",
+  "reader_sha256": "03207172bbc82d541f93168017b11e2b3807cf719126bf47d04873257a4cbbd8",
+  "frames": 119,
+  "episodes": 1,
+  "events": {
+    "8": 2,
+    "1": 1,
+    "2": 1,
+    "4": 1
+  },
+  "samples": [
+    {
+      "index": 0,
+      "source_tick": 1,
+      "event": 0,
+      "source": 2
+    },
+    {
+      "index": 3,
+      "source_tick": 4,
+      "event": 8,
+      "source": 1
+    },
+    {
+      "index": 29,
+      "source_tick": 30,
+      "event": 1,
+      "source": 2
+    },
+    {
+      "index": 30,
+      "source_tick": 31,
+      "event": 2,
+      "source": 0
+    },
+    {
+      "index": 59,
+      "source_tick": 60,
+      "event": 4,
+      "source": 2
+    },
+    {
+      "index": 62,
+      "source_tick": 63,
+      "event": 8,
+      "source": 1
+    },
+    {
+      "index": 118,
+      "source_tick": 119,
+      "event": 0,
+      "source": 1
+    }
+  ],
+  "task": "pick and place",
+  "images": "all three RGB tensors 3x480x640",
+  "state_action": "14D, equal to source follower feedback/submitted commands",
+  "offline": true,
+  "dataset_files": {
+    "provenance.json": "84f8cb45d3d052562124dd22b01e9352cba9bed28fe81b553ec45123d74ca787",
+    "meta/info.json": "2a22367aa9590d780e25ee65b1370021c97bbcbc2290b3552f94d3bf1c6dd7f1",
+    "meta/tasks.parquet": "b8c2067ba8f4841f4f64aa54c1a27843c84bf30ae90fc73deb09cf0f9fb90504",
+    "meta/stats.json": "25460de7d4b64d9407ce5163a884455161e785d85e9f1a63429931637ad06b30",
+    "meta/episodes/chunk-000/file-000.parquet": "9fb40d088d70330790a9fcf7a70438ef9371f5eff3840e834f26670a18d8eb00",
+    "data/chunk-000/file-000.parquet": "fec98d94afd3727c8619c71cd8f2c3e739b818f990fc46fc5e3dade6e269287d",
+    "videos/observation.images.left_rgb/chunk-000/file-000.mp4": "369f5d6e4c3dc2f3dd49fd2e75ff7d97fb7e224be89a91cd2c4673c38efd2575",
+    "videos/observation.images.right_rgb/chunk-000/file-000.mp4": "369f5d6e4c3dc2f3dd49fd2e75ff7d97fb7e224be89a91cd2c4673c38efd2575",
+    "videos/observation.images.top_rgb/chunk-000/file-000.mp4": "369f5d6e4c3dc2f3dd49fd2e75ff7d97fb7e224be89a91cd2c4673c38efd2575"
+  }
+}

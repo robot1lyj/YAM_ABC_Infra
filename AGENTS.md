@@ -32,6 +32,9 @@
 
 - 产品明确四种模式：遥操作、纯推理、DAgger/HIL、数据采集。HIL 内部切换策略/人工/恢复，
   不把这些内部状态另做产品模式。方案所有者为 `docs/dagger_architecture.md`。
+- HIL只由键盘/界面介入，先冻结再相对遥操作；手柄①交还模型、②无功能。
+- 采集手柄①开始/结束、②放弃；遥操作/推理手柄无功能。数据为Follower反馈/提交目标和三路相机，自动LeRobot；格式整理不得放进控制循环。
+- 用户要求优化建议只在对话提出，不建立优化建议文档。
 - 主项目是 yam-abc-reproduce；同级 i2rt 已删除，SDK 子模块仍有效。
 - Thor 模型/微调归 condapi；RK3588 的采集、控制、仲裁与记录归本项目。
   对接约束见 `docs/condapi_interface.md`，不把 condapi 的旧 LoRA 默认照搬到本项目。

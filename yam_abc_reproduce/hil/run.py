@@ -1,6 +1,6 @@
 """YAM four-mode workstation: python -m yam_abc_reproduce.hil.run --mock.
 
-Keyboard: s start/resume, i toggle HIL takeover, space hold, 1/2/3/4 select mode, r collection segment,
+Keyboard: s start/resume, i HIL takeover, space hold, 1/2/3/4 select mode, r collection segment,
 q quit (hardware shutdown removes active motor control; support the arms first).
 """
 
@@ -21,6 +21,7 @@ from ..config import build_station_config, load_yaml
 from ..runtime import build_arm_units, build_cameras_from_config
 from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
+from .metrics import Latencies
 from .observation import Observations
 from .policy import PlainPolicyClient, PolicyWorker
 from .recording import RecordingSession
@@ -96,16 +97,21 @@ class Runtime:
             worker,
         )
         self.events = queue.Queue(maxsize=16)
+        self.takeovers = queue.Queue(maxsize=1)
+        self.intervention_id = 0
         self.stopping = threading.Event()
-        self.holding = threading.Event()
+        self.holding = queue.Queue(maxsize=1)
         self.status = {"phase": "hold", "mode": mode, "tick": 0}
         self.handle_buttons = HandleButtons()
         self.outcome = "unknown"
+        self.latencies = Latencies()
 
     def event(self, event):
         allowed = {
             "start",
-            "toggle",
+            "takeover",
+            "resume_policy",
+            "discard",
             "hold",
             "quit",
             "mode:teleop",
@@ -120,24 +126,28 @@ class Runtime:
             raise ValueError("unknown event")
         if event in ("mode:inference", "mode:hil") and self.worker is None:
             raise ValueError("restart with --url to enable local policy inference")
-        if event == "record" and self.status.get("mode") != "collect":
-            raise ValueError("record control requires collection mode")
+        if event in ("record", "discard") and self.status.get("mode") not in ("collect", "teleop"):
+            raise ValueError("record control requires collection or teleop mode")
         if (
             event == "record"
             and not getattr(self.recorder, "recording", False)
             and self.status.get("phase") != "human"
         ):
             raise ValueError("start leader teleoperation before recording")
-        if event in ("success", "failure"):
-            if self.status.get("phase") == "fault":
-                raise ValueError("faulted recording remains aborted")
-            self.outcome = event
-        elif event == "quit":
+        if event == "quit":
             self.stopping.set()
         elif event == "hold":
-            self.holding.set()
+            try:
+                self.holding.put_nowait(time.monotonic())
+            except queue.Full:
+                pass
+        elif event == "takeover":
+            try:
+                self.takeovers.put_nowait((event, time.monotonic()))
+            except queue.Full:
+                pass
         else:
-            self.events.put_nowait(event)
+            self.events.put_nowait((event, time.monotonic()))
 
     def run(self, *, duration=None, auto_start=False, demo=False):
         period = 1 / self.hz
@@ -145,6 +155,7 @@ class Runtime:
         tick, missed = 0, 0
         demo_stage = 0
         last_obs_at = None
+        last_record_images = {}
         try:
             while not self.stopping.is_set():
                 now = time.monotonic()
@@ -154,32 +165,47 @@ class Runtime:
                 dt = max(period, now - last)
                 last = now
                 q, leader, buttons, ages = self.io.read()
+                read_done = time.monotonic()
                 if max(ages) > self.max_state_age:
                     raise RuntimeError("SDK state update stale")
                 self.observations.add_state(now, q)
                 snapshot = self.observations.snapshot(now, self.prompt)
+                observation_done = time.monotonic()
                 try:
-                    event = self.events.get_nowait()
+                    event, requested_at = self.events.get_nowait()
                 except queue.Empty:
-                    event = None
+                    event, requested_at = None, None
                 a = self.session.arbiter
                 button_event = self.handle_buttons.read(
                     buttons, now=now, mode=a.mode, phase=a.phase
                 )
-                hold_requested = self.holding.is_set() or button_event == "hold"
-                self.holding.clear()
+                try:
+                    hold_time = self.holding.get_nowait()
+                except queue.Empty:
+                    hold_time = None
+                hold_requested = hold_time is not None
+                try:
+                    urgent, urgent_at = self.takeovers.get_nowait()
+                except queue.Empty:
+                    urgent, urgent_at = None, None
                 if button_event:
-                    event = button_event
+                    event, requested_at = button_event, now
+                if urgent and a.mode == Mode.HIL and a.phase in (Phase.POLICY, Phase.RESUME):
+                    event, requested_at = urgent, urgent_at
+                    while not self.events.empty():
+                        self.events.get_nowait()
                 if auto_start and snapshot is not None and demo_stage == 0:
                     event, demo_stage = "start", 1
                 if demo and demo_stage == 1 and elapsed > 1:
-                    event, demo_stage = "toggle", 2
+                    event, demo_stage = "takeover", 2
                 elif demo and demo_stage == 2 and elapsed > 2:
-                    event, demo_stage = "toggle", 3
+                    event, demo_stage = "resume_policy", 3
                 if hold_requested:
                     while not self.events.empty():
                         self.events.get_nowait()
-                    event = "hold"
+                    while not self.takeovers.empty():
+                        self.takeovers.get_nowait()
+                    event, requested_at = "hold", hold_time
                 obs_id, observed_at, obs, images, quality = (
                     (0, None, None, {}, {}) if snapshot is None else snapshot
                 )
@@ -191,13 +217,21 @@ class Runtime:
                 joints[[6, 13]] = False
                 error = float(np.max(np.abs(q[joints] - leader[joints])))
                 a = self.session.arbiter
-                if a.mode == Mode.HIL and a.phase == Phase.POLICY and error > self.mirror_error:
+                if (
+                    a.mode == Mode.HIL
+                    and a.phase == Phase.POLICY
+                    and error > self.mirror_error
+                    and event != "takeover"
+                ):
                     event = "hold"
                 recording_event = None
-                if a.mode == Mode.COLLECT and event == "toggle":
-                    event = "record"
-                if event == "record":
+                if event in ("success", "failure"):
+                    if a.phase != Phase.FAULT:
+                        self.outcome = event
+                    event = None
+                if event in ("record", "discard"):
                     recording_event, event = event, None
+                previous_phase = a.phase
                 decision = self.session.tick(
                     q,
                     leader,
@@ -214,10 +248,26 @@ class Runtime:
                 limits = np.full(14, a.max_joint_speed * period)
                 limits[[6, 13]] = a.max_gripper_speed * period
                 decision.action = np.clip(decision.action, q - limits, q + limits)
+                decision_done = time.monotonic()
                 submitted, stamps = self.io.apply(
                     decision, q, leader, dt=period, mirror=a.mode == Mode.HIL
                 )
+                apply_done = time.monotonic()
+                transitions = []
+                if a.phase == Phase.TAKEOVER and previous_phase != Phase.TAKEOVER:
+                    self.intervention_id += 1
+                    transitions.append("takeover_applied")
+                if a.phase == Phase.HUMAN and previous_phase == Phase.TAKEOVER:
+                    transitions.append("human_started")
+                if a.phase == Phase.RESUME and previous_phase == Phase.HUMAN:
+                    transitions.append("resume_requested")
+                if a.phase == Phase.POLICY and previous_phase != Phase.POLICY:
+                    transitions.append("policy_started")
                 row = {
+                    "event_requested_at": requested_at,
+                    "event_applied_at": apply_done if transitions else None,
+                    "transitions": transitions,
+                    "intervention_id": self.intervention_id,
                     "tick": tick,
                     "policy_reply": self.session.last_reply,
                     "time": now,
@@ -252,8 +302,10 @@ class Runtime:
                     self.recorder.set_mode(a.mode.value, self.outcome)
                     if previous_mode != a.mode.value:
                         self.outcome = "unknown"
-                    if a.mode == Mode.COLLECT:
-                        if event == "hold" or a.phase == Phase.FAULT:
+                    if a.mode in (Mode.COLLECT, Mode.TELEOP):
+                        if recording_event == "discard":
+                            self.recorder.stop_episode("discarded")
+                        elif event == "hold" or a.phase == Phase.FAULT:
                             self.recorder.stop_episode("aborted")
                         elif recording_event:
                             if self.recorder.recording:
@@ -262,9 +314,25 @@ class Runtime:
                                 self.outcome = "unknown"
                                 self.recorder.start_episode()
                         row["record_event"] = recording_event
-                if not self.recorder.submit(row, images):
+                if images:
+                    last_record_images = images
+                row["observation_valid"] = snapshot is not None
+                if not self.recorder.submit(row, images or last_record_images):
                     raise RuntimeError(self.recorder.error or "recorder unavailable")
+                submitted_done = time.monotonic()
+                performance = self.latencies.add(
+                    now,
+                    io_read=read_done - now,
+                    observation=observation_done - read_done,
+                    arbitration=decision_done - observation_done,
+                    io_apply=apply_done - decision_done,
+                    record_submit=submitted_done - apply_done,
+                    control_work=submitted_done - now,
+                    tick_interval=dt,
+                )
                 self.status = {
+                    "performance": performance,
+                    "record_metrics": getattr(self.recorder, "metrics", {}),
                     "tick": tick,
                     "mode": a.mode.value,
                     "phase": a.phase.value,
@@ -275,6 +343,7 @@ class Runtime:
                     "deadline_misses": missed,
                     "record_queue": self.recorder.queue.qsize(),
                     "recorded_steps": self.recorder.written,
+                    "intervention_id": self.intervention_id,
                     "recording": getattr(self.recorder, "recording", True),
                     "error": a.fault_reason,
                     "outcome": self.outcome,
@@ -348,6 +417,9 @@ def main():
     p.add_argument("--mode", choices=[m.value for m in Mode], default="hil")
     p.add_argument("--url", help="Thor WebSocket URL on the local Ethernet link")
     p.add_argument("--output", type=Path)
+    p.add_argument(
+        "--raw-only", action="store_true", help="diagnostic only: skip automatic LeRobot export"
+    )
     p.add_argument("--duration", type=float)
     p.add_argument("--demo", action="store_true", help="mock only: automated takeover/resume")
     p.add_argument("--baseline", action="store_true", help="ordinary non-prefetch baseline")
@@ -431,7 +503,7 @@ def main():
         from .keyboard import Keyboard
 
         print(
-            "s=start, i=takeover/resume, space=hold, 1/2/3/4=mode, r=record segment, q=shutdown (support arms first)",
+            "s=start, i=takeover, handle 1=resume policy, space=hold, 1/2/3/4=mode, r=record segment, q=shutdown (support arms first)",
             flush=True,
         )
         with Keyboard(runtime.event):
@@ -459,6 +531,13 @@ def main():
             policy_worker.close()
         if recorder._thread.is_alive():
             recorder.close("aborted")
+
+    if not args.raw_only:
+        from .lerobot_export import export_session
+
+        print(
+            json.dumps(export_session(output, output / "lerobot"), ensure_ascii=False), flush=True
+        )
 
 
 if __name__ == "__main__":

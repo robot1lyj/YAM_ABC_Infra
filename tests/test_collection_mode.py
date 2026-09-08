@@ -84,35 +84,39 @@ def test_episode_writer_backpressure_never_blocks_control(tmp_path, monkeypatch)
         rec.close("aborted")
 
 
-def test_handle_buttons_priority_release_and_independent_leader_edges():
+def test_handle_buttons_independent_edges_and_no_hil_takeover():
     from yam_abc_reproduce.hil.buttons import HandleButtons
 
     b = HandleButtons()
 
-    def read(keys, t, mode=Mode.HIL, phase=Phase.POLICY):
+    def read(keys, t, mode=Mode.HIL, phase=Phase.HUMAN):
         return b.read(keys, now=t, mode=mode, phase=phase)
 
-    assert read([[True, False], [False, False]], 0) is None  # boot-held is not a press
-    assert read([[False, False], [False, False]], 0.3) is None
-    assert read([[True, False], [False, False]], 0.6) == "toggle"
-    assert read([[True, False], [True, False]], 1) == "toggle"  # independent right edge
-    assert read([[False, True], [False, False]], 1.3) == "hold"
-    assert read([[True, True], [False, False]], 1.6) == "hold"
-    assert read([[True, False], [False, False]], 2, phase=Phase.HOLD) is None
-    read([[False, False], [False, False]], 2.3)
-    assert read([[True, False], [False, False]], 2.6, phase=Phase.HOLD) == "start"
+    assert read([[True, False], [False, False]], 0) is None
+    read([[False, False], [False, False]], 0.3)
+    assert read([[True, False], [False, False]], 0.6) == "resume_policy"
+    assert read([[True, False], [True, False]], 1) == "resume_policy"
+    assert read([[False, True], [False, False]], 1.3) is None
+    assert read([[True, True], [False, False]], 1.6, phase=Phase.POLICY) is None
 
 
-def test_handle_primary_action_per_mode_and_simultaneous_presses():
+def test_handle_primary_action_per_mode_and_discard_priority():
     from yam_abc_reproduce.hil.buttons import HandleButtons
 
     for mode in Mode:
         b = HandleButtons()
         b.read([[False, False]] * 2, now=0, mode=mode, phase=Phase.HOLD)
-        assert b.read([[True, False]] * 2, now=1, mode=mode, phase=Phase.HOLD) == "start"
+        assert b.read([[True, False]] * 2, now=1, mode=mode, phase=Phase.HOLD) is None
         b.read([[False, False]] * 2, now=2, mode=mode, phase=Phase.HUMAN)
-        expected = "record" if mode == Mode.COLLECT else "toggle" if mode == Mode.HIL else None
+        expected = (
+            "record" if mode == Mode.COLLECT else "resume_policy" if mode == Mode.HIL else None
+        )
         assert b.read([[True, False]] * 2, now=3, mode=mode, phase=Phase.HUMAN) == expected
+        b.read([[False, False]] * 2, now=4, mode=mode, phase=Phase.HUMAN)
+        expected = (
+            "discard" if mode == Mode.COLLECT else "resume_policy" if mode == Mode.HIL else None
+        )
+        assert b.read([[True, True]] * 2, now=5, mode=mode, phase=Phase.HUMAN) == expected
 
 
 def test_runtime_collection_buttons_and_hold_cancel_pending_start(tmp_path):
@@ -168,15 +172,16 @@ def test_runtime_collection_buttons_and_hold_cancel_pending_start(tmp_path):
         runtime.event("record")
         wait(lambda: runtime.status.get("recording"))
         keys[1][1] = True
-        runtime.event("start")
-        runtime.event("start")
-        wait(lambda: runtime.status["phase"] == "hold")
-        assert not runtime.status["recording"]
-        runtime.event("start")  # held button dominates new UI commands too
+        wait(lambda: not runtime.status["recording"])
+        assert runtime.status["phase"] == "human"
         tick = runtime.status["tick"]
         wait(lambda: runtime.status["tick"] >= tick + 3)
-        assert runtime.status["phase"] == "hold"
+        assert runtime.status["phase"] == "human"
         keys[1][1] = False
+        runtime.event("start")
+        runtime.event("start")
+        runtime.event("hold")
+        wait(lambda: runtime.status["phase"] == "hold")
         tick = runtime.status["tick"]
         wait(lambda: runtime.status["tick"] >= tick + 3)
         assert runtime.status["phase"] == "hold"
@@ -187,7 +192,10 @@ def test_runtime_collection_buttons_and_hold_cancel_pending_start(tmp_path):
         manifests = [
             json.loads(p.read_text()) for p in sorted(rec.path.glob("episode_*/manifest.json"))
         ]
-        assert [m["outcome"] for m in manifests] == ["success", "success", "aborted"]
+        assert [m["outcome"] for m in manifests] == ["success", "success"]
+        index = json.loads((rec.path / "session.json").read_text())
+        assert index["episodes"][-1]["outcome"] == "discarded"
+        assert not (rec.path / index["episodes"][-1]["path"]).exists()
         rows = [
             json.loads(line)
             for line in (rec.path / "episode_000001/steps.jsonl").read_text().splitlines()

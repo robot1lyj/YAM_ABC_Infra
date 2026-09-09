@@ -106,59 +106,44 @@
             </button>
             <span class="action-divider"></span>
             <button id="header-stop" class="button danger">
-              <span class="stop-symbol">■</span> 急停 <small>软件</small>
+              <span class="stop-symbol">■</span
+              ><span class="stop-label">急停<small>软件紧急暂停</small></span>
             </button>
             <button id="header-reset" class="button" hidden>解除锁存</button>
           </div>
         </section>
         <div id="alert" class="alert" role="alert" hidden></div>
         <div id="workspace-page">
-          <section class="task-section">
-            <div class="section-heading">
-              <h2>采集任务 <span class="step-label">STEP 01</span></h2>
-              <span id="task-library-count">本机任务库</span>
-            </div>
+          <section class="task-section" aria-label="当前采集任务">
             <div class="task-card">
-              <div class="task-illustration" aria-hidden="true">
-                <span></span><span></span><span></span><span></span>
-              </div>
               <div class="task-main">
                 <div class="task-kicker">
-                  <span id="task-badge" class="pill">待选择任务</span
-                  ><span id="task-category">任务驱动的数据采集</span>
+                  <span id="task-badge" class="pill">当前任务</span>
+                  <h2 id="task-name">选择采集任务</h2>
                 </div>
-                <h2 id="task-name">先定义任务，再开始采集</h2>
-                <p id="task-instruction">
-                  例如：乐高分拣。为每种采集目标建立独立任务，数据会自动归档到对应任务。
-                </p>
-                <div class="task-meta">
-                  <span id="task-identity"
-                    >任务名称 · 采集目标 · 独立数据目录</span
-                  ><span id="task-session-tip">支持多次采集会话</span>
-                </div>
+                <p id="task-instruction">先选择任务，再开始采集。</p>
               </div>
               <div class="task-actions">
-                <button id="create-task" class="button primary">
-                  ＋ 新建任务</button
-                ><button id="choose-task" class="button">
-                  选择已有任务 <span>↗</span>
-                </button>
+                <button id="choose-task" class="button">切换任务</button
+                ><button id="create-task" class="button">＋ 新建</button>
               </div>
+              <details class="task-details">
+                <summary>详情</summary>
+                <div>
+                  <span id="task-library-count"></span
+                  ><span id="task-category"></span
+                  ><span id="task-identity"></span
+                  ><span id="task-session-tip"></span>
+                </div>
+              </details>
             </div>
             <div class="workflow-strip">
-              <span id="step-task"><i>1</i>选择任务</span><b>→</b
-              ><span id="step-devices"><i>2</i>连接设备</span><b>→</b
-              ><span id="step-record"><i>3</i>开始采集</span
-              ><span class="workflow-tip" id="workflow-tip"
-                >先创建或选择一个任务</span
-              >
+              <span id="step-task" hidden></span
+              ><span id="step-devices" hidden></span
+              ><span id="step-record" hidden></span
+              ><span id="workflow-tip"></span>
             </div>
           </section>
-
-          <div class="section-heading">
-            <h2>工作模式 <span class="step-label">STEP 02</span></h2>
-            <span>切换后先保持，点击开始执行</span>
-          </div>
           <section class="mode-grid" aria-label="工作模式">
             <button class="mode-card" data-mode="collect">
               <div>
@@ -204,9 +189,17 @@
                   <h2>
                     <svg><use href="#i-camera" /></svg>视觉工作区
                   </h2>
-                  <button id="preview-toggle" class="button subtle">
-                    关闭预览
-                  </button>
+                  <div class="vision-actions">
+                    <button
+                      id="expand-vision"
+                      class="button subtle"
+                      aria-pressed="false"
+                    >
+                      放大视觉区</button
+                    ><button id="preview-toggle" class="button subtle">
+                      关闭预览
+                    </button>
+                  </div>
                 </div>
                 <div class="camera-grid">
                   <article class="camera" data-camera="top">
@@ -271,29 +264,6 @@
                     ><strong id="disk">—<small> GB</small></strong>
                   </div>
                 </div>
-                <div class="session-actions">
-                  <button
-                    class="button primary"
-                    id="record"
-                    data-event="record"
-                  >
-                    ● 开始录制</button
-                  ><button class="button" id="discard">放弃当前集</button
-                  ><span class="vertical-divider"></span
-                  ><button
-                    class="button subtle"
-                    id="success"
-                    data-event="success"
-                  >
-                    ✓ 标记成功</button
-                  ><button
-                    class="button subtle"
-                    id="failure"
-                    data-event="failure"
-                  >
-                    标记失败
-                  </button>
-                </div>
                 <div id="output" class="output-path">
                   连接后创建会话目录 · 结束会话后自动整理 LeRobot 数据
                 </div>
@@ -311,7 +281,7 @@
             <aside class="right-column">
               <section class="panel control-panel">
                 <div class="panel-heading">
-                  <h2>运行控制</h2>
+                  <h2>采集控制</h2>
                   <span class="pill" id="phase">未连接</span>
                 </div>
                 <div class="control-visual">
@@ -342,6 +312,30 @@
                 <button class="button wide" id="hold" data-event="hold">
                   Ⅱ 暂停运动 <kbd>SPACE</kbd>
                 </button>
+                <div class="record-divider">本集录制</div>
+                <div class="session-actions">
+                  <button
+                    class="button primary"
+                    id="record"
+                    data-event="record"
+                  >
+                    ● 开始录制</button
+                  ><button class="button" id="discard">放弃当前集</button
+                  ><span class="vertical-divider"></span
+                  ><button
+                    class="button subtle"
+                    id="success"
+                    data-event="success"
+                  >
+                    ✓ 标记成功</button
+                  ><button
+                    class="button subtle"
+                    id="failure"
+                    data-event="failure"
+                  >
+                    标记失败
+                  </button>
+                </div>
                 <div id="ownership" class="ownership">控制权：保持</div>
                 <div class="handle-hint" id="handle-hint">
                   手柄① 开始 / 结束录制<br />手柄② 放弃当前集
@@ -433,13 +427,10 @@
             </div>
           </section>
         </div>
-        <section class="panel log-panel">
-          <div class="panel-heading">
-            <h2>操作日志</h2>
-            <span class="muted">指令接收与实际运行状态分别显示</span>
-          </div>
+        <details class="panel log-panel">
+          <summary>操作日志 <span>展开查看指令与状态</span></summary>
           <div id="logs"></div>
-        </section>
+        </details>
         <footer>
           <span>悟演智能 · WUYAN ROBOTICS</span
           ><span>本地控制 · 到达时间配对，非硬件曝光同步</span

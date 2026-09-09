@@ -131,6 +131,9 @@ function render() {
     b.disabled = !online || transitional || latched || state.phase === "fault";
   });
   text("mode-name", names[mode]);
+  $("takeover").parentElement.hidden = mode !== "hil";
+  $("task-instruction").title =
+    state.selected_task?.instruction || "先选择任务";
   text(
     "phase",
     latched
@@ -707,4 +710,10 @@ $("choose-task").onclick = () => {
     $("task-options").append(button);
   }
   $("task-picker").showModal();
+};
+
+$("expand-vision").onclick = () => {
+  const expanded = $("workspace-page").classList.toggle("vision-expanded");
+  $("expand-vision").setAttribute("aria-pressed", String(expanded));
+  text("expand-vision", expanded ? "恢复布局" : "放大视觉区");
 };

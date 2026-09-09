@@ -1,0 +1,20 @@
+{
+  "scope": "frontend layout, mock only",
+  "browser_checks": [
+    "task details expand/collapse",
+    "three independent mock camera previews visible",
+    "vision expand/restore",
+    "HIL takeover controls shown; collect hides them",
+    "cameras disconnected after verification"
+  ],
+  "layout_px": {
+    "task_height": 71,
+    "vision_height": 340,
+    "vision_width": 655,
+    "stop_width": 147,
+    "stop_height": 66
+  },
+  "horizontal_overflow": false,
+  "backend_changed": false,
+  "tests": "tests/test_workbench.py: 13 passed; node --check app.js passed"
+}

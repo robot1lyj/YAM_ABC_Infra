@@ -133,7 +133,11 @@
                   <span id="task-library-count"></span
                   ><span id="task-category"></span
                   ><span id="task-identity"></span
-                  ><span id="task-session-tip"></span>
+                  ><span id="task-session-tip"></span
+                  ><span id="task-english"></span
+                  ><button id="edit-task" class="button" type="button">
+                    编辑任务
+                  </button>
                 </div>
               </details>
             </div>
@@ -373,29 +377,71 @@
               </div>
               <div id="device-cards" class="device-cards"></div>
               <div class="device-note">
-                Leader 在调试时保持手动 / 重力补偿。关节点动控制
+                连接后四臂保持；需要手动摆位时请明确进入重力补偿。关节点动控制
                 Follower；进入遥操作前，请将 Leader 与 Follower 姿态对齐。
               </div>
             </section>
-            <section class="panel">
-              <div class="panel-heading"><h2>准备位与重力补偿</h2></div>
-              <div class="home-info">
-                <svg><use href="#i-arm" /></svg>
-                <h3>为下一次采集，回到准备姿态。</h3>
-                <p>
-                  先暂停并结束录制，将四台机械臂摆到准备姿态，再保存。回位独占控制，完成后保持；夹爪保留当前开度。
-                </p>
-                <div class="maintenance-buttons">
-                  <button class="button" id="capture-home">
-                    保存当前准备位</button
-                  ><button class="button primary" id="home">回准备位</button
-                  ><button class="button" id="gravity">重力补偿</button
-                  ><button class="button" id="gravity-exit" data-event="hold">
-                    结束补偿 / 保持
-                  </button>
-                </div>
-                <p id="home-status" style="margin-top: 12px">尚未保存准备位</p>
+            <section class="panel maintenance-panel">
+              <div class="panel-heading">
+                <h2>准备位与重力补偿</h2>
+                <span class="pill">四臂维护</span>
               </div>
+              <div class="maintenance-status">
+                <i class="led"></i>
+                <p id="home-status">尚未保存准备位</p>
+              </div>
+              <p class="maintenance-intro">
+                先暂停并结束录制，再选择下方操作。回位完成或结束补偿后，机械臂保持不动。
+              </p>
+              <div class="maintenance-groups">
+                <section>
+                  <h3>准备位</h3>
+                  <p>保存合适的四臂姿态，供下一次采集恢复。</p>
+                  <div class="maintenance-buttons">
+                    <button class="button maintenance-action" id="capture-home">
+                      <svg><use href="#i-record" /></svg
+                      ><span
+                        ><strong>保存当前准备位</strong
+                        ><small>记录当前姿态 · 不产生运动</small></span
+                      >
+                    </button>
+                    <button class="button primary maintenance-action" id="home">
+                      <svg><use href="#i-arm" /></svg
+                      ><span
+                        ><strong>回准备位</strong
+                        ><small>四臂协调回位 · 夹爪保持当前开度</small></span
+                      >
+                    </button>
+                  </div>
+                </section>
+                <section>
+                  <h3>重力补偿</h3>
+                  <p>手扶机械臂调整姿态，完成后结束补偿。</p>
+                  <div class="maintenance-buttons">
+                    <button class="button maintenance-action" id="gravity">
+                      <svg><use href="#i-arm" /></svg
+                      ><span
+                        ><strong>进入重力补偿</strong
+                        ><small>停止策略与遥操作 · 手动摆位</small></span
+                      >
+                    </button>
+                    <button
+                      class="button maintenance-action"
+                      id="gravity-exit"
+                      data-event="hold"
+                    >
+                      <span class="maintenance-pause">Ⅱ</span
+                      ><span
+                        ><strong>结束补偿并保持</strong
+                        ><small>退出手动摆位 · 保持当前姿态</small></span
+                      >
+                    </button>
+                  </div>
+                </section>
+              </div>
+              <p class="maintenance-note">
+                回位前清空完整路径；需要立即停止时，使用顶部急停。
+              </p>
             </section>
           </div>
           <section class="panel jog-panel">
@@ -466,7 +512,7 @@
     <dialog id="task-dialog">
       <form id="task-form">
         <div class="eyebrow">CREATE COLLECTION TASK</div>
-        <h2>创建采集任务</h2>
+        <h2 id="task-dialog-title">创建采集任务</h2>
         <p>先说清楚要采什么，数据才能被准确复用。</p>
         <label
           >任务名称 <span>用于区分数据集</span
@@ -476,13 +522,23 @@
             maxlength="60"
             placeholder="例如：乐高分拣" /></label
         ><label
-          >采集目标 <span>将作为任务指令随数据保存</span
+          >采集说明 <span>中文说明，供采集员查看</span
           ><textarea
             id="new-task-instruction"
             required
             maxlength="300"
             rows="4"
             placeholder="例如：将桌面上的乐高积木按颜色分拣到对应料盒中。"
+          ></textarea>
+        </label>
+        <label
+          >英文 task <span>写入数据集并作为模型指令</span
+          ><textarea
+            id="new-task-english"
+            required
+            maxlength="300"
+            rows="2"
+            placeholder="Sort the LEGO bricks by color into the matching bins."
           ></textarea>
         </label>
         <div class="task-form-note">

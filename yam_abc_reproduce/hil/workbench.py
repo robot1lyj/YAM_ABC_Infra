@@ -113,11 +113,18 @@ class Workbench:
         if self.thread and self.thread.is_alive():
             raise ValueError("请先断开机械臂并完成当前会话保存，再切换任务；相机可保持连接")
 
-    def create_task(self, name, instruction):
+    def create_task(self, name, instruction, task):
         with self._lock:
             self._task_editable()
-            self.selected_task = self.tasks.create(name, instruction)
+            self.selected_task = self.tasks.create(name, instruction, task)
             self.log("已创建并选择任务：" + self.selected_task["name"])
+            return dict(self.selected_task)
+
+    def update_task(self, task_id, name, instruction, task):
+        with self._lock:
+            self._task_editable()
+            self.selected_task = self.tasks.update(task_id, name, instruction, task)
+            self.log("已更新并选择任务：" + self.selected_task["name"])
             return dict(self.selected_task)
 
     def select_task(self, task_id):
@@ -219,6 +226,8 @@ class Workbench:
                 raise ValueError("设备正在连接、运行或整理数据，请等待")
             if self.selected_task is None:
                 raise ValueError("请先创建或选择采集任务，再连接机械臂")
+            if not self.selected_task.get("task"):
+                raise ValueError("请编辑当前任务，补填英文 task 后再连接机械臂")
             if self.cleanup_error:
                 raise ValueError("上次关闭设备失败，请现场检查并重启工作台")
             if not self.args.mock and ready is not True:
@@ -231,7 +240,7 @@ class Workbench:
             if self.mode in ("hil", "inference") and not (self.args.mock or self.args.url):
                 raise ValueError("请先填写Thor模型服务地址")
             # Freeze task identity for the entire arm/recording session.
-            self.task = self.selected_task["instruction"]
+            self.task = self.selected_task["task"]
             self.runtime = None
             self._previews = {}
             self._snapshot = {}
@@ -278,7 +287,8 @@ class Workbench:
     def attach(self, runtime, output):
         runtime.prompt = self.task
         runtime.recorder.metadata["operator_task"] = self.task
-        runtime.recorder.metadata["task"] = dict(self.selected_task)
+        runtime.recorder.metadata["task"] = self.task
+        runtime.recorder.metadata["collection_task"] = dict(self.selected_task)
         runtime.recorder.metadata["station"]["task_name"] = self.task
         if self._profile_path.exists():
             try:

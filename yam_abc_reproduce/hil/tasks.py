@@ -22,6 +22,8 @@ class Tasks:
                     if str(uuid.UUID(task["id"])) != task["id"]:
                         raise ValueError("任务ID格式错误")
                     self.validate(task["name"], task["instruction"])
+                    if "task" in task:
+                        self.validate_task(task["task"])
                 if len({t["id"] for t in items}) != len(items):
                     raise ValueError("任务ID重复")
                 self.items = items
@@ -35,25 +37,49 @@ class Tasks:
         if not isinstance(instruction, str) or not 1 <= len(instruction.strip()) <= 300:
             raise ValueError("采集目标须为1–300字")
 
-    def create(self, name, instruction):
+    @staticmethod
+    def validate_task(task):
+        if (
+            not isinstance(task, str)
+            or not 1 <= len(task.strip()) <= 300
+            or not task.isascii()
+            or not any(c.isalpha() for c in task)
+            or any(ord(c) < 32 for c in task)
+        ):
+            raise ValueError("英文 task 须为1–300个英文字符，填写英文任务指令")
+
+    def create(self, name, instruction, task):
+        return self._save(name, instruction, task)
+
+    def update(self, task_id, name, instruction, task):
+        return self._save(name, instruction, task, existing=self.get(task_id))
+
+    def _save(self, name, instruction, task, existing=None):
         if self.error:
             raise ValueError(self.error)
         self.validate(name, instruction)
-        if any(t["name"].casefold() == name.strip().casefold() for t in self.items):
+        self.validate_task(task)
+        if any(
+            t["name"].casefold() == name.strip().casefold()
+            and (existing is None or t["id"] != existing["id"])
+            for t in self.items
+        ):
             raise ValueError("已有同名任务，请选择已有任务或使用不同名称")
-        task = {
-            "id": str(uuid.uuid4()),
+        item = {
+            **(existing or {"id": str(uuid.uuid4()), "created_at": datetime.now(UTC).isoformat()}),
             "name": name.strip(),
             "instruction": instruction.strip(),
-            "created_at": datetime.now(UTC).isoformat(),
+            "task": task.strip(),
         }
-        items = [*self.items, task]
+        items = [item if t["id"] == item["id"] else t for t in self.items]
+        if existing is None:
+            items.append(item)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.path.with_suffix(".tmp")
         temp.write_text(json.dumps(items, ensure_ascii=False, indent=2) + "\n")
         temp.replace(self.path)
         self.items = items
-        return dict(task)
+        return dict(item)
 
     def get(self, task_id):
         for task in self.items:

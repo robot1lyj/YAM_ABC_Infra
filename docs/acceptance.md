@@ -51,3 +51,6 @@
 
 
 2026-09-09视觉优先布局：工作台专项13通过，浏览器验证任务详情、三路模拟预览、视觉放大/恢复及HIL模式专属按钮。后端不变，未执行新的真机或全量性能测试。[布局验收](evidence/20260909-capture-layout.json)、[测试日志](evidence/20260909-capture-layout-tests.txt)。
+
+
+2026-09-09英文task与维护界面：全量211通过、2跳过、9子测试通过，测试包含英文task校验、旧目录编辑保留身份、原始manifest/LeRobot任务文本与中文元数据分离。浏览器验证旧乐高任务补填、蓝灰配色与四个78px维护按钮，未连接真实设备。[测试](evidence/20260909-english-task-tests.txt)、[界面验证](evidence/20260909-english-task.json)。

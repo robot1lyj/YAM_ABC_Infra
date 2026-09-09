@@ -385,6 +385,7 @@ def export_session(source: Path, output: Path):
         "timestamps": "nominal fps; original host/device timestamps retained in source JSONL",
         "mock": session.get("mock"),
         "task": session.get("task"),
+        "collection_task": session.get("collection_task"),
     }
     _json(staging / "provenance.json", report)
     staging.rename(output)

@@ -22,3 +22,5 @@
 - 任务归属：白色悟演智能工作台先建/选任务，再独立连接相机和四臂。任务固定到整个机械臂会话，数据按UUID隔离；断开机械臂后可保留相机预览。来源：docs/collect.md。
 
 - 采集界面优先三路视觉，任务栏紧凑，录制控制集中，急停大尺寸固定在连接旁；详情/日志按需展开。来源：docs/collect.md。
+
+- 工作台任务：name/instruction供采集员中文查看，英文task用于模型prompt、原始task和LeRobot任务文本；完整任务身份存collection_task。旧任务需编辑补填，历史数据不改写。来源：docs/collect.md。

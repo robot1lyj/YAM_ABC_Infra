@@ -23,6 +23,7 @@ class TaskCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=60)
     instruction: str = Field(min_length=1, max_length=300)
+    task: str = Field(min_length=1, max_length=300)
 
 
 class Disconnect(BaseModel):
@@ -83,7 +84,11 @@ def create_app(runtime):
 
     @app.post("/tasks")
     def create_task(body: TaskCreate):
-        return invoke(runtime.create_task, body.name, body.instruction)
+        return invoke(runtime.create_task, **body.model_dump())
+
+    @app.post("/tasks/{task_id}/update")
+    def update_task(task_id: str, body: TaskCreate):
+        return invoke(runtime.update_task, task_id, **body.model_dump())
 
     @app.post("/tasks/{task_id}/select")
     def select_task(task_id: str):

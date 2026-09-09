@@ -35,7 +35,7 @@ def measure(root, enabled, duration):
         assert predicate(), service.status
 
     try:
-        service.create_task("性能验证", "将积木按颜色分拣")
+        service.create_task("性能验证", "将积木按颜色分拣", "Sort the LEGO bricks by color.")
         service.connect_cameras()
         wait(lambda: service.camera_state == "connected")
         service.connect()

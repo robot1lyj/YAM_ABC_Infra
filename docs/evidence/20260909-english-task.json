@@ -1,0 +1,18 @@
+{
+  "scope": "mock only; English task contract and maintenance UI",
+  "selected_task": {
+    "id": "4b554449-fc73-46db-9fb0-22d8a4909f60",
+    "name": "乐高分拣",
+    "instruction": "将桌面上的乐高积木按颜色分拣到对应的收纳盒中。",
+    "created_at": "2026-09-08T11:39:06.054785+00:00",
+    "task": "Sort the LEGO bricks by color into the matching bins."
+  },
+  "browser": [
+    "legacy task edited with English task, Chinese name retained",
+    "four maintenance buttons measured 396x78 pixels",
+    "no horizontal page overflow",
+    "devices remain disconnected"
+  ],
+  "tests": "211 passed, 2 skipped, 9 subtests; includes raw manifest and LeRobot task text assertions",
+  "changes": "task string in raw/provenance; full task catalog identity in collection_task; history not rewritten"
+}

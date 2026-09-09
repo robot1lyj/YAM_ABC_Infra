@@ -10,19 +10,19 @@ from yam_abc_reproduce.hil.workbench import Workbench
 
 def test_task_catalog_identity_persistence_and_validation(tmp_path):
     catalog = Tasks(tmp_path)
-    task = catalog.create("乐高分拣", "按颜色将乐高放入对应盒子")
+    task = catalog.create("乐高分拣", "按颜色将乐高放入对应盒子", "Sort the LEGO bricks by color.")
     assert Tasks(tmp_path).get(task["id"]) == task
     with pytest.raises(ValueError):
-        catalog.create(" 乐高分拣 ", "另一条指令")
+        catalog.create(" 乐高分拣 ", "另一条指令", "Sort the LEGO bricks by color.")
     with pytest.raises(ValueError):
-        catalog.create("", "目标")
+        catalog.create("", "目标", "Sort the LEGO bricks by color.")
     with pytest.raises(ValueError):
         catalog.get("../../escape")
     catalog.path.write_text('[{"id":"../../escape"}]')
     broken = Tasks(tmp_path)
     assert broken.error
     with pytest.raises(ValueError):
-        broken.create("任务", "目标")
+        broken.create("任务", "目标", "Sort the LEGO bricks by color.")
     assert catalog.path.read_text() == '[{"id":"../../escape"}]'
 
 
@@ -51,7 +51,7 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
     try:
         with pytest.raises(ValueError, match="任务"):
             service.connect()
-        task = service.create_task("乐高分拣", "按颜色分拣乐高")
+        task = service.create_task("乐高分拣", "按颜色分拣乐高", "Sort the LEGO bricks by color.")
         service.connect()
         wait(lambda: service.runtime is not None and service.status.get("tick", 0) > 2)
         assert service.camera_state == "disconnected"
@@ -59,7 +59,7 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
         with pytest.raises(ValueError, match="相机"):
             service.event("start")
         with pytest.raises(ValueError):
-            service.create_task("其他任务", "其他目标")
+            service.create_task("其他任务", "其他目标", "Sort the LEGO bricks by color.")
         service.connect_cameras()
         wait(lambda: service.camera_state == "connected")
         service.event("start")
@@ -77,14 +77,25 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
         assert service.camera_state == "connected"
         assert all(c.read() is not None for c in service.camera_slots)
         session = json.loads((output / "session.json").read_text())
-        assert session["task"] == task
+        assert session["task"] == task["task"]
+        assert session["collection_task"] == task
         assert output.parent.name == task["id"]
         manifest = json.loads(
             (output / session["episodes"][0]["path"] / "manifest.json").read_text()
         )
-        assert manifest["task"] == task
-        assert manifest["station"]["task_name"] == task["instruction"]
-        service.create_task("其他任务", "其他目标")
+        assert manifest["task"] == task["task"]
+        assert manifest["collection_task"] == task
+        assert manifest["station"]["task_name"] == task["task"]
+        import pandas as pd
+
+        from yam_abc_reproduce.hil.lerobot_export import export_session
+
+        exported = output / "lerobot"
+        report = export_session(output, exported)
+        assert report["task"] == task["task"]
+        assert report["collection_task"]["name"] == "乐高分拣"
+        assert pd.read_parquet(exported / "meta/tasks.parquet").index[0] == task["task"]
+        service.create_task("其他任务", "其他目标", "Sort the LEGO bricks by color.")
         service.disconnect_cameras()
         wait(lambda: service.camera_state == "disconnected")
     finally:
@@ -95,3 +106,23 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
 def test_invalid_catalog_fails_closed(tmp_path, content):
     (tmp_path / "tasks.json").write_text(content)
     assert Tasks(tmp_path).error
+
+
+def test_legacy_task_can_be_completed_without_changing_identity(tmp_path):
+    catalog = Tasks(tmp_path)
+    original = catalog.create("乐高分拣", "中文说明", "Sort LEGO.")
+    legacy = {k: v for k, v in original.items() if k != "task"}
+    catalog.path.write_text(json.dumps([legacy]))
+    loaded = Tasks(tmp_path)
+    assert loaded.error is None
+    assert "task" not in loaded.get(original["id"])
+    updated = loaded.update(original["id"], "乐高分拣", "中文说明", "Sort LEGO by color.")
+    assert updated["id"] == original["id"]
+    assert updated["created_at"] == original["created_at"]
+    assert Tasks(tmp_path).get(original["id"])["task"] == "Sort LEGO by color."
+
+
+@pytest.mark.parametrize("task", ["", "乐高分拣", "123", "Sort\nLEGO"])
+def test_english_task_rejects_missing_or_non_english(tmp_path, task):
+    with pytest.raises(ValueError, match="英文 task"):
+        Tasks(tmp_path).create("乐高分拣", "中文说明", task)

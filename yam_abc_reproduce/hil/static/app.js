@@ -108,7 +108,7 @@ function render() {
   $("connect").disabled =
     !online ||
     transitional ||
-    (!state.selected_task && state.connection !== "connected");
+    (!state.selected_task?.task && state.connection !== "connected");
   renderTask(transitional || state.connection === "connected");
   const cameraBusy = ["connecting", "disconnecting"].includes(
     state.camera_connection,
@@ -650,6 +650,11 @@ function renderTask(locked) {
       : "同一任务的每次采集会话独立保存",
   );
   $("create-task").disabled = !online || locked;
+  $("edit-task").disabled = !online || locked || !task;
+  text(
+    "task-english",
+    "task: " + (task?.task || "待补填英文 task，请点击编辑任务"),
+  );
   $("choose-task").disabled = !online || locked || !state.tasks?.length;
   $("step-task").classList.toggle("done", !!task);
   $("step-devices").classList.toggle(
@@ -661,18 +666,24 @@ function renderTask(locked) {
     "workflow-tip",
     !task
       ? "先创建或选择任务"
-      : !camerasConnected()
-        ? "连接三路相机，检查画面"
-        : !activeDevice()
-          ? "连接机械臂，完成准备"
-          : state.recording
-            ? "正在录制 · 数据归入当前任务"
-            : "设备就绪，选择模式后开始",
+      : !task.task
+        ? "请在任务详情中编辑并补填英文 task"
+        : !camerasConnected()
+          ? "连接三路相机，检查画面"
+          : !activeDevice()
+            ? "连接机械臂，完成准备"
+            : state.recording
+              ? "正在录制 · 数据归入当前任务"
+              : "设备就绪，选择模式后开始",
   );
 }
 $("connect-cameras").onclick = () =>
   action(camerasConnected() ? "/cameras/disconnect" : "/cameras/connect");
 $("create-task").onclick = () => {
+  editingTask = null;
+  $("task-form").reset();
+  text("task-dialog-title", "创建采集任务");
+  text("task-submit", "创建并选择任务");
   text("task-form-error", "");
   $("task-dialog").showModal();
 };
@@ -680,14 +691,15 @@ $("task-form").onsubmit = async (e) => {
   e.preventDefault();
   $("task-submit").disabled = true;
   try {
-    await post("/tasks", {
+    await post(editingTask ? `/tasks/${editingTask}/update` : "/tasks", {
       name: $("new-task-name").value.trim(),
       instruction: $("new-task-instruction").value.trim(),
+      task: $("new-task-english").value.trim(),
     });
     $("task-dialog").close();
     $("task-form").reset();
     await poll();
-    toast("任务已创建并选中");
+    toast("任务已保存并选中");
   } catch (error) {
     text("task-form-error", error.message);
   } finally {
@@ -716,4 +728,18 @@ $("expand-vision").onclick = () => {
   const expanded = $("workspace-page").classList.toggle("vision-expanded");
   $("expand-vision").setAttribute("aria-pressed", String(expanded));
   text("expand-vision", expanded ? "恢复布局" : "放大视觉区");
+};
+
+let editingTask = null;
+$("edit-task").onclick = () => {
+  const task = state.selected_task;
+  if (!task) return;
+  editingTask = task.id;
+  $("new-task-name").value = task.name;
+  $("new-task-instruction").value = task.instruction;
+  $("new-task-english").value = task.task || "";
+  text("task-dialog-title", "编辑采集任务");
+  text("task-submit", "保存任务");
+  text("task-form-error", "");
+  $("task-dialog").showModal();
 };

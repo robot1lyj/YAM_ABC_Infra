@@ -743,3 +743,17 @@ $("edit-task").onclick = () => {
   text("task-form-error", "");
   $("task-dialog").showModal();
 };
+
+$("fullscreen").onclick = async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else if (document.documentElement.requestFullscreen)
+      await document.documentElement.requestFullscreen();
+    else toast("当前浏览器不支持页面全屏，请最大化窗口");
+  } catch {
+    toast("当前浏览器未允许页面全屏，请最大化窗口");
+  }
+};
+document.addEventListener("fullscreenchange", () => {
+  text("fullscreen", document.fullscreenElement ? "退出全屏" : "全屏");
+});

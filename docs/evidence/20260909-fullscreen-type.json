@@ -1,0 +1,24 @@
+{
+  "scope": "frontend only, devices disconnected",
+  "browser_checks": {
+    "1920x1080": {
+      "heading_px": 26,
+      "button_px": 14,
+      "horizontal_overflow": false
+    },
+    "2560x1440": {
+      "horizontal_overflow": false,
+      "device_columns_px": [
+        1164.72,
+        1109.28
+      ]
+    },
+    "fullscreen_button": "entered label Exit, second click returned label Fullscreen",
+    "viewport_override": "reset after inspection"
+  },
+  "validation": [
+    "node --check app.js passed",
+    "git diff --check passed"
+  ],
+  "backend_tests": "not rerun for typography/layout only"
+}

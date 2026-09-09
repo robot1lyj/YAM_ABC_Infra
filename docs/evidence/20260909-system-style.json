@@ -1,0 +1,17 @@
+{
+  "scope": "stylesheet rewrite and implementation audit",
+  "browser": [
+    "1920x1080 workspace and device layout inspected, no horizontal overflow",
+    "1120x900 maintenance buttons 88px, no horizontal overflow",
+    "task form Chinese name/description and English task present",
+    "temporary viewport reset"
+  ],
+  "tests": "23 passed in tests/test_workbench.py and tests/test_tasks.py",
+  "implementation": "web routes dispatch to Workbench, Runtime and StationIO; recording and export covered by tests",
+  "unverified": [
+    "physical CAN directions and gripper motor configuration",
+    "three real D405 serials and USB performance",
+    "Thor model live integration and task success rates"
+  ],
+  "config_placeholders": "configs/station_hil.yaml gripper and camera serials remain REPLACE values"
+}

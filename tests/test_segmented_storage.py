@@ -88,17 +88,16 @@ def test_hdf5_batches_preserve_nulls_and_ignore_uncommitted_tail(tmp_path):
     assert rows[-1]["observation_state"] == [0.1] * 14
 
 
-def test_session_checkpoints_before_disconnect_and_enqueues_once(tmp_path):
-    queued = []
-    rec = RecordingSession(tmp_path / "session", mode="collect", on_episode=queued.append)
+def test_session_checkpoints_before_disconnect(tmp_path):
+    rec = RecordingSession(tmp_path / "session", mode="collect")
     try:
         rec.start_episode()
         rec.submit(row(0), images(0))
         rec.stop_episode("success")
         deadline = time.monotonic() + 5
-        while not queued and time.monotonic() < deadline:
+        while not rec.episodes and time.monotonic() < deadline:
             time.sleep(0.02)
-        assert queued == [rec.path / "episode_000001"]
+        assert len(rec.episodes) == 1
         assert json.loads((rec.path / "session.json").read_text())["episodes"][0]["steps"] == 1
         assert rec._thread.is_alive()
     finally:
@@ -170,29 +169,6 @@ def test_actual_process_termination_recovers_closed_segments(tmp_path):
     report = recover(source, tmp_path / "recovery")
     assert report["frames"] >= 6
     assert [r["tick"] for r in read_rows(tmp_path / "recovery")][:6] == list(range(6))
-
-
-def test_conversion_queue_pause_resume_and_retry(tmp_path):
-    from yam_abc_reproduce.hil.conversion_queue import ConversionQueue
-
-    source = make_episode(tmp_path / "source")
-    worker = ConversionQueue(tmp_path / "jobs")
-    try:
-        worker.pause(True)
-        worker.enqueue(source)
-        worker.enqueue(source)
-        time.sleep(0.6)
-        assert len(list(worker.root.glob("*.json"))) == 1
-        job = next(worker.root.glob("*.json"))
-        assert json.loads(job.read_text())["state"] == "queued"
-        worker.pause(False)
-        deadline = time.monotonic() + 8
-        while json.loads(job.read_text())["state"] != "complete" and time.monotonic() < deadline:
-            time.sleep(0.05)
-        assert json.loads(job.read_text())["state"] == "complete", job.read_text()
-        assert json.loads(job.read_text())["report"]["frames"] == 7
-    finally:
-        worker.close()
 
 
 def test_legacy_jsonl_episode_still_exports(tmp_path):

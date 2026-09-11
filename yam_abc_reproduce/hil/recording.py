@@ -145,7 +145,6 @@ class RecordingSession:
         capacity=32,
         metadata=None,
         segment_seconds=60,
-        on_episode=None,
         min_free_bytes=512 * 1024**2,
     ):
         self.path = Path(path)
@@ -153,7 +152,6 @@ class RecordingSession:
         self.metadata = metadata or {}
         self.min_free_bytes = min_free_bytes
         self.segment_seconds = segment_seconds
-        self.on_episode = on_episode
         self.fps = fps
         self.queue = queue.Queue(maxsize=capacity)
         self.error = None
@@ -247,8 +245,6 @@ class RecordingSession:
                 raise RuntimeError(active.error)
             if outcome == "discarded":
                 shutil.rmtree(active.path)
-            if self.on_episode and outcome != "discarded":
-                self.on_episode(active.path)
             active = None
 
         try:

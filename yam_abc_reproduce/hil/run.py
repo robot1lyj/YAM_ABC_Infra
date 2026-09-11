@@ -566,9 +566,7 @@ def main(argv=None, *, service=None):
     p.add_argument("--mode", choices=[m.value for m in Mode], default="hil")
     p.add_argument("--url", help="Thor WebSocket URL on the local Ethernet link")
     p.add_argument("--output", type=Path)
-    p.add_argument(
-        "--raw-only", action="store_true", help="diagnostic only: skip automatic LeRobot export"
-    )
+    p.add_argument("--raw-only", action="store_true", help="兼容旧命令；采集现在默认只保存原始数据")
     p.add_argument("--segment-seconds", type=float, default=60, help="采集文件分段时长，不拆逻辑集")
     p.add_argument("--min-free-gb", type=float, default=0.5, help="录制保留空间 GiB")
     p.add_argument("--duration", type=float)
@@ -605,8 +603,6 @@ def main(argv=None, *, service=None):
             p.error(f"invalid hil setting: {key}")
     # Check before constructing cameras, motors, sockets or recording threads.
     required = {"numpy", "yaml", "av", "h5py"}
-    if not args.raw_only:
-        required.update(("pyarrow", "pandas"))
     if args.web_port:
         required.update(("fastapi", "uvicorn", "cv2"))
     if not args.mock:
@@ -641,9 +637,6 @@ def main(argv=None, *, service=None):
         mode=args.mode,
         segment_seconds=args.segment_seconds,
         min_free_bytes=int(args.min_free_gb * 1024**3),
-        on_episode=service.conversions.enqueue
-        if service is not None and not args.raw_only
-        else None,
         fps=cfg.control_hz,
         metadata={
             "station": dataclasses.asdict(cfg),
@@ -743,13 +736,7 @@ def main(argv=None, *, service=None):
             recorder.close("aborted")
 
     if service is not None:
-        service.finalizing()
-    if not args.raw_only and service is None:
-        from .lerobot_export import export_session
-
-        print(
-            json.dumps(export_session(output, output / "lerobot"), ensure_ascii=False), flush=True
-        )
+        service.saved()
 
 
 if __name__ == "__main__":

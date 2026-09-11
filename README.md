@@ -116,11 +116,16 @@ D405 不支持三机外部硬件同步。本版采用主机接收时间配对、
 └── episode_000001/
     ├── manifest.json
     ├── segment_000000/        # samples.h5、三路MP4、segment.json
-    ├── segment_000001/
-    └── exports/attempt_.../   # 工作台按集后台生成LeRobot v3.0
+    └── segment_000001/
 ```
 
-主要数值分批写HDF5；图像通过固定共享缓冲交给独立编码进程。结束一集即提交清单；录制错误明确标为aborted，旧JSONL集继续可读。工作台机械臂连接期间暂停后台转换，断开后恢复；下一次连接不必等待转换完成。完整连续视频优先直接重新封装，避免二次有损编码。无界面CLI仍在退出后生成 `会话/lerobot/`。
+主要数值分批写HDF5；图像通过固定共享缓冲交给独立编码进程。结束一集即提交清单；录制错误明确标为aborted，旧JSONL集继续可读。工作台和无界面CLI都只采集，不自动转换。完整会话可以上传服务器后，使用独立脚本生成LeRobot v3.0；连续视频优先直接重新封装。
+
+```bash
+uv run --locked --script scripts/convert_lerobot.py /data/raw/yam --output /data/lerobot/batch_001
+```
+
+脚本有独立依赖锁，不安装机械臂、相机或模型环境；支持单集、会话及多会话目录。
 
 恢复工具保留来源、另写恢复目录，恢复数据必须审核后明确允许导出。字段、恢复和专家筛选见 [数据格式](docs/convert.md)。
 

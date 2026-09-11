@@ -213,7 +213,7 @@ class DatasetWriter:
                         }[e]
                         for e in row.get("transitions", [])
                     ),
-                    "complementary_info.intervention_id": row.get("intervention_id", 0),
+                    "complementary_info.intervention_id": row.get("intervention_id") or 0,
                     "complementary_info.source_tick": row["tick"],
                     "complementary_info.observation_valid": bool(
                         row.get("observation_valid", row["observation_state"] is not None)

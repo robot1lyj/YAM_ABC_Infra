@@ -25,4 +25,4 @@
 
 - 工作台任务：name/instruction供采集员中文查看，英文task用于模型prompt、原始task和LeRobot任务文本；完整任务身份存collection_task。旧任务需编辑补填，历史数据不改写。来源：docs/collect.md。
 
-- 新采集格式MP4＋HDF5＋JSON分段清单，默认60秒物理段不拆逻辑集；工作台逐集保存与独立暂停/恢复转换，目标LeRobot v3.0。旧JSONL可读；恢复须审核。来源：docs/convert.md。
+- 新采集格式MP4＋HDF5＋JSON分段清单，默认60秒物理段不拆逻辑集；工作台逐集保存，转换只由独立一键脚本显式运行，目标LeRobot v3.0。旧JSONL可读；恢复须审核。来源：docs/convert.md。

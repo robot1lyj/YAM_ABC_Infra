@@ -1,0 +1,47 @@
+{
+  "dataset": "/tmp/yam-offline-script-check/yam-hdf5-integration",
+  "frames": 1949,
+  "episodes": 1,
+  "samples": {
+    "0": {
+      "observation.state": [
+        14
+      ],
+      "action": [
+        14
+      ],
+      "observation.images.top_rgb": [
+        3,
+        480,
+        640
+      ]
+    },
+    "299": {
+      "observation.state": [
+        14
+      ],
+      "action": [
+        14
+      ],
+      "observation.images.top_rgb": [
+        3,
+        480,
+        640
+      ]
+    },
+    "1948": {
+      "observation.state": [
+        14
+      ],
+      "action": [
+        14
+      ],
+      "observation.images.top_rgb": [
+        3,
+        480,
+        640
+      ]
+    }
+  },
+  "packet_copy_episodes": 1
+}

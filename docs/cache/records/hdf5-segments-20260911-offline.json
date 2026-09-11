@@ -8,7 +8,7 @@
     "platform": "linux-x86_64",
     "runtime": "hdf5-segments-v2"
   },
-  "status": "verified",
+  "status": "stale",
   "observed_at": "2026-09-11T03:59:19.522511+00:00",
   "recorded_at": "2026-09-11T03:59:19.522511+00:00",
   "evidence": [

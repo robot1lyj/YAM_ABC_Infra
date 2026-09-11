@@ -1,0 +1,70 @@
+{
+  "id": "offline-conversion-20260911",
+  "kind": "observation",
+  "claim": "采集与LeRobot转换完全分离；移除自动队列与CLI退出转换，独立uv锁脚本支持迁移目录批量转换。224通过/2跳过/9子测试，1949帧脚本转换及官方0.5.1回读通过；未远端上传或真机验收。",
+  "owner": "docs/acceptance.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-x86_64",
+    "runtime": "offline-conversion-v1"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-11T04:41:38.216655+00:00",
+  "recorded_at": "2026-09-11T04:41:38.216655+00:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260911-offline-conversion-tests.txt",
+      "sha256": "630ed4ac34fc80883b12ada91d5b149cf18b5eb0071ed1a18a590fb59ee9deaa"
+    },
+    {
+      "path": "docs/evidence/20260911-offline-conversion-reader.json",
+      "sha256": "3c46aa6667cdbc7405273ecde4ad820865cc3b15838afd790eda0a653ec65c83"
+    },
+    {
+      "path": "docs/evidence/20260911-offline-conversion-script.log",
+      "sha256": "92ccb0489e591c89b0fa8c8dff7e1a85af7a5c804bac2496e2f90e7882422ddc"
+    }
+  ],
+  "recheck": "on_change",
+  "valid_until": null,
+  "depends_on": {
+    "pyproject.toml": "2bdba154591e64bcef543bc8c7e531a75264b6c0eb01cc8afdff731d047d0639",
+    "scripts/convert_lerobot.py": "fe75bbf1ab17a6daaca00bfd0f858f58caaf3f48fe4d22cfdcaf7798c45862d4",
+    "scripts/convert_lerobot.py.lock": "334b6071da63b35e4d6f1f5fbccba18a80e178acec8354a85f284dbf60f7b688",
+    "tests/test_offline_conversion.py": "18f6ba77381a0ec072ac8c9a64453a498fdb1abd98c2d4e7510f338377e65aec",
+    "tests/test_segmented_storage.py": "74caaebb4b328a5d3397adc20102f2ea61b15b9b358955fc224a6aea9cad7e3d",
+    "uv.lock": "ba474de0e3db49307b5c83813b955650857e2457ad00dd91ff8638f7d32b1ba1",
+    "yam_abc_reproduce/hil/__init__.py": "5e7eb2ea1bd244fa6a392c27d654b3669799bf00ed654233989e62a9e31e9e66",
+    "yam_abc_reproduce/hil/batch_convert.py": "1b89656f199ce610357de471dff6791df59270f0b2977673654667564fbc7804",
+    "yam_abc_reproduce/hil/buttons.py": "44cf6706721c7007bf2dc019846518df954770580b868732e078df22708d666e",
+    "yam_abc_reproduce/hil/camera_slots.py": "f1cc9cc05d5c48bdb2a20cca8bd3846864ce069f639a75a2c5439f215c775ad2",
+    "yam_abc_reproduce/hil/core.py": "e8b623458b5fc997c2abe859beeaf8e5e84ef87c5b317ca1be1a58dc90930bac",
+    "yam_abc_reproduce/hil/export.py": "7d8deaacc09f02d1f9f3363f4b929cfa80f8d0646b3d645e383ac9a0c70eee3f",
+    "yam_abc_reproduce/hil/jog.py": "62f1cb6a781aa1271f64c87726d978c91fe51c48ba719c6bde4f19e7497c3d87",
+    "yam_abc_reproduce/hil/keyboard.py": "9c78cd29640eccfbd48d5bf5ad52763bb640d30c7815c314165a3896c53f91b5",
+    "yam_abc_reproduce/hil/lerobot_export.py": "95132345dca0048f660c8f619309d3dde11a06f8034f3ec70a6ca1154c659b0f",
+    "yam_abc_reproduce/hil/maintenance.py": "b7e9061f0861043217e8131a382a6cb067f260fc79d7d2255e9972ab455ad4ca",
+    "yam_abc_reproduce/hil/metrics.py": "a8f5a113441441f4a24a0596db77fc82f3e17e03dba4c17c89405e4fa8197600",
+    "yam_abc_reproduce/hil/observation.py": "b1cc8201a2cedddfcdc59cedc1fb7976b45cdb06e794feea75f5db17a26ed537",
+    "yam_abc_reproduce/hil/policy.py": "089b7c79ec18779a5228e60bf9d7301f4638da7d2d24119116d9a38b22017b1c",
+    "yam_abc_reproduce/hil/preview.py": "8cd4bf68fd86b12fc782bc2328e9003d62c9b49c6877ba4c65d4b3ba5b41f228",
+    "yam_abc_reproduce/hil/recording.py": "af780f74c70be315849f7e359f91bd8459ad171c8c19054c5d7993293f226b6b",
+    "yam_abc_reproduce/hil/recording_process.py": "74cd30667c5a188bdd3b28bd68dd4db69a580995fc722e23e8cfdc87db476f6a",
+    "yam_abc_reproduce/hil/recovery.py": "a5d1ee510be6d0bc76e76393f8d8954baa1bfb484cf42217c07205f504b79308",
+    "yam_abc_reproduce/hil/run.py": "7732c2c3374390834d600c0d6a1fc2c84d319043f98d9a68d1835c8f0a4dfb1d",
+    "yam_abc_reproduce/hil/session.py": "ae23b4555f2fb9114bf899a9a0834c4521aa070e3ea3274f48e63db306e3de81",
+    "yam_abc_reproduce/hil/snapshots.py": "e5f4a8f22b94e6e7ce13acc6b18afafbd5abd3b9aa7b5c5d6bb6e36bf9ac7e36",
+    "yam_abc_reproduce/hil/static/app.js": "b2142ffdce442e49fa5c618a8503bec60f34afa5a50a309e13148b7daf1b5f98",
+    "yam_abc_reproduce/hil/static/index.html": "7d6606e509e5ab6dbccc27fc85c47cbc0d311d9870cd7697319edb03932248bb",
+    "yam_abc_reproduce/hil/static/style.css": "a39da10dfa5b9254747dcf18ef34cd0b4a4c5cf3dce351023040787357593880",
+    "yam_abc_reproduce/hil/station.py": "26da496568f6afb9b58e6db54469ea306091b833d204095c40aa453d0051387b",
+    "yam_abc_reproduce/hil/storage.py": "d8bd0f6836f63181995edd4d53fa85322fad283f24bd8255a86ce633d6b03568",
+    "yam_abc_reproduce/hil/tasks.py": "80b829c1a053d5cbd1134e999819c8dc9b8ca21d4c36ce8604c777edf38cc2b5",
+    "yam_abc_reproduce/hil/video_copy.py": "b2e6516098ed06834393811d1e96284ae31cd4086421fb0a585435400367031e",
+    "yam_abc_reproduce/hil/web.py": "588d529452fb724f20c07bf05ab60fb620498263bb867d1dd31971d65901d445",
+    "yam_abc_reproduce/hil/workbench.py": "5b7363d5491bf26376a0e105dfd9eddc74bef19b5696c11267aab1fed21554f2"
+  },
+  "supersedes": [
+    "hdf5-segments-20260911-offline"
+  ]
+}

@@ -219,10 +219,6 @@ function render() {
   text("failure", state.outcome === "failure" ? "已标记失败" : "标记失败");
   $("success").disabled = !canRun || !recording;
   $("failure").disabled = !canRun || !recording;
-  const conversion = state.conversion || {};
-  const conversionLabel = {paused:"采集优先，转换已暂停",running:"正在后台转换",idle:"后台转换就绪",failed:"转换服务异常"};
-  text("conversion-status", `${conversionLabel[conversion.state] || "后台转换尚无任务"} · 待转换 ${conversion.queued || 0} · 完成 ${conversion.complete || 0} · 失败 ${conversion.failed || 0}${conversion.error ? " · " + conversion.error : ""}`);
-  $("retry-conversion").disabled = !conversion.failed;
   text(
     "record-badge",
     recording
@@ -247,7 +243,7 @@ function render() {
   );
   text(
     "output",
-    state.output || "逐集保存 MP4＋HDF5 · 机械臂断开后后台转换 LeRobot",
+    state.output || "逐集保存 MP4＋HDF5 · 可上传服务器后独立转换",
   );
   text("latency", state.performance?.control_work?.p95_ms?.toFixed(2) + " ms");
   if (!connected) text("latency", "— ms");
@@ -547,7 +543,7 @@ $("connect").onclick = () => {
   if (state.connection === "connected") {
     confirmAction(
       "断开机械臂并保存会话？",
-      "结束控制可能使机械臂失去支撑，请先支撑四台机械臂。结束后后台整理LeRobot数据；未结束的采集集按中断处理。",
+      "结束控制可能使机械臂失去支撑，请先支撑四台机械臂。结束后保存MP4与HDF5数据；未结束的采集集按中断处理。",
       () => action("/disconnect", { supported: true }),
     );
   } else {
@@ -761,5 +757,3 @@ $("fullscreen").onclick = async () => {
 document.addEventListener("fullscreenchange", () => {
   text("fullscreen", document.fullscreenElement ? "退出全屏" : "全屏");
 });
-
-$("retry-conversion").onclick = () => action("/event/retry_conversion");

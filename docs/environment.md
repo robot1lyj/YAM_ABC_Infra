@@ -84,4 +84,4 @@ uv sync 会移除本次未选择的 extras/groups。
 
 ## HDF5录制依赖（2026-09-11）
 
-主依赖新增h5py（uv.lock锁定3.16.0），继续使用项目.venv及现有镜像；`uv sync --locked --extra camera --extra gui --extra deploy`。录制/转换进程使用当前Python，不需要Torch。离线官方读取验收另用临时CPU环境，版本与结果见[验收](acceptance.md)。新进程隔离依赖Linux的文件锁、SIGSTOP/SIGCONT及父进程退出信号，适用于目标RK3588/Linux与开发机Linux。
+主依赖新增h5py（uv.lock锁定3.16.0），继续使用项目.venv及现有镜像；`uv sync --locked --extra camera --extra gui --extra deploy`。录制/转换进程使用当前Python，不需要Torch。离线官方读取验收另用临时CPU环境，版本与结果见[验收](acceptance.md)。录制进程隔离依赖Linux父进程退出信号，适用于目标RK3588/Linux与开发机Linux。转换已独立，服务器使用scripts/convert_lerobot.py及其uv锁，只安装数据处理依赖。

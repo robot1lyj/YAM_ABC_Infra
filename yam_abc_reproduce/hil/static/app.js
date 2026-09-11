@@ -219,11 +219,15 @@ function render() {
   text("failure", state.outcome === "failure" ? "已标记失败" : "标记失败");
   $("success").disabled = !canRun || !recording;
   $("failure").disabled = !canRun || !recording;
+  const conversion = state.conversion || {};
+  const conversionLabel = {paused:"采集优先，转换已暂停",running:"正在后台转换",idle:"后台转换就绪",failed:"转换服务异常"};
+  text("conversion-status", `${conversionLabel[conversion.state] || "后台转换尚无任务"} · 待转换 ${conversion.queued || 0} · 完成 ${conversion.complete || 0} · 失败 ${conversion.failed || 0}${conversion.error ? " · " + conversion.error : ""}`);
+  $("retry-conversion").disabled = !conversion.failed;
   text(
     "record-badge",
     recording
       ? "● 录制中 " + Math.floor(state.episode_elapsed_s || 0) + "s"
-      : state.connection === "finalizing"
+      : state.recording_saving ? "正在保存本集" : state.connection === "finalizing"
         ? "正在整理"
         : "未录制",
   );
@@ -243,7 +247,7 @@ function render() {
   );
   text(
     "output",
-    state.output || "连接后创建会话目录 · 结束会话后自动整理 LeRobot 数据",
+    state.output || "逐集保存 MP4＋HDF5 · 机械臂断开后后台转换 LeRobot",
   );
   text("latency", state.performance?.control_work?.p95_ms?.toFixed(2) + " ms");
   if (!connected) text("latency", "— ms");
@@ -757,3 +761,5 @@ $("fullscreen").onclick = async () => {
 document.addEventListener("fullscreenchange", () => {
   text("fullscreen", document.fullscreenElement ? "退出全屏" : "全屏");
 });
+
+$("retry-conversion").onclick = () => action("/event/retry_conversion");

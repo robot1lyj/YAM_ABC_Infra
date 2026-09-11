@@ -1,0 +1,149 @@
+{
+  "lerobot": "0.5.1",
+  "torch": "2.7.1+cpu",
+  "frames": 1949,
+  "episodes": 1,
+  "dataset": "/tmp/yam-hdf5-packet-copy",
+  "samples": {
+    "0": {
+      "observation.images.top_rgb": [
+        3,
+        3,
+        480,
+        640
+      ],
+      "observation.images.left_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.images.right_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.state": [
+        14
+      ],
+      "action": [
+        14
+      ],
+      "observation.images.top_rgb_is_pad": [
+        3
+      ],
+      "task": "pick and place"
+    },
+    "298": {
+      "observation.images.top_rgb": [
+        3,
+        3,
+        480,
+        640
+      ],
+      "observation.images.left_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.images.right_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.state": [
+        14
+      ],
+      "action": [
+        14
+      ],
+      "observation.images.top_rgb_is_pad": [
+        3
+      ],
+      "task": "pick and place"
+    },
+    "299": {
+      "observation.images.top_rgb": [
+        3,
+        3,
+        480,
+        640
+      ],
+      "observation.images.left_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.images.right_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.state": [
+        14
+      ],
+      "action": [
+        14
+      ],
+      "observation.images.top_rgb_is_pad": [
+        3
+      ],
+      "task": "pick and place"
+    },
+    "300": {
+      "observation.images.top_rgb": [
+        3,
+        3,
+        480,
+        640
+      ],
+      "observation.images.left_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.images.right_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.state": [
+        14
+      ],
+      "action": [
+        14
+      ],
+      "observation.images.top_rgb_is_pad": [
+        3
+      ],
+      "task": "pick and place"
+    },
+    "1948": {
+      "observation.images.top_rgb": [
+        3,
+        3,
+        480,
+        640
+      ],
+      "observation.images.left_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.images.right_rgb": [
+        3,
+        480,
+        640
+      ],
+      "observation.state": [
+        14
+      ],
+      "action": [
+        14
+      ],
+      "observation.images.top_rgb_is_pad": [
+        3
+      ],
+      "task": "pick and place"
+    }
+  }
+}

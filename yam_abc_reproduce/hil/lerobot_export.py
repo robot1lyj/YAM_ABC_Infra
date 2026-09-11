@@ -20,6 +20,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from .core import vector
+from .storage import digest, episode_segments, read_rows
+from .video_copy import remux_segments
 
 ROLES = ("top", "left", "right")
 NAMES = [
@@ -73,20 +75,38 @@ class Moments:
 def _groups(path):
     """Preserve temporal gaps as boundaries, never silently stitch removed rows."""
     segment, previous = 0, None
-    with path.open() as stream:
-        for line in stream:
-            row = json.loads(line)
-            valid = row.get("source") in ("human", "policy", "hold") and set(
-                row.get("video_indices", {})
-            ) == set(ROLES)
-            if not valid:
-                previous = None
-                segment += 1
-                continue
-            if previous is not None and (row["tick"] != previous[0] + 1):
-                segment += 1
-            previous = row["tick"], row["epoch"]
-            yield segment, row
+    for row in read_rows(path):
+        valid = row.get("source") in ("human", "policy", "hold") and set(
+            row.get("video_indices", {})
+        ) == set(ROLES)
+        if not valid:
+            previous = None
+            segment += 1
+            continue
+        if previous is not None and (row["tick"] != previous[0] + 1):
+            segment += 1
+        previous = row["tick"], row["epoch"]
+        yield segment, row
+
+
+def expert_groups(path):
+    segment, previous = 0, None
+    for row in read_rows(path):
+        valid = (
+            row.get("source") == "human"
+            and row.get("expert_valid")
+            and row.get("observation_valid")
+            and row.get("observation_state") is not None
+            and set(row.get("video_indices", {})) == set(ROLES)
+        )
+        if not valid:
+            previous = None
+            segment += 1
+            continue
+        if previous is not None and (row["tick"] != previous[0] + 1 or row["epoch"] != previous[1]):
+            segment += 1
+        previous = row["tick"], row["epoch"]
+        yield segment, row
 
 
 class DatasetWriter:
@@ -132,8 +152,9 @@ class DatasetWriter:
         )
         self.stats = {}
         self.episodes, self.total = [], 0
+        self.copied_episodes = self.reencoded_episodes = 0
 
-    def add_episode(self, source, rows, outcome):
+    def add_episode(self, source, rows, outcome, copy_sources=None):
         index = len(self.episodes)
         chunk, file = divmod(index, 1000)
         data = self.root / DATA_PATH.format(chunk_index=chunk, file_index=file)
@@ -149,11 +170,19 @@ class DatasetWriter:
         with ExitStack() as stack:
             parquet = stack.enter_context(pq.ParquetWriter(data, self.schema))
             decoders, encoders, positions, current = {}, {}, {}, {}
-            for role in ROLES:
-                container = stack.enter_context(av.open(str(source / f"{role}.mp4")))
-                decoders[role] = iter(container.decode(video=0))
-                positions[role] = -1
+            decoder_stack = stack.enter_context(ExitStack())
+            previous_source = None
             for _, row in rows:
+                row_source = Path(row.get("_segment", source))
+                if row_source != previous_source:
+                    decoder_stack.close()
+                    for role in ROLES:
+                        container = decoder_stack.enter_context(
+                            av.open(str(row_source / f"{role}.mp4"))
+                        )
+                        decoders[role] = iter(container.decode(video=0))
+                        positions[role] = -1
+                    previous_source = row_source
                 record = {
                     "observation.state": vector(
                         row["observation_state"]
@@ -225,21 +254,24 @@ class DatasetWriter:
                     if key in self.features and feature != self.features[key]:
                         raise ValueError("camera shape changed")
                     self.features[key] = feature
-                    if role not in encoders:
-                        paths[role].parent.mkdir(parents=True, exist_ok=True)
-                        output = stack.enter_context(av.open(str(paths[role]), "w"))
-                        stream = output.add_stream(
-                            "libx264",
-                            rate=self.fps,
-                            options={"preset": "ultrafast", "crf": "20", "tune": "zerolatency"},
-                        )
-                        stream.width, stream.height = image.shape[1], image.shape[0]
-                        stream.pix_fmt = "yuv420p"
-                        stream.codec_context.thread_count = 1
-                        encoders[role] = output, stream
-                    output, stream = encoders[role]
-                    for packet in stream.encode(av.VideoFrame.from_ndarray(image, format="rgb24")):
-                        output.mux(packet)
+                    if copy_sources is None:
+                        if role not in encoders:
+                            paths[role].parent.mkdir(parents=True, exist_ok=True)
+                            output = stack.enter_context(av.open(str(paths[role]), "w"))
+                            stream = output.add_stream(
+                                "libx264",
+                                rate=self.fps,
+                                options={"preset": "ultrafast", "crf": "20", "tune": "zerolatency"},
+                            )
+                            stream.width, stream.height = image.shape[1], image.shape[0]
+                            stream.pix_fmt = "yuv420p"
+                            stream.codec_context.thread_count = 1
+                            encoders[role] = output, stream
+                        output, stream = encoders[role]
+                        for packet in stream.encode(
+                            av.VideoFrame.from_ndarray(image, format="rgb24")
+                        ):
+                            output.mux(packet)
                     # Exact RGB8 moments via 256-bin histograms, calculated once.
                     # Avoid scanning two large float64 pixel matrices per camera/frame.
                     pixel_count = image.shape[0] * image.shape[1]
@@ -265,6 +297,16 @@ class DatasetWriter:
             for output, stream in encoders.values():
                 for packet in stream.encode():
                     output.mux(packet)
+        if copy_sources is not None:
+            self.copied_episodes += 1
+            for role in ROLES:
+                copied = remux_segments(
+                    [p / f"{role}.mp4" for p in copy_sources], paths[role], self.fps
+                )
+                if copied != n:
+                    raise ValueError("copied video frame count does not match samples")
+        if copy_sources is None:
+            self.reencoded_episodes += 1
         episode = {
             "episode_index": index,
             "tasks": [self.task],
@@ -337,14 +379,21 @@ class DatasetWriter:
         )
 
 
-def export_session(source: Path, output: Path):
+def export_session(source: Path, output: Path, *, expert_only=False, allow_recovered=False):
     source, output = Path(source), Path(output)
-    session = json.loads((source / "session.json").read_text())
+    single = (source / "manifest.json").exists()
+    if single:
+        manifest = json.loads((source / "manifest.json").read_text())
+        session = dict(manifest, episodes=[{"path": source.name, "outcome": manifest["outcome"]}])
+        source = source.parent
+    else:
+        session = json.loads((source / "session.json").read_text())
     staging = output.with_name(output.name + ".partial")
     if output.exists() or staging.exists():
         raise FileExistsError("output or partial dataset exists; use a new destination")
     staging.mkdir(parents=True)
     writer, skipped = None, []
+    source_files = {}
     for entry in session["episodes"]:
         if entry["outcome"] == "discarded":
             skipped.append({"episode": entry["path"], "reason": "discarded"})
@@ -353,22 +402,57 @@ def export_session(source: Path, output: Path):
         if not episode.resolve().is_relative_to(source.resolve()):
             raise ValueError("episode outside source session")
         manifest = json.loads((episode / "manifest.json").read_text())
-        if manifest.get("error") or manifest["outcome"] in ("aborted", "discarded"):
+        if (
+            manifest.get("error")
+            or manifest["outcome"] in ("aborted", "discarded", "recording")
+            or (manifest["outcome"] == "recovered" and not allow_recovered)
+        ):
             skipped.append({"episode": entry["path"], "reason": manifest["outcome"]})
             continue
+        for segment in episode_segments(episode):
+            for file in segment.iterdir():
+                if file.suffix in (".mp4", ".h5", ".jsonl"):
+                    source_files[str(file.relative_to(source))] = {
+                        "sha256": digest(file),
+                        "bytes": file.stat().st_size,
+                    }
         fps, task = manifest["fps"], manifest["station"]["task_name"]
         if writer is None:
             writer = DatasetWriter(staging, fps, task)
         elif writer.fps != fps or writer.task != task:
             raise ValueError("mixed frame rates/tasks in one station session")
-        for _, rows in itertools.groupby(
-            _groups(episode / "steps.jsonl"), key=lambda item: item[0]
-        ):
-            writer.add_episode(episode, rows, manifest["outcome"])
+        # Full, contiguous recordings can preserve the original compressed pixels.
+        copy_sources = list(episode_segments(episode))
+        previous, counts, copy_ok = None, {}, not expert_only
+        first_group = None
+        for group, row in _groups(episode):
+            segment = row.get("_segment", str(episode))
+            count = counts.get(segment, 0)
+            if first_group is None:
+                first_group = group
+            copy_ok &= group == first_group and all(
+                row["video_indices"].get(r) == count for r in ROLES
+            )
+            counts[segment] = count + 1
+            previous = row
+        if not previous:
+            continue
+        if expert_only:
+            groups = expert_groups(episode)
+        else:
+            groups = _groups(episode)
+        for _, rows in itertools.groupby(groups, key=lambda item: item[0]):
+            writer.add_episode(
+                episode, rows, manifest["outcome"], copy_sources=copy_sources if copy_ok else None
+            )
     if writer:
         writer.finalize()
     report = {
-        "schema": "yam_lerobot_export_v1",
+        "schema": "yam_lerobot_export_v2",
+        "expert_only": expert_only,
+        "source_files": source_files,
+        "packet_copy_episodes": 0 if writer is None else writer.copied_episodes,
+        "reencoded_episodes": 0 if writer is None else writer.reencoded_episodes,
         "source_session": str(source.resolve()),
         "episodes": 0 if writer is None else len(writer.episodes),
         "frames": 0 if writer is None else writer.total,
@@ -382,7 +466,7 @@ def export_session(source: Path, output: Path):
             "4": "resume_requested",
             "8": "policy_started",
         },
-        "timestamps": "nominal fps; original host/device timestamps retained in source JSONL",
+        "timestamps": "nominal fps; original host/device timestamps retained in source HDF5 or legacy JSONL",
         "mock": session.get("mock"),
         "task": session.get("task"),
         "collection_task": session.get("collection_task"),
@@ -396,8 +480,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--expert-only", action="store_true", help="仅导出连续有效人工纠正片段")
+    parser.add_argument("--allow-recovered", action="store_true", help="明确审核后允许转换恢复数据")
     args = parser.parse_args()
-    print(json.dumps(export_session(args.source, args.output), ensure_ascii=False))
+    print(
+        json.dumps(
+            export_session(
+                args.source,
+                args.output,
+                expert_only=args.expert_only,
+                allow_recovered=args.allow_recovered,
+            ),
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":

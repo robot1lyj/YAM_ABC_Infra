@@ -117,7 +117,9 @@ def test_browser_service_initialization_never_constructs_devices(tmp_path, monke
     from yam_abc_reproduce.hil.workbench import Workbench
 
     monkeypatch.setattr(run, "build_arm_units", lambda *a, **k: pytest.fail("device constructed"))
-    service = Workbench(SimpleNamespace(mode="collect", mock=True, url=None))
+    service = Workbench(
+        SimpleNamespace(mode="collect", mock=True, url=None, task_root=tmp_path / "tasks")
+    )
     try:
         assert service.status["connection"] == "disconnected"
         assert service.runtime is None
@@ -232,10 +234,12 @@ def test_gravity_adapter_retains_gripper_and_does_not_overwrite_native_gains():
     np.testing.assert_array_equal(robot._robot._kp, np.full(7, 10.0))
 
 
-def test_watchdog_is_independent_of_preview_and_requests_hold():
+def test_watchdog_is_independent_of_preview_and_requests_hold(tmp_path):
     from yam_abc_reproduce.hil.workbench import Workbench
 
-    service = Workbench(SimpleNamespace(mode="collect", mock=True, url=None))
+    service = Workbench(
+        SimpleNamespace(mode="collect", mock=True, url=None, task_root=tmp_path / "tasks")
+    )
     events = []
     runtime = SimpleNamespace(
         event=events.append, cameras=[], status={}, recorder=SimpleNamespace(episodes=[])

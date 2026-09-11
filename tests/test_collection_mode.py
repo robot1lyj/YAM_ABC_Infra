@@ -6,6 +6,7 @@ import numpy as np
 
 from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
 from yam_abc_reproduce.hil.recording import RecordingSession
+from yam_abc_reproduce.hil.storage import read_rows
 
 
 def test_collection_uses_leader_without_policy_or_intervention():
@@ -38,11 +39,11 @@ def test_multiple_manual_episodes_exclude_idle_and_reset_video_indices(tmp_path)
     assert [e["outcome"] for e in session["episodes"]] == ["success", "failure"]
     for e in session["episodes"]:
         path = rec.path / e["path"]
-        rows = [json.loads(s) for s in (path / "steps.jsonl").read_text().splitlines()]
+        rows = list(read_rows(path))
         assert len(rows) == 3 and all(r["tick"] != 999 for r in rows)
         assert [r["video_indices"]["top"] for r in rows] == [0, 1, 2]
         for role in ("top", "left", "right"):
-            with av.open(str(path / f"{role}.mp4")) as video:
+            with av.open(str(path / "segment_000000" / f"{role}.mp4")) as video:
                 assert len(list(video.decode(video=0))) == 3
 
 
@@ -59,7 +60,7 @@ def test_idle_collection_creates_no_episode_and_mode_boundaries_are_ordered(tmp_
     rec.set_mode("teleop", "success")
     assert rec.submit({"mode": "teleop"}, {})
     rec.close()
-    rows = [json.loads(p.read_text()) for p in sorted(rec.path.glob("episode_*/steps.jsonl"))]
+    rows = [next(read_rows(p)) for p in sorted(rec.path.glob("episode_*"))]
     assert [r["mode"] for r in rows] == ["hil", "collect", "teleop"]
 
 
@@ -196,10 +197,7 @@ def test_runtime_collection_buttons_and_hold_cancel_pending_start(tmp_path):
         index = json.loads((rec.path / "session.json").read_text())
         assert index["episodes"][-1]["outcome"] == "discarded"
         assert not (rec.path / index["episodes"][-1]["path"]).exists()
-        rows = [
-            json.loads(line)
-            for line in (rec.path / "episode_000001/steps.jsonl").read_text().splitlines()
-        ]
+        rows = [row for row in read_rows(rec.path / "episode_000001")]
         assert all(r["mode"] == "collect" and not r["is_intervention"] for r in rows)
         assert all(r["expert_valid"] for r in rows)
         export(rec.path / "episode_000001", tmp_path / "expert")
@@ -213,16 +211,17 @@ def test_runtime_collection_buttons_and_hold_cancel_pending_start(tmp_path):
 
 
 def test_session_manifest_failure_is_reported(tmp_path, monkeypatch):
-    from pathlib import Path
 
-    original = Path.write_text
+    from yam_abc_reproduce.hil import storage
+
+    original = storage.atomic_json
 
     def write(path, *args, **kwargs):
         if path.name == "session.json":
             raise OSError("disk full")
         return original(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "write_text", write)
+    monkeypatch.setattr(storage, "atomic_json", write)
     rec = RecordingSession(tmp_path / "session", mode="collect")
     rec.close()
     assert "disk full" in rec.error

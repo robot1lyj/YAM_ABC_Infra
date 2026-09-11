@@ -270,8 +270,10 @@
                   </div>
                 </div>
                 <div id="output" class="output-path">
-                  连接后创建会话目录 · 结束会话后自动整理 LeRobot 数据
+                  逐集保存 MP4＋HDF5 · 机械臂断开后后台转换 LeRobot
                 </div>
+                <p id="conversion-status" class="muted">后台转换尚无任务</p>
+                <button id="retry-conversion" class="button" type="button">重试失败的转换</button>
               </section>
               <section class="panel recent-panel">
                 <div class="panel-heading">
@@ -365,6 +367,7 @@
                     >录制结束后自动归档。维护与回位不会混入采集片段。</span
                   >
                 </p>
+
               </div>
             </aside>
           </div>

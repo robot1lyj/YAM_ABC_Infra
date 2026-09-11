@@ -6969,6 +6969,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "av" },
+    { name = "h5py" },
     { name = "i2rt" },
     { name = "numpy" },
     { name = "pandas" },
@@ -7077,6 +7078,7 @@ openpi = [
 requires-dist = [
     { name = "av", specifier = ">=12" },
     { name = "fastapi", marker = "extra == 'gui'", specifier = ">=0.110" },
+    { name = "h5py", specifier = ">=3.11,<4" },
     { name = "i2rt", editable = "third_party/i2rt" },
     { name = "lerobot", extras = ["dataset"], marker = "extra == 'convert'", specifier = ">=0.5" },
     { name = "lerobot", extras = ["dataset"], marker = "extra == 'lerobot'", specifier = ">=0.5" },

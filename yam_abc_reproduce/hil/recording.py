@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import queue
 import shutil
 import threading
@@ -21,15 +20,26 @@ def json_value(value):
 
 
 class Recorder:
-    def __init__(self, path, *, fps=30, capacity=8, metadata=None):
+    def __init__(
+        self,
+        path,
+        *,
+        fps=30,
+        capacity=8,
+        metadata=None,
+        segment_seconds=60,
+        min_free_bytes=512 * 1024**2,
+    ):
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=False)
         self.fps = fps
+        self.segment_seconds = segment_seconds
+        self.min_free_bytes = min_free_bytes
         self.metadata = metadata or {}
         self.queue = queue.Queue(maxsize=capacity)
         self.error = None
         self.written = 0
-        self.metrics = {"queue_peak": 0, "encode_max_ms": 0}
+        self.metrics = {"queue_peak": 0, "bridge_max_ms": 0}
         self.outcome = "unknown"
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True, name="hil-recorder")
@@ -47,81 +57,69 @@ class Recorder:
             return False
 
     def _run(self):
-        videos = {}
-        counts = {}
-        try:
-            import av
+        from .recording_process import EncoderProcess
+        from .storage import SegmentWriter
 
-            with (self.path / "steps.jsonl").open("w") as log:
-                while not self._stop.is_set() or not self.queue.empty():
-                    try:
-                        record, images = self.queue.get(timeout=0.05)
-                    except queue.Empty:
-                        continue
-                    encode_started = time.monotonic()
-                    self.metrics["queue_peak"] = max(self.metrics["queue_peak"], self.queue.qsize())
-                    indices = {}
-                    for role, im in images.items():
-                        if role not in ("top", "left", "right"):
-                            raise ValueError("unknown image role")
-                        if role not in videos:
-                            # Fragmented MP4 retains earlier fragments after interruption.
-                            container = av.open(
-                                str(self.path / f"{role}.mp4"),
-                                "w",
-                                options={"movflags": "frag_keyframe+empty_moov+default_base_moof"},
-                            )
-                            stream = container.add_stream(
-                                "libx264",
-                                rate=int(self.fps),
-                                options={"preset": "ultrafast", "crf": "20", "tune": "zerolatency"},
-                            )
-                            stream.width, stream.height = im.shape[1], im.shape[0]
-                            stream.pix_fmt = "yuv420p"
-                            stream.thread_count = 1
-                            stream.gop_size = int(self.fps)
-                            videos[role] = container, stream
-                            counts[role] = 0
-                        container, stream = videos[role]
-                        for packet in stream.encode(av.VideoFrame.from_ndarray(im, format="rgb24")):
-                            container.mux(packet)
-                        indices[role] = counts[role]
-                        counts[role] += 1
-                    record = dict(record, video_indices=indices)
-                    log.write(json.dumps(record, default=json_value, allow_nan=False) + "\n")
-                    log.flush()
-                    self.written += 1
-                    self.metrics["encode_max_ms"] = max(
-                        self.metrics["encode_max_ms"], (time.monotonic() - encode_started) * 1000
+        encoder = None
+        pending = []
+        try:
+            while not self._stop.is_set() or not self.queue.empty():
+                try:
+                    record, images = self.queue.get(timeout=0.05)
+                except queue.Empty:
+                    if encoder and not encoder.process.is_alive():
+                        raise RuntimeError(encoder.failure())
+                    continue
+                started = time.monotonic()
+                if encoder is None and images:
+                    encoder = EncoderProcess(
+                        self.path,
+                        self.fps,
+                        self.metadata,
+                        images,
+                        self.queue.maxsize,
+                        self.segment_seconds,
+                        self.min_free_bytes,
                     )
+                    for old in pending:
+                        encoder.submit(old, {})
+                    pending.clear()
+                if encoder:
+                    encoder.submit(record, images)
+                    self.written = encoder.written.value
+                    self.metrics["write_max_ms"] = encoder.write_max_ms.value
+                else:
+                    # Startup without images must remain bounded too.
+                    if len(pending) >= self.queue.maxsize:
+                        raise RuntimeError("no camera images available for recording")
+                    pending.append(record)
+                self.metrics["queue_peak"] = max(self.metrics["queue_peak"], self.queue.qsize())
+                self.metrics["bridge_max_ms"] = max(
+                    self.metrics["bridge_max_ms"], (time.monotonic() - started) * 1000
+                )
         except Exception as exc:
             self.error = f"{type(exc).__name__}: {exc}"
         finally:
-            for container, stream in videos.values():
-                try:
-                    for packet in stream.encode():
-                        container.mux(packet)
-                    container.close()
-                except Exception as exc:
-                    self.error = f"video close: {exc}"
-            manifest = dict(
-                self.metadata,
-                schema="yam_hil_v1",
-                steps=self.written,
-                recording_metrics=self.metrics,
-                video_frames=counts,
-                fps=self.fps,
-                error=self.error,
-                outcome="aborted" if self.error else self.outcome,
-                clock="RK host monotonic; camera arrival alignment",
-                action_semantics="submitted command is not measured motion",
-            )
             try:
-                (self.path / "manifest.json").write_text(
-                    json.dumps(manifest, default=json_value, indent=2) + "\n"
-                )
-            except OSError as exc:
-                self.error = f"manifest write: {exc}"
+                if encoder:
+                    result = encoder.close("aborted" if self.error else self.outcome, self.metadata)
+                    self.written = encoder.written.value
+                    self.metrics["write_max_ms"] = encoder.write_max_ms.value
+                    self.metrics.update(result)
+                else:
+                    writer = SegmentWriter(
+                        self.path,
+                        self.fps,
+                        self.metadata,
+                        self.segment_seconds,
+                        self.min_free_bytes,
+                    )
+                    for row in pending:
+                        writer.append(row, {})
+                    writer.close("aborted" if self.error else self.outcome)
+                    self.written = writer.written
+            except Exception as exc:
+                self.error = self.error or f"encoder finalize: {exc}"
 
     def close(self, outcome="unknown"):
         self.outcome = outcome
@@ -138,10 +136,24 @@ class RecordingSession:
     continuously. A mode change closes the preceding episode before opening another.
     """
 
-    def __init__(self, path, *, mode="hil", fps=30, capacity=32, metadata=None):
+    def __init__(
+        self,
+        path,
+        *,
+        mode="hil",
+        fps=30,
+        capacity=32,
+        metadata=None,
+        segment_seconds=60,
+        on_episode=None,
+        min_free_bytes=512 * 1024**2,
+    ):
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=False)
         self.metadata = metadata or {}
+        self.min_free_bytes = min_free_bytes
+        self.segment_seconds = segment_seconds
+        self.on_episode = on_episode
         self.fps = fps
         self.queue = queue.Queue(maxsize=capacity)
         self.error = None
@@ -154,9 +166,14 @@ class RecordingSession:
         self.episodes = []
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True, name="episode-session")
+        self._write_manifest()
         self._thread.start()
         if mode != "collect":
             self.start_episode()
+
+    @property
+    def saving(self):
+        return not self.recording and (self._active is not None or not self.queue.empty())
 
     @property
     def written(self):
@@ -225,10 +242,13 @@ class RecordingSession:
                     "outcome": "aborted" if active.error else outcome,
                 }
             )
+            self._write_manifest()
             if active.error:
                 raise RuntimeError(active.error)
             if outcome == "discarded":
                 shutil.rmtree(active.path)
+            if self.on_episode and outcome != "discarded":
+                self.on_episode(active.path)
             active = None
 
         try:
@@ -246,6 +266,8 @@ class RecordingSession:
                     active = Recorder(
                         self.path / f"episode_{count:06d}",
                         fps=self.fps,
+                        segment_seconds=self.segment_seconds,
+                        min_free_bytes=self.min_free_bytes,
                         metadata=dict(self.metadata, collection_mode=item[1]),
                     )
                     self._active = active
@@ -285,21 +307,18 @@ class RecordingSession:
 
     def _write_manifest(self):
         try:
-            (self.path / "session.json").write_text(
-                json.dumps(
-                    dict(
-                        self.metadata,
-                        schema="yam_session_v1",
-                        episodes=self.episodes,
-                        session_queue_peak=self.queue_peak,
-                        error=self.error,
-                        outcome="aborted" if self.error else self.outcome,
-                    ),
-                    default=json_value,
-                    ensure_ascii=False,
-                    indent=2,
-                )
-                + "\n"
+            from .storage import atomic_json
+
+            atomic_json(
+                self.path / "session.json",
+                dict(
+                    self.metadata,
+                    schema="yam_session_v2",
+                    episodes=self.episodes,
+                    session_queue_peak=self.queue_peak,
+                    error=self.error,
+                    outcome="aborted" if self.error else self.outcome,
+                ),
             )
 
         except OSError as exc:

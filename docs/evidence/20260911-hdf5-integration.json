@@ -1,0 +1,76 @@
+{
+  "observed_at": "2026-09-11T03:56:29.111526+00:00",
+  "platform": "x86_64",
+  "command": "uv run --no-sync yam-workstation --mock --mode hil --demo --duration 65 --segment-seconds 10 --output /tmp/yam-hdf5-integration",
+  "scope": "开发机mock；未RK3588/CAN/真实D405/Thor验收；65秒录制在最终指标命名修订前完成",
+  "raw_steps": 1950,
+  "segments": 7,
+  "deadline_misses": 0,
+  "performance_last_300_ticks": {
+    "io_read": {
+      "p50_ms": 0.08808850543573499,
+      "p95_ms": 0.1315726956818253,
+      "p99_ms": 0.20075289867236273,
+      "max_ms": 0.2591219963505864
+    },
+    "observation": {
+      "p50_ms": 0.08191800588974729,
+      "p95_ms": 0.12855109089286998,
+      "p99_ms": 0.17424025398213394,
+      "max_ms": 0.21269101125653833
+    },
+    "arbitration": {
+      "p50_ms": 0.11682850163197145,
+      "p95_ms": 0.48531880092923535,
+      "p99_ms": 0.5676317481265868,
+      "max_ms": 0.6470079970313236
+    },
+    "io_apply": {
+      "p50_ms": 0.05399400106398389,
+      "p95_ms": 0.07193934070528489,
+      "p99_ms": 0.11416349327191705,
+      "max_ms": 0.13407401274889708
+    },
+    "record_submit": {
+      "p50_ms": 0.030633993446826935,
+      "p95_ms": 0.04710804132628255,
+      "p99_ms": 0.06989179688389403,
+      "max_ms": 0.1379409950459376
+    },
+    "control_work": {
+      "p50_ms": 0.3785745066124946,
+      "p95_ms": 0.7604018966958392,
+      "p99_ms": 0.9366143010265656,
+      "max_ms": 1.1671539978124201
+    },
+    "tick_interval": {
+      "p50_ms": 33.333333333333336,
+      "p95_ms": 33.39555714337621,
+      "p99_ms": 33.56324799693539,
+      "max_ms": 34.01632599707227
+    }
+  },
+  "conversion": {
+    "frames": 1949,
+    "episodes": 1,
+    "packet_copy_episodes": 1,
+    "reencoded_episodes": 0
+  },
+  "ui": {
+    "connection": "disconnected",
+    "conversion": {
+      "queued": 0,
+      "complete": 3,
+      "failed": 0,
+      "state": "idle"
+    },
+    "episode_count": 3,
+    "output": "data/episodes/4b554449-fc73-46db-9fb0-22d8a4909f60/session_20260911_114849_dae0d9"
+  },
+  "limits": [
+    "未一小时实际运行",
+    "未真实断电试验",
+    "未condapi训练端验收",
+    "未多工作站汇总/远端传输"
+  ]
+}

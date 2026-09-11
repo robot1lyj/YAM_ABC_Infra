@@ -15,6 +15,7 @@ from yam_abc_reproduce.hil.recording import Recorder
 from yam_abc_reproduce.hil.run import MockPolicy, Runtime, validate_station
 from yam_abc_reproduce.hil.session import Session
 from yam_abc_reproduce.hil.station import StationIO
+from yam_abc_reproduce.hil.storage import read_rows
 from yam_abc_reproduce.runtime import build_arm_units
 
 
@@ -86,9 +87,9 @@ def test_recorder_streams_three_videos_and_matching_json_rows(tmp_path):
     assert not r.error
     manifest = json.loads((r.path / "manifest.json").read_text())
     assert manifest["steps"] == 3 and manifest["outcome"] == "success"
-    rows = [json.loads(s) for s in (r.path / "steps.jsonl").read_text().splitlines()]
+    rows = list(read_rows(r.path))
     for role in ("top", "left", "right"):
-        with av.open(str(r.path / f"{role}.mp4")) as video:
+        with av.open(str(r.path / "segment_000000" / f"{role}.mp4")) as video:
             assert len(list(video.decode(video=0))) == 3
         assert [row["video_indices"][role] for row in rows] == [0, 1, 2]
 
@@ -131,7 +132,7 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
         result = run.run(duration=2.5, auto_start=True, demo=True)
         rec.close(run.outcome)
         assert not result["error"] and result["phase"] == "policy"
-        rows = [json.loads(s) for s in (rec.path / "steps.jsonl").read_text().splitlines()]
+        rows = list(read_rows(rec.path))
         assert {"policy", "human", "hold"} <= {r["source"] for r in rows}
         human = [r for r in rows if r["source"] == "human"]
         assert all(not r["policy_valid"] and r["policy_action"] is None for r in human)
@@ -334,7 +335,7 @@ def test_runtime_keyboard_priority_and_handle_only_hands_back(tmp_path):
         runtime.event("quit")
         thread.join(2)
         rec.close()
-        rows = [json.loads(line) for line in (rec.path / "steps.jsonl").read_text().splitlines()]
+        rows = list(read_rows(rec.path))
         freeze = next(r for r in rows if "takeover_applied" in r["transitions"])
         assert freeze["source"] == "hold"
         assert freeze["event_applied_at"] >= freeze["event_requested_at"]

@@ -81,3 +81,7 @@ uv sync 会移除本次未选择的 extras/groups。
 `--check` 不创建数据目录、不启动相机或电机、不连接Thor；它检查配置和依赖模块可发现性，不能证明二进制加载或硬件可用。去掉 `--mock` 后会检查真实夹爪型号与相机序列号占位；HIL/推理还需提供 `--url`。
 
 希望一步同步并运行时：`uv run --locked --extra camera --extra gui --extra deploy yam-workstation --mock --mode collect --web-port 8766`。`.venv/bin/python` 仍是同一个环境的解释器，但教程统一通过uv启动。
+
+## HDF5录制依赖（2026-09-11）
+
+主依赖新增h5py（uv.lock锁定3.16.0），继续使用项目.venv及现有镜像；`uv sync --locked --extra camera --extra gui --extra deploy`。录制/转换进程使用当前Python，不需要Torch。离线官方读取验收另用临时CPU环境，版本与结果见[验收](acceptance.md)。新进程隔离依赖Linux的文件锁、SIGSTOP/SIGCONT及父进程退出信号，适用于目标RK3588/Linux与开发机Linux。

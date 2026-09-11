@@ -16,6 +16,7 @@ import numpy as np
 
 from .. import __version__
 from ..data.schema import WRITE_COMPLETE_FLAG, CameraMeta, EpisodeMeta
+from .storage import read_rows
 
 
 def _segments(rows):
@@ -41,21 +42,31 @@ def _segments(rows):
 
 
 def _video_subset(source, destination, indices, fps):
+    from contextlib import ExitStack
+
     import av
 
     indices = list(indices)
-    if indices != sorted(set(indices)):
-        raise ValueError("video indices must be unique and increasing")
-    wanted = iter(indices)
-    next_index = next(wanted, None)
+    sources = source if isinstance(source, list) else [source] * len(indices)
     width = height = 0
-    with av.open(str(source)) as inp, av.open(str(destination), "w") as out:
-        stream = None
-        for i, frame in enumerate(inp.decode(video=0)):
-            if next_index is None:
-                break
-            if i != next_index:
-                continue
+    with ExitStack() as stack:
+        out = stack.enter_context(av.open(str(destination), "w"))
+        decoder_stack = stack.enter_context(ExitStack())
+        previous, position, stream = None, -1, None
+        for path, index in zip(sources, indices, strict=True):
+            if path != previous:
+                decoder_stack.close()
+                inp = decoder_stack.enter_context(av.open(str(path)))
+                frames = iter(inp.decode(video=0))
+                position, previous = -1, path
+            if index <= position:
+                raise ValueError("video indices must increase inside a segment")
+            while position < index:
+                try:
+                    frame = next(frames)
+                except StopIteration as exc:
+                    raise ValueError("video truncated before selected frame") from exc
+                position += 1
             if stream is None:
                 width, height = frame.width, frame.height
                 stream = out.add_stream(
@@ -66,9 +77,6 @@ def _video_subset(source, destination, indices, fps):
             frame.pts = None
             for packet in stream.encode(frame):
                 out.mux(packet)
-            next_index = next(wanted, None)
-        if next_index is not None:
-            raise ValueError("video truncated before a selected expert frame")
         if stream:
             for packet in stream.encode():
                 out.mux(packet)
@@ -77,76 +85,73 @@ def _video_subset(source, destination, indices, fps):
 
 def export(source: Path, output: Path):
     manifest = json.loads((source / "manifest.json").read_text())
-    if manifest.get("schema") != "yam_hil_v1":
+    if manifest.get("schema") not in ("yam_hil_v1", "yam_hil_v2"):
         raise ValueError("not a YAM HIL episode")
     if manifest.get("error") or manifest.get("outcome") in ("aborted", "discarded"):
         raise ValueError("aborted recording requires review before expert export")
     output.mkdir(parents=True, exist_ok=False)
     fps = manifest["fps"]
     total = 0
-    with (source / "steps.jsonl").open() as log:
-        for index, rows in enumerate(_segments(json.loads(line) for line in log)):
-            dst = output / f"episode_{index:06d}"
-            dst.mkdir()
-            state = np.array([r["observation_state"] for r in rows])
-            action = np.array([r["submitted_action"] for r in rows])
-            if state.shape != (len(rows), 14) or action.shape != state.shape:
-                raise ValueError("invalid expert state/action shape")
-            for i, arm in enumerate(("left", "right")):
-                offset = i * 7
-                np.save(dst / f"{arm}-joint_pos.npy", state[:, offset : offset + 6])
-                np.save(dst / f"{arm}-gripper_pos.npy", state[:, offset + 6 : offset + 7])
-                np.save(dst / f"action-{arm}-joint.npy", action[:, offset : offset + 6])
-                np.save(dst / f"action-{arm}-gripper.npy", action[:, offset + 6 : offset + 7])
-            cameras = []
-            for role in ("top", "left", "right"):
-                width, height = _video_subset(
-                    source / f"{role}.mp4",
-                    dst / f"{role}-images-rgb.mp4",
-                    [r["video_indices"][role] for r in rows],
-                    fps,
-                )
-                times = np.array(
-                    [r["sync"]["cameras"][role]["host_received_at"] * 1000 for r in rows]
-                )
-                np.save(dst / f"{role}-timestamp.npy", times)
-                cameras.append(
-                    CameraMeta(
-                        role,
-                        "realsense" if not manifest["mock"] else "mock",
-                        role,
-                        "mono",
-                        ["rgb"],
-                        width,
-                        height,
-                        int(fps),
-                    )
-                )
-            metadata = EpisodeMeta(
-                __version__,
-                1,
-                datetime.now(UTC).isoformat(),
-                manifest["station"]["task_name"],
-                ["left", "right"],
-                6,
+    for index, rows in enumerate(_segments(read_rows(source))):
+        dst = output / f"episode_{index:06d}"
+        dst.mkdir()
+        state = np.array([r["observation_state"] for r in rows])
+        action = np.array([r["submitted_action"] for r in rows])
+        if state.shape != (len(rows), 14) or action.shape != state.shape:
+            raise ValueError("invalid expert state/action shape")
+        for i, arm in enumerate(("left", "right")):
+            offset = i * 7
+            np.save(dst / f"{arm}-joint_pos.npy", state[:, offset : offset + 6])
+            np.save(dst / f"{arm}-gripper_pos.npy", state[:, offset + 6 : offset + 7])
+            np.save(dst / f"action-{arm}-joint.npy", action[:, offset : offset + 6])
+            np.save(dst / f"action-{arm}-gripper.npy", action[:, offset + 6 : offset + 7])
+        cameras = []
+        for role in ("top", "left", "right"):
+            width, height = _video_subset(
+                [Path(r.get("_segment", source)) / f"{role}.mp4" for r in rows],
+                dst / f"{role}-images-rgb.mp4",
+                [r["video_indices"][role] for r in rows],
                 fps,
-                cameras=cameras,
-                num_frames=len(rows),
-                extra={
-                    "source_hil_episode": str(source.resolve()),
-                    "source_ticks": [r["tick"] for r in rows],
-                    "expert_only": True,
-                    "mock": manifest["mock"],
-                    "source_outcome": manifest["outcome"],
-                    "timestamp_domain": "host_monotonic_ms",
-                    "state_alignment": "camera arrival reference; interpolated state",
-                },
             )
-            metadata.to_json(dst / "metadata.json")
-            # Retain all intervention/timing provenance through conversion input.
-            (dst / "hil_provenance.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-            (dst / WRITE_COMPLETE_FLAG).touch()
-            total += 1
+            times = np.array([r["sync"]["cameras"][role]["host_received_at"] * 1000 for r in rows])
+            np.save(dst / f"{role}-timestamp.npy", times)
+            cameras.append(
+                CameraMeta(
+                    role,
+                    "realsense" if not manifest["mock"] else "mock",
+                    role,
+                    "mono",
+                    ["rgb"],
+                    width,
+                    height,
+                    int(fps),
+                )
+            )
+        metadata = EpisodeMeta(
+            __version__,
+            1,
+            datetime.now(UTC).isoformat(),
+            manifest["station"]["task_name"],
+            ["left", "right"],
+            6,
+            fps,
+            cameras=cameras,
+            num_frames=len(rows),
+            extra={
+                "source_hil_episode": str(source.resolve()),
+                "source_ticks": [r["tick"] for r in rows],
+                "expert_only": True,
+                "mock": manifest["mock"],
+                "source_outcome": manifest["outcome"],
+                "timestamp_domain": "host_monotonic_ms",
+                "state_alignment": "camera arrival reference; interpolated state",
+            },
+        )
+        metadata.to_json(dst / "metadata.json")
+        # Retain all intervention/timing provenance through conversion input.
+        (dst / "hil_provenance.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+        (dst / WRITE_COMPLETE_FLAG).touch()
+        total += 1
     return total
 
 

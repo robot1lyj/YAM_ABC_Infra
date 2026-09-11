@@ -1,0 +1,50 @@
+[
+  {
+    "source": "/home/wuyan-lyj/YAM/yam-abc-reproduce/data/episodes/4b554449-fc73-46db-9fb0-22d8a4909f60/session_20260911_114849_dae0d9/episode_000002",
+    "output": "/home/wuyan-lyj/YAM/yam-abc-reproduce/data/episodes/4b554449-fc73-46db-9fb0-22d8a4909f60/session_20260911_114849_dae0d9/episode_000002/exports/attempt_1_575fca47",
+    "frames": 37,
+    "task": "Sort the LEGO bricks by color into the matching bins.",
+    "last_task": "Sort the LEGO bricks by color into the matching bins.",
+    "state_shape": [
+      14
+    ],
+    "top_shape": [
+      3,
+      480,
+      640
+    ],
+    "packet_copy_episodes": 1
+  },
+  {
+    "source": "/home/wuyan-lyj/YAM/yam-abc-reproduce/data/episodes/4b554449-fc73-46db-9fb0-22d8a4909f60/session_20260911_114849_dae0d9/episode_000003",
+    "output": "/home/wuyan-lyj/YAM/yam-abc-reproduce/data/episodes/4b554449-fc73-46db-9fb0-22d8a4909f60/session_20260911_114849_dae0d9/episode_000003/exports/attempt_1_10b14dba",
+    "frames": 68,
+    "task": "Sort the LEGO bricks by color into the matching bins.",
+    "last_task": "Sort the LEGO bricks by color into the matching bins.",
+    "state_shape": [
+      14
+    ],
+    "top_shape": [
+      3,
+      480,
+      640
+    ],
+    "packet_copy_episodes": 1
+  },
+  {
+    "source": "/home/wuyan-lyj/YAM/yam-abc-reproduce/data/episodes/4b554449-fc73-46db-9fb0-22d8a4909f60/session_20260911_114849_dae0d9/episode_000001",
+    "output": "/home/wuyan-lyj/YAM/yam-abc-reproduce/data/episodes/4b554449-fc73-46db-9fb0-22d8a4909f60/session_20260911_114849_dae0d9/episode_000001/exports/attempt_1_4f93b0c0",
+    "frames": 2056,
+    "task": "Sort the LEGO bricks by color into the matching bins.",
+    "last_task": "Sort the LEGO bricks by color into the matching bins.",
+    "state_shape": [
+      14
+    ],
+    "top_shape": [
+      3,
+      480,
+      640
+    ],
+    "packet_copy_episodes": 1
+  }
+]

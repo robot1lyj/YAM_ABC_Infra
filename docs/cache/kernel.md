@@ -11,7 +11,7 @@
 
 - 用户2026-09-08确认三路均为D405；不支持多相机外部硬同步，采用软件时间对齐。来源docs/workstation.md、docs/synchronization_design.md。
 
-- 第一版已接通四模式/官方leader接管/非RTC异步/连续录制和专家导出；线程架构、接收时间配对、宽松可配置阈值。来源docs/hil_quickstart.md。未真机验收。
+- 第一版已接通四模式/官方leader接管/非RTC异步/连续录制和专家导出；控制线程＋录制/预览独立进程、接收时间配对、宽松可配置阈值。来源docs/hil_quickstart.md。未真机验收。
 
 - 采集模式由Leader遥操作，手动开关多段录制；HIL键盘i冻结介入、手柄①交还，②无功能；采集①开始/结束、②放弃；遥操作/推理手柄无功能。来源：docs/collect.md。
 - 中文规范通过路由检索，历史英文手册位于docs/archive；指纹/断链检查用scripts/check_project_memory.py，不能替代语义和现场验证。来源：docs/memory.md。
@@ -24,3 +24,5 @@
 - 采集界面优先三路视觉，任务栏紧凑，录制控制集中，急停大尺寸固定在连接旁；详情/日志按需展开。来源：docs/collect.md。
 
 - 工作台任务：name/instruction供采集员中文查看，英文task用于模型prompt、原始task和LeRobot任务文本；完整任务身份存collection_task。旧任务需编辑补填，历史数据不改写。来源：docs/collect.md。
+
+- 新采集格式MP4＋HDF5＋JSON分段清单，默认60秒物理段不拆逻辑集；工作台逐集保存与独立暂停/恢复转换，目标LeRobot v3.0。旧JSONL可读；恢复须审核。来源：docs/convert.md。

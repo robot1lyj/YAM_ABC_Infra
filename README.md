@@ -108,22 +108,21 @@ D405 不支持三机外部硬件同步。本版采用主机接收时间配对、
 
 采集示范：`uv run --no-sync yam-workstation --mock --mode collect --web-port 8766`。先创建/选择任务，分别连接相机和机械臂，再按 `s`，然后按 `r` 录制；结束前 `g` / `f` 标记，按 `r` 收尾，摆好物体后开始下一段。手柄②放弃当前集但不暂停遥操作；空格才暂停运动。详见 [数据采集手册](docs/collect.md)。
 
-每次运行生成一个会话目录，默认在 `data/episodes/`；每段单独保存：
+每次连接创建一个会话；每集采用 **MP4＋HDF5＋JSON清单**，默认60秒一个物理分段，同一长任务仍是一集：
 
 ```text
-hil_YYYYMMDD_HHMMSS/
-├── session.json                  # 关闭后的会话索引、错误与终止状态
-├── episode_000001/
-│   ├── steps.jsonl               # 状态、来源、动作、同步指标、视频索引
-│   ├── top.mp4 / left.mp4 / right.mp4
-│   └── manifest.json            # 本段配置、帧数、结果
-├── episode_000002/               # 同一会话下一段
-└── lerobot/                      # 设备关闭后自动生成的v3.0训练数据
+会话/
+├── session.json
+└── episode_000001/
+    ├── manifest.json
+    ├── segment_000000/        # samples.h5、三路MP4、segment.json
+    ├── segment_000001/
+    └── exports/attempt_.../   # 工作台按集后台生成LeRobot v3.0
 ```
 
-策略原始建议、人工输入、约束后提交命令和真实反馈分别记录。策略预测缺失时用 `null` 与有效性标记，不用零值伪装预测。写盘队列有界，错误明确标为 `aborted`。
+主要数值分批写HDF5；图像通过固定共享缓冲交给独立编码进程。结束一集即提交清单；录制错误明确标为aborted，旧JSONL集继续可读。工作台机械臂连接期间暂停后台转换，断开后恢复；下一次连接不必等待转换完成。完整连续视频优先直接重新封装，避免二次有损编码。无界面CLI仍在退出后生成 `会话/lerobot/`。
 
-会话结束后自动生成 **LeRobot v3.0**，保留Follower反馈、提交动作、三路图像及HIL介入信号。一次HIL任务中的策略、冻结、人工、恢复不拆集。弃集不进入数据，格式整理不在控制循环运行。字段、重建命令和专家筛选见 [数据格式](docs/convert.md)。
+恢复工具保留来源、另写恢复目录，恢复数据必须审核后明确允许导出。字段、恢复和专家筛选见 [数据格式](docs/convert.md)。
 
 ## 验证与完成范围
 
@@ -131,14 +130,14 @@ hil_YYYYMMDD_HHMMSS/
 |---|---|
 | 已实现、离线验证 | 四模式、官方 Leader 增益切换、接管仲裁、非 RTC 推理、软件配对、连续记录、专家导出、本机界面 |
 | 待现场验收 | CAN/方向/夹爪、Leader 增益、D405/USB、Thor 模型契约、端到端时延、任务成功率 |
-| 暂不引入 | RTC、时间集成、块间融合、共享内存多进程、曝光时钟校准 |
+| 暂不引入 | RTC、时间集成、块间融合、曝光时钟校准 |
 
 当前验收及限制见 [验收记录](docs/acceptance.md)。`cfdc1ed` 的172项历史测试对应旧按钮映射，不能替代本轮按键与数据链路验收。
 
 代码版本 `1c04c83` 的历史验收：全套 **161 passed、2 skipped、9 subtests passed**；模拟接管和真实本机 HTTP 控制通过。这个数字不代表当前设备状态或 RK3588 性能，详情见 [证据报告](docs/evidence/20260908-hil-runtime-v1.json)。
 
 ```bash
-.venv/bin/pytest -q
+uv run --no-sync pytest -q
 python3 scripts/check_project_memory.py
 ```
 

@@ -89,7 +89,7 @@ def test_lerobot_keeps_hil_episode_and_signals_and_uses_follower_data(tmp_path):
 
 def test_lerobot_failure_leaves_partial_not_training_ready_dataset(tmp_path):
     source = make_session(tmp_path / "session")
-    (source / "episode_000001/right.mp4").unlink()
+    (source / "episode_000001/segment_000000/right.mp4").unlink()
     out = tmp_path / "lerobot"
     with pytest.raises(FileNotFoundError):
         export_session(source, out)
@@ -116,7 +116,7 @@ def test_rgb_histogram_statistics_match_full_decoded_pixels(tmp_path):
     export_session(source, out)
     stats = json.loads((out / "meta/stats.json").read_text())
     for role in images:
-        with av.open(str(source / "episode_000001" / f"{role}.mp4")) as video:
+        with av.open(str(source / "episode_000001/segment_000000" / f"{role}.mp4")) as video:
             pixels = (
                 np.concatenate(
                     [

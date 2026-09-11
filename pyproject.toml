@@ -11,6 +11,7 @@ requires-python = ">=3.12,<3.13"
 license = { text = "Apache-2.0" }
 authors = [{ name = "i2rt robotics" }]
 dependencies = [
+    "h5py>=3.11,<4",
     "numpy>=1.24",
     "pyyaml>=6.0",
     "av>=12",

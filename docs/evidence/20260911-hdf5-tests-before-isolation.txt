@@ -1,0 +1,70 @@
+........................................................................ [ 32%]
+..................s..................................................... [ 64%]
+..............................................................F [ 93%]
+...F...........                                                          [100%]
+=================================== FAILURES ===================================
+_________ test_browser_service_initialization_never_constructs_devices _________
+
+tmp_path = PosixPath('/tmp/pytest-of-wuyan-lyj/pytest-8/test_browser_service_initializ0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f8360166d80>
+
+    def test_browser_service_initialization_never_constructs_devices(tmp_path, monkeypatch):
+        from yam_abc_reproduce.hil import run
+        from yam_abc_reproduce.hil.workbench import Workbench
+    
+        monkeypatch.setattr(run, "build_arm_units", lambda *a, **k: pytest.fail("device constructed"))
+>       service = Workbench(SimpleNamespace(mode="collect", mock=True, url=None))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_workbench.py:120: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+yam_abc_reproduce/hil/workbench.py:53: in __init__
+    self.conversions = ConversionQueue(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <yam_abc_reproduce.hil.conversion_queue.ConversionQueue object at 0x7f8360153a40>
+root = PosixPath('data/tasks/conversion_mock')
+
+    def __init__(self, root):
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._lease = (self.root / ".worker.lock").open("a")
+>       fcntl.flock(self._lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+E       BlockingIOError: [Errno 11] Resource temporarily unavailable
+
+yam_abc_reproduce/hil/conversion_queue.py:23: BlockingIOError
+__________ test_watchdog_is_independent_of_preview_and_requests_hold ___________
+
+    def test_watchdog_is_independent_of_preview_and_requests_hold():
+        from yam_abc_reproduce.hil.workbench import Workbench
+    
+>       service = Workbench(SimpleNamespace(mode="collect", mock=True, url=None))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_workbench.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+yam_abc_reproduce/hil/workbench.py:53: in __init__
+    self.conversions = ConversionQueue(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <yam_abc_reproduce.hil.conversion_queue.ConversionQueue object at 0x7f8368233f20>
+root = PosixPath('data/tasks/conversion_mock')
+
+    def __init__(self, root):
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._lease = (self.root / ".worker.lock").open("a")
+>       fcntl.flock(self._lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+E       BlockingIOError: [Errno 11] Resource temporarily unavailable
+
+yam_abc_reproduce/hil/conversion_queue.py:23: BlockingIOError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /home/wuyan-lyj/YAM/yam-abc-reproduce/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_workbench.py::test_browser_service_initialization_never_constructs_devices
+FAILED tests/test_workbench.py::test_watchdog_is_independent_of_preview_and_requests_hold
+2 failed, 219 passed, 2 skipped, 1 warning, 9 subtests passed in 24.62s

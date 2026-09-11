@@ -48,6 +48,11 @@ class Workbench:
         self._camera_previous = {}
         self._log = deque(maxlen=40)
         self.tasks = Tasks(getattr(args, "task_root", "data/tasks"))
+        from .conversion_queue import ConversionQueue
+
+        self.conversions = ConversionQueue(
+            self.tasks.path.parent / ("conversion_mock" if args.mock else "conversion_real")
+        )
         self.selected_task = None
         self.camera_slots = [CameraSlot(role) for role in ("top", "left", "right")]
         self.camera_state = "disconnected"
@@ -82,6 +87,7 @@ class Workbench:
         return {
             **health,
             **live,
+            "conversion": dict(self.conversions.summary),
             "connection": self.state,
             "camera_connection": self.camera_state,
             "camera_error": self.camera_error,
@@ -246,6 +252,7 @@ class Workbench:
             self._snapshot = {}
             self._camera_previous = {}
             self.error = None
+            self.conversions.pause(True)
             self.state = "connecting"
             self.heartbeat()
             self.log("正在独立连接四台机械臂；连接后保持，等待开始")
@@ -255,7 +262,16 @@ class Workbench:
     def _run(self):
         from .run import main
 
-        argv = ["--station", self.args.station, "--mode", self.mode]
+        argv = [
+            "--station",
+            self.args.station,
+            "--mode",
+            self.mode,
+            "--segment-seconds",
+            str(getattr(self.args, "segment_seconds", 60)),
+            "--min-free-gb",
+            str(getattr(self.args, "min_free_gb", 0.5)),
+        ]
         if self.args.mock:
             argv.append("--mock")
         if self.args.url:
@@ -279,6 +295,7 @@ class Workbench:
             self.error = str(exc) or type(exc).__name__
             self.log("会话失败：" + self.error)
         finally:
+            self.conversions.pause(False)
             self.runtime = None
             self._previews = {}
             self.state = "fault" if self.error or self.cleanup_error else "disconnected"
@@ -309,10 +326,13 @@ class Workbench:
     def finalizing(self):
         self.runtime = None
         self._previews = {}
-        self.state = "finalizing"
-        self.log("机械臂已关闭，正在整理LeRobot数据；相机连接独立保留")
+        self.state = "disconnected"
+        self.log("本地数据已保存；LeRobot后台转换，重新连接时自动暂停转换")
 
     def event(self, event):
+        if event == "retry_conversion":
+            self.conversions.retry()
+            return
         if event in ("preview_on", "preview_off"):
             self.preview_enabled = event == "preview_on"
             if not self.preview_enabled:
@@ -494,6 +514,7 @@ class Workbench:
 
     def close(self):
         self._closing.set()
+        self.conversions.close()
         if self.runtime:
             self.runtime.event("quit")
         if self.thread:

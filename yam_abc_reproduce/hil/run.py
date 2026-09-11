@@ -488,6 +488,7 @@ class Runtime:
                     "recorded_steps": self.recorder.written,
                     "intervention_id": self.intervention_id,
                     "recording": getattr(self.recorder, "recording", True),
+                    "recording_saving": getattr(self.recorder, "saving", False),
                     "error": a.fault_reason,
                     "outcome": self.outcome,
                 }
@@ -568,11 +569,17 @@ def main(argv=None, *, service=None):
     p.add_argument(
         "--raw-only", action="store_true", help="diagnostic only: skip automatic LeRobot export"
     )
+    p.add_argument("--segment-seconds", type=float, default=60, help="采集文件分段时长，不拆逻辑集")
+    p.add_argument("--min-free-gb", type=float, default=0.5, help="录制保留空间 GiB")
     p.add_argument("--duration", type=float)
     p.add_argument("--demo", action="store_true", help="mock only: automated takeover/resume")
     p.add_argument("--baseline", action="store_true", help="ordinary non-prefetch baseline")
     p.add_argument("--web-port", type=int, help="optional local dashboard port")
     args = p.parse_args(argv)
+    if not np.isfinite(args.segment_seconds) or args.segment_seconds <= 0:
+        p.error("segment-seconds must be finite and positive")
+    if not np.isfinite(args.min_free_gb) or args.min_free_gb < 0:
+        p.error("min-free-gb must be finite and nonnegative")
     if args.web_port is not None and not 1 <= args.web_port <= 65535:
         p.error("web-port must be between 1 and 65535")
     if args.web_port and not args.check and not args.demo and service is None:
@@ -597,7 +604,7 @@ def main(argv=None, *, service=None):
         if not isinstance(value, (float, int)) or not np.isfinite(value) or value <= 0:
             p.error(f"invalid hil setting: {key}")
     # Check before constructing cameras, motors, sockets or recording threads.
-    required = {"numpy", "yaml", "av"}
+    required = {"numpy", "yaml", "av", "h5py"}
     if not args.raw_only:
         required.update(("pyarrow", "pandas"))
     if args.web_port:
@@ -632,6 +639,11 @@ def main(argv=None, *, service=None):
     recorder = RecordingSession(
         output,
         mode=args.mode,
+        segment_seconds=args.segment_seconds,
+        min_free_bytes=int(args.min_free_gb * 1024**3),
+        on_episode=service.conversions.enqueue
+        if service is not None and not args.raw_only
+        else None,
         fps=cfg.control_hz,
         metadata={
             "station": dataclasses.asdict(cfg),
@@ -732,7 +744,7 @@ def main(argv=None, *, service=None):
 
     if service is not None:
         service.finalizing()
-    if not args.raw_only:
+    if not args.raw_only and service is None:
         from .lerobot_export import export_session
 
         print(

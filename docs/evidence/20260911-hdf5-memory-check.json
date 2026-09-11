@@ -1,0 +1,18 @@
+{
+  "errors": [],
+  "review_only": [
+    "仅历史审阅：approved-modes-20260908-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：capture-layout-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：english-task-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：environment-20260907-collection.json: dependency changed; revalidation required",
+    "需现场复查或仅供审阅：environment-20260908-local-observation.json",
+    "仅历史审阅：fullscreen-type-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：hil-runtime-20260908-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：operator-workbench-20260908-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：system-style-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：task-workbench-20260908-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：uv-cli-20260908-offline.json: dependency changed; revalidation required"
+  ],
+  "validated_records": 1,
+  "documents": 21
+}

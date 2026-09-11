@@ -1,0 +1,225 @@
+{
+  "recorded_at": "2026-09-11T08:38:41.948676+00:00",
+  "source_skill": "/home/wuyan-lyj/condapi/skills/mlops-memory/SKILL.md",
+  "source_hashes": {
+    "SKILL.md": "afc4ac722d904dfd838744bd3d3e4a1096cb5a0af648b2dc9376916b6e8657e7",
+    "references/engineering.md": "282a39b8a65be1f674f482a19af08a98a442fbc52eb73d5492454a863c8c8abe",
+    "scripts/memory_gate.py": "c6a433b9d8166e3f7f9091f1564830f5581d7cf454d8edd763b5f18d7f8760e9"
+  },
+  "helper_and_tests_match_source_ast": true,
+  "tests": {
+    "command": "/home/wuyan-lyj/.local/bin/uv run --no-sync pytest -q tests/test_memory_gate.py tests/test_engineering_memory.py tests/test_project_memory.py tests/test_dataset_workbench.py",
+    "result": "45 passed, 17 subtests passed; 1 Starlette dependency deprecation warning",
+    "evidence": "docs/evidence/20260911-engineering-memory-tests.txt",
+    "sha256": "32a2824bdea7c4543ba866f1db11afdc7ed97b836dcb1c6c7af0f9c86a14ecc6"
+  },
+  "project_memory_check": {
+    "errors": [],
+    "review_only": [
+      "仅历史审阅：approved-modes-20260908-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：capture-layout-20260909-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：english-task-20260909-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：environment-20260907-collection.json: dependency changed; revalidation required",
+      "需现场复查或仅供审阅：environment-20260908-local-observation.json",
+      "仅历史审阅：fullscreen-type-20260909-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：hdf5-segments-20260911-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：hil-runtime-20260908-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：offline-conversion-20260911.json: dependency changed; revalidation required",
+      "仅历史审阅：operator-workbench-20260908-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：system-style-20260909-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：task-workbench-20260908-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：uv-cli-20260908-offline.json: dependency changed; revalidation required"
+    ],
+    "validated_records": 3,
+    "documents": 27
+  },
+  "markdown_anchors_checked": [
+    {
+      "file": "docs/memory.md",
+      "link": "cache/context_index.md#问题与行动路由"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../dataset_workbench.md#检查和清洗"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../dataset_workbench.md#配置预期与实测边界"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../dataset_workbench.md#可复用工具与验证"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../convert.md#可复用工具与重试条件"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../convert.md#异常恢复"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../acceptance.md#2026-09-11后续采集与转换完全分离"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../environment.md#构建失败的检查与重试条件"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../environment.md#首次安装"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../acceptance.md#历史尝试测试目录互斥"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../memory.md#工程经验与问题检索"
+    },
+    {
+      "file": "docs/cache/context_index.md",
+      "link": "../memory.md#选择性检索与计量边界"
+    },
+    {
+      "file": "docs/cache/kernel.md",
+      "link": "context_index.md#问题与行动路由"
+    },
+    {
+      "file": "docs/cache/kernel.md",
+      "link": "../memory.md#工程经验与问题检索"
+    },
+    {
+      "file": "docs/cache/checkpoint.md",
+      "link": "context_index.md#问题与行动路由"
+    },
+    {
+      "file": "docs/dataset_workbench.md",
+      "link": "convert.md#可复用工具与重试条件"
+    }
+  ],
+  "record_related_sections_checked": true,
+  "ledgers": [
+    {
+      "session": "setup-20260907",
+      "old_cap": null,
+      "new_cap": null,
+      "used_before_replay": 31830,
+      "seen_preserved": true,
+      "prior_adjustments": [
+        {
+          "old_cap": 32768,
+          "new_cap": null,
+          "reason": "2026-09-11用户要求按新版mlops-memory技能取消旧累计读取额度；保留计数与去重历史",
+          "at": "2026-09-11T08:03:05.426327+00:00"
+        }
+      ]
+    }
+  ],
+  "replays": [
+    {
+      "query": "数据集 检查 合并",
+      "expected": "docs/cache/records/dataset-workbench-capability-20260911.json",
+      "found_and_loaded": true,
+      "discovery": {
+        "items": [
+          {
+            "source": "docs/cache/records/dataset-workbench-capability-20260911.json",
+            "claim": "当前版本在Linux本机临时模拟数据中通过工作台专项：索引/分类不改源、检查/预览、双task六帧合并及输出保护；不代表真机、当前服务在线或官方读取器本次复验。",
+            "kind": "procedure",
+            "status": "verified",
+            "scope": {
+              "project": "YAM",
+              "platform": "linux-x86_64"
+            },
+            "admission": "evidence_and_scope_checked; semantic review still required; runtime_conditions_require_recheck; not_execution_authorization",
+            "score": 3,
+            "has_capability": true,
+            "attempt_verdict": null
+          },
+          {
+            "source": "docs/cache/records/system-python-attempt-20260907.json",
+            "claim": "复核2026-09-07历史构建：系统Python缺开发头文件时安装退出1；改用uv管理Python3.12.14后安装及ruckig导入通过。更换分发/版本存在混杂，单变量因果尚未验证。",
+            "kind": "lesson",
+            "status": "verified",
+            "scope": {
+              "project": "YAM",
+              "platform": "linux-x86_64"
+            },
+            "admission": "evidence_and_scope_checked; semantic review still required; historical_attempt; verdict_is_not_a_repair_recommendation",
+            "score": 1,
+            "has_capability": false,
+            "attempt_verdict": "inconclusive"
+          }
+        ],
+        "excluded": {
+          "not_matched": 0,
+          "scope_mismatch": 14,
+          "not_current": 0,
+          "invalid": 0,
+          "top_limit": 0,
+          "byte_limit": 0
+        },
+        "discovery_only": true
+      }
+    },
+    {
+      "query": "Python.h ruckig",
+      "expected": "docs/cache/records/system-python-attempt-20260907.json",
+      "found_and_loaded": true,
+      "discovery": {
+        "items": [
+          {
+            "source": "docs/cache/records/system-python-attempt-20260907.json",
+            "claim": "复核2026-09-07历史构建：系统Python缺开发头文件时安装退出1；改用uv管理Python3.12.14后安装及ruckig导入通过。更换分发/版本存在混杂，单变量因果尚未验证。",
+            "kind": "lesson",
+            "status": "verified",
+            "scope": {
+              "project": "YAM",
+              "platform": "linux-x86_64"
+            },
+            "admission": "evidence_and_scope_checked; semantic review still required; historical_attempt; verdict_is_not_a_repair_recommendation",
+            "score": 3,
+            "has_capability": false,
+            "attempt_verdict": "inconclusive"
+          }
+        ],
+        "excluded": {
+          "not_matched": 1,
+          "scope_mismatch": 14,
+          "not_current": 0,
+          "invalid": 0,
+          "top_limit": 0,
+          "byte_limit": 0
+        },
+        "discovery_only": true
+      }
+    }
+  ],
+  "ledger_after_replay": {
+    "tracked_bytes": 46165,
+    "measurement": "declared_preloads_and_serialized_packets",
+    "transfer_limit_bytes": null,
+    "remaining_transfer_bytes": null,
+    "context_tokens": null,
+    "exact_token_enforcement": false
+  },
+  "limits": "本次仅离线模拟与记忆检查；未重新构建环境、未启动真机/服务或重跑官方读取器。旧证据、记录及未完成产品事项保留。",
+  "files": {
+    "AGENTS.md": "375e7365df3dddd8cd3f4d00d20a5a7deb1dd3cab346d64cdb5156384ff14b4f",
+    "docs/memory.md": "1792d721249d1783e88ae46681db3ef44612a152bcfa3073963fa6830ef6ee59",
+    "docs/cache/context_index.md": "6e57a394daa71579995baa0671ebfb2b69dba73c5d463fd87ca25ecbbc1ca021",
+    "docs/cache/kernel.md": "541effa260bea6c4db138bec44b14bf0acb49efd5de366a6749dd32fa64bf5eb",
+    "docs/cache/checkpoint.md": "a08b44d4cf295bbb43da8b29764738b44c5119514750126f217b839249de190d",
+    "docs/dataset_workbench.md": "c670c3637cf2a6c0ead822be677dbe600777a166f931a1c7f76a7250215006cc",
+    "docs/convert.md": "c479dda9e133008779704d79917696a68cac19db51ae7e594721008d108a2428",
+    "docs/environment.md": "b759c135b33c8a12f4486989be55edfc2a59beb76b5fbdae5b9a2be67eebee6f",
+    "docs/acceptance.md": "b3e6a06bf7e8f2269c19e3ffae3789f65b9abef02edf4cd1a408a9630a3fff24",
+    "scripts/memory_gate.py": "26580f83a1e7ae57d150159deb31351a093b1b3df8f2cc52ea798f7a0997d6df",
+    "tests/test_memory_gate.py": "6a5b473efe68c3f0755b9bdc1a1b22daeccc1879c0167b0463ea1c19d3cee993",
+    "tests/test_engineering_memory.py": "a9b44270b623e1ba7df57daffc874de2b2817ffc6a74ebd70b5d667809246a58",
+    "docs/cache/records/dataset-workbench-capability-20260911.json": "f238f7c4e616830146c15f5f72eb636d8077f0fe80c22f373a07f95fa247c7fe",
+    "docs/cache/records/system-python-attempt-20260907.json": "99677ff559d5bcb210044fd030d7609d580ce9d5469ee986262efff2847bcc23"
+  }
+}

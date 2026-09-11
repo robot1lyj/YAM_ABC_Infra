@@ -8,7 +8,7 @@
     "platform": "linux-x86_64",
     "runtime": "dataset-workbench-v1"
   },
-  "status": "verified",
+  "status": "stale",
   "observed_at": "2026-09-11T05:24:39.340802+00:00",
   "recorded_at": "2026-09-11T05:24:39.340802+00:00",
   "evidence": [

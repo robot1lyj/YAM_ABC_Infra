@@ -1,0 +1,63 @@
+{
+  "scope": "synthetic local metadata; not 100 GB real capture throughput",
+  "catalog": {
+    "10000": {
+      "insert_seconds": 0.32800205900275614,
+      "first_page": {
+        "median_ms": 0.47437800822081044,
+        "p95_ms": 0.524497008882463
+      },
+      "deep_cursor": {
+        "median_ms": 0.47395699948538095,
+        "p95_ms": 0.511211997945793
+      },
+      "failure_filter": {
+        "median_ms": 0.5678635061485693,
+        "p95_ms": 0.6944869965082034
+      },
+      "search": {
+        "median_ms": 0.682514495565556,
+        "p95_ms": 0.7544090040028095
+      },
+      "first_page_json_bytes": 50507
+    },
+    "100000": {
+      "insert_seconds": 2.6537630570092006,
+      "first_page": {
+        "median_ms": 0.5099449990666471,
+        "p95_ms": 0.5978749977657571
+      },
+      "deep_cursor": {
+        "median_ms": 0.5021245015086606,
+        "p95_ms": 0.8330069977091625
+      },
+      "failure_filter": {
+        "median_ms": 0.5501350024132989,
+        "p95_ms": 0.6009100034134462
+      },
+      "search": {
+        "median_ms": 0.670091001666151,
+        "p95_ms": 0.8301420020870864
+      },
+      "first_page_json_bytes": 50510
+    }
+  },
+  "one_hour_preview": {
+    "frames": 108000,
+    "resolution": [
+      32,
+      32
+    ],
+    "cold_app_cache_three_cameras": {
+      "median_ms": 9.42969199968502,
+      "p95_ms": 10.922971996478736
+    },
+    "warm_cache_one_camera": {
+      "median_ms": 0.5522840001503937,
+      "p95_ms": 0.6173909932840616
+    },
+    "cache_bytes": 1929,
+    "scope": "real 1h tiny-video, 108000 HDF index rows; OS cache not flushed; not D405 performance"
+  },
+  "peak_rss_mib": 111.4375
+}

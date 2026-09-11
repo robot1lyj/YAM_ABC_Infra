@@ -17,34 +17,78 @@
 
 事实冲突时：遵守当前用户约定；检查当前代码/配置和现场证据；更新规范所有者；最后刷新摘要。参考库的历史性能和旧GUI说明不能覆盖当前契约。
 
-## 开始任务
+## 开始任务与按需展开
 
-1. 读路由和短检查点，选择本次任务需要的一个或少数规范章节。
-2. 明确项目、平台、代码/模型契约和证据时间；需要现场状态就重新检查。
-3. 当前记录须通过scope、evidence和depends_on验证；过期、candidate或归档只用于审阅。
-4. 不为“记住整个项目”全量读取历史、数据或第三方仓库。
+1. 先确定下一步决策、当前目标、用户约束和缺失事实，再从路由选择相关摘要及适用任务章节；检查点仅在续作需要时读取。
+2. 优先当前项目、平台、代码/模型契约和版本匹配的资料。摘要不足、有冲突或需验证时，展开对应原文及必要前提，保留单位、版本、适用条件、反证和证据引用。
+3. 当前记录须通过全部scope键、evidence和depends_on验证；过期、candidate或归档只用于审阅。设备、进程和网络等现场状态重新检查。
+4. 信息足以支持下一步就停止检索；不重复加载仍在上下文中的内容，不全量读取历史、数据、第三方仓库或技能参考资料。
+5. 搜索、日志和工具结果先在模型外过滤，返回相关片段或统计；原始产物留在所有者处。截断输出或分批倾倒完整历史不能降低累计上下文成本。
 
-## 上下文预算：用户覆盖优先
+完整资料长期保存，无文档行数上限。入口保持简短，细节留在规范所有者、记录、原始证据和归档中，不为缩短上下文删除有用信息。
+工作摘要保留当前目标、用户约束、适用事实、未解问题、下一步和可恢复的来源引用；摘要不能替代验证结论所需的证据。
 
-用户已明确放宽记忆字节预算，避免预算阻断协作。原12,288字节/包、32,768字节/上下文仅作诊断参考。
+## 选择性检索与计量边界
 
-- 同一实际上下文保留原ledger，不重置来伪造新额度。
-- 达到诊断限额时保存短检查点，继续按需读取；记录为直接读取，不能声称旧ledger覆盖了这些读取量。
-- 只对可见、允许记录的项目文档记账，不复制隐藏指令、凭证或完整环境变量。
-- 写检查点不等于自动压缩。宿主是否压缩由宿主决定，本项目没有强制宿主压缩或修改完整上下文上限的接口。
-- 字节不是token；未接入完整请求和实际tokenizer时，不声称已统计隐藏/系统/完整历史上下文。
+本项目按2026-09-11用户要求采用新版技能，取消旧默认累计读取额度。不得因读取计数达到固定阈值中止任务、要求压缩或新开对话。
+观察到上下文压力时，整理已完成工作并在现有缓存保存可恢复检查点；写摘要不会移除既有消息，只有宿主实际压缩或替换上下文才改变保留历史。
 
-`memory_gate.py`保留原始严格诊断行为；拒绝pack不意味着用户要求暂停任务。与预算不同，证据哈希/范围不匹配不能通过放宽预算绕过。
+`scripts/memory_gate.py` 是同步自已安装技能的可选标准库工具，不是每次读取的强制包装器。普通有界章节读取也可使用，仍需检查证据、范围和时效。
 
-可选诊断命令（仅在实际新上下文初始化；SESSION替换为实际唯一标识）：
+- 默认每个序列化检索包12,288 UTF-8字节，包含JSON封装；这是可用 `pack --max-bytes` 调整的检索设置，不是模型上下文上限。先缩小无关选择，必要完整证据可提高包大小，不能割裂结论与前提来适配。
+- 无默认累计额度。若今后用户明确设置累计传输限制，则遵守该限制；加载新版工具不会偷偷移除已有ledger的限制。
+- ledger记录声明预载文本字节及成功检索包的累计字节和去重历史；`tracked_bytes` 不代表当前上下文占用或模型剩余容量，也不覆盖未记账的直接读取。
+- 只记录可见且允许记录的项目资料，不复制隐藏指令、凭证或完整环境变量。已知预载章节才传 `--preloaded`，未知时省略。
+- `context_tokens` 为null，`exact_token_enforcement` 为false；完整请求计量需宿主使用实际tokenizer计算指令、历史、工具和封装并预留输出，项目未安装该宿主集成。字节计数不能代替完整token计数。
+- 单文件2 MiB工具读取保护不是长期资料存储上限；更大日志用过滤工具或带来源的证据摘要读取，保留原件。
+- 包溢出时不输出不完整的必需章节，不更新账本；缩小选择或按需提高包大小。证据/范围失效必须核查，不能通过调整字节限制绕过。
+
+可选命令（在仓库根目录执行，SESSION为检索任务标识，已有ledger继续复用）：
 
 ```bash
-python3 scripts/memory_gate.py init --root . --session SESSION --preloaded AGENTS.md docs/cache/context_index.md
+python3 scripts/memory_gate.py init --root . --session SESSION
 python3 scripts/memory_gate.py pack --root . --session SESSION --required 'docs/hil_quickstart.md#操作规则'
 python3 scripts/memory_gate.py audit --root . --session SESSION
 ```
 
-Ledger位于被忽略的 `docs/cache/runtime/`，不提交Git。当前上下文已有ledger就沿用，不重复运行init。
+相同未变章节默认去重；宿主实际压缩后或所需片段已不在上下文时，仅对缺失章节加 `pack --reload`，重新校验证据与scope并计数，不批量重载历史。
+Ledger位于被忽略的 `docs/cache/runtime/`，不提交Git，不通过重建或更换ID规避显式额度。
+
+## 旧账本与技能快照迁移
+
+本次用户已授权移除旧累计额度，对已有ledger原地执行：
+
+```bash
+python3 scripts/memory_gate.py resize --root . --session SESSION --no-total-limit --reason '2026-09-11用户要求按新版技能取消旧累计读取额度'
+```
+
+保留原 `used`、`seen`、账本身份和已有历史，在 `adjustments` 记录时间、原因及旧/新上限；不清零、不伪造压缩、不扩大模型窗口。
+运行时旧技能快照保留为历史资料并标注已失效；当前方法以重新读取的已安装 `mlops-memory/SKILL.md` 为准，项目事实仍归本项目规范所有者。迁移记录见 [迁移验收](evidence/20260911-memory-migration.json)。
+
+## 工程经验与问题检索
+
+当前方法来源为用户指定的 `/home/wuyan-lyj/condapi/skills/mlops-memory/SKILL.md`；仓库工具及测试同步该版本（只作项目格式调整）。
+优先当前数据集整理/离线转换主线，再补高价值故障经验。保留原目录和旧v1记录，按需补充有来源的正文或下列可选字段，不批量重写历史。
+
+| 可选字段 | 必须表达的内容 | 判定边界 |
+|---|---|---|
+| `capability`（procedure） | entrypoint、invocation、config_paths、inputs、outputs、validation_command、acceptance、limitations | 入口/配置及影响行为的代码、验证器和样例纳入depends_on；实测证据通过才标verified，文件存在/退出成功不足以证明功能 |
+| `attempt`（lesson） | symptom、hypothesis、intervention、observation、verdict、confounders、retry_when | verdict为supported/refuted/inconclusive，针对假设而非工具优劣；verified失败尝试只证明发生及有限结果，不推荐重复失败修复 |
+| `assumptions` | name、expected、observed、unit、observed_at、check、result、recheck_when | 未测量时observed/observed_at为null、result为unknown；保留mismatch，不能将配置值抄成实测；易变条件使用前复查 |
+| `retrieval` | terms及可选related关系（check/repair/attempt/prerequisite + source） | 指向现有规范章节/记录；按缺口展开，不递归加载全部关联；链接存在不证明目标结论有效 |
+
+先查 [问题路由](cache/context_index.md#问题与行动路由)，再按需要读检查方法、历史尝试或修复工具。重复失败干预前核对范围、原因假设和重试条件；新证据/环境变化后可以重新试验并保存独立结果。多个变量同时变化时不夸大因果，未知项明确写出。
+配置文件只证明预期设置；运行版本、端口、磁盘、性能和硬件状态需要相应测量。以能否恢复正确任务、减少重复尝试和遗漏条件评价记忆，不只看摘要长短。
+
+可选发现命令（SESSION沿用已有检索账本，项目与平台等scope须全部匹配）：
+
+```bash
+python3 scripts/memory_gate.py search --root . --session SESSION --query '数据集 检查 合并' --scope project=YAM --scope platform=linux-x86_64 --top 3
+```
+
+`search`只返回有限数量的声明/来源/范围摘要，不返回执行命令或原始日志；结果也记入原ledger，不把完整记录标为已读。先加载选中的record，必要时再读related目标。旧记录额外scope键须补齐；历史/candidate使用 `--purpose review`，不提升为当前事实。词法排序不是置信度，空结果要看排除原因，不反复运行未变查询。
+
+初始高价值记录为 [工作台工具](cache/records/dataset-workbench-capability-20260911.json) 和 [系统Python构建尝试](cache/records/system-python-attempt-20260907.json)。当前扩展验收见 [工程记忆检查](evidence/20260911-engineering-memory-audit.json)，上一轮迁移证据保留为历史，不表示当前文件仍有相同哈希。
 
 ## 更新任务结果
 
@@ -62,7 +106,7 @@ python3 scripts/memory_gate.py validate-record --root . --record docs/cache/reco
 
 ## 检查工具负责什么
 
-`check_project_memory.py` 检查当前路由与中文入口的文件链接、record结构、证据与依赖指纹、重复ID以及规范owner是否在路由中。verified记录失效返回非零，提示重新验证；非current的历史记录单独列出，不能当作通过当前验收。
+`check_project_memory.py` 检查当前路由与中文入口的文件链接、record结构和可选工程字段、证据与依赖指纹、重复ID以及规范owner是否在路由中。verified记录失效返回非零，提示重新验证；非current的历史记录单独列出，不能当作通过当前验收。
 
 它不修复内容、不自动提升candidate、不运行机械臂或模型，也不验证网页可达性、Markdown锚点、记录的语义真伪或完整上下文token。
 

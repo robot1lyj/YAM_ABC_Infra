@@ -3,7 +3,11 @@
 ## 项目与依赖
 
 主仓库为 YAM-ABC-Reproduce 的本地工作站分支，保留上游历史。
-origin 是 `ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`；
+内网优先，两个托管地址都同步：
+- `origin`：`ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`，主远端，main跟踪origin/main。
+- `github`：`git@github.com:robot1lyj/YAM_ABC_Infra.git`，同步远端。
+- 顺序：`git push -u origin main`，然后 `git push github main`；核对两端SHA一致。失败时保留本地提交，报告未同步的远端，不强制覆盖远端历史。
+
 upstream 是 `https://github.com/i2rt-robotics/yam-abc-reproduce.git`。
 i2rt 使用 `third_party/i2rt` 固定提交，不依赖工作区同级 i2rt 目录。
 
@@ -15,6 +19,7 @@ i2rt 使用 `third_party/i2rt` 固定提交，不依赖工作区同级 i2rt 目�
 ```bash
 git clone --recurse-submodules ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git
 cd YAM
+git remote add github git@github.com:robot1lyj/YAM_ABC_Infra.git
 sudo apt update
 sudo apt install build-essential python3-dev git curl iproute2 can-utils
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -85,3 +90,10 @@ uv sync 会移除本次未选择的 extras/groups。
 ## HDF5录制依赖（2026-09-11）
 
 主依赖新增h5py（uv.lock锁定3.16.0），继续使用项目.venv及现有镜像；`uv sync --locked --extra camera --extra gui --extra deploy`。录制/转换进程使用当前Python，不需要Torch。离线官方读取验收另用临时CPU环境，版本与结果见[验收](acceptance.md)。录制进程隔离依赖Linux父进程退出信号，适用于目标RK3588/Linux与开发机Linux。转换已独立，服务器使用scripts/convert_lerobot.py及其uv锁，只安装数据处理依赖。
+
+## 构建失败的检查与重试条件
+
+2026-09-07系统Python构建失败的 [诊断摘录](evidence/20260907-system-python-build-failure.txt) 记录退出1、缺失patchlevel.h/Development.Module，独立检查Python.h不存在；它不是完整构建日志。
+原因假设为选用的系统Python缺开发头文件。后续改用uv管理的3.12.14，[环境审计](evidence/20260907-environment-audit.json) 记录安装退出0及ruckig导入，但同时改变了Python分发/补丁版本，不能声称只补头文件的单变量因果已验证。
+
+重试前先用所选解释器的 `sysconfig.get_path('include')` 定位并检查Python.h，核对编译器、Python版本和所用锁文件。路径/头文件/解释器选择变化后才有理由重试原构建；不要在相同缺失条件下重复安装。当前机器头文件和构建条件本次未重测，均为未知。可复用安装流程见“首次安装”，历史范围见 [尝试记录](cache/records/system-python-attempt-20260907.json)。

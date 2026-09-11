@@ -1,0 +1,63 @@
+{
+  "id": "system-python-attempt-20260907",
+  "kind": "lesson",
+  "claim": "复核2026-09-07历史构建：系统Python缺开发头文件时安装退出1；改用uv管理Python3.12.14后安装及ruckig导入通过。更换分发/版本存在混杂，单变量因果尚未验证。",
+  "owner": "docs/environment.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-x86_64"
+  },
+  "status": "stale",
+  "observed_at": "2026-09-11T08:37:08.265160+00:00",
+  "recorded_at": "2026-09-11T08:37:08.265160+00:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260907-system-python-build-failure.txt",
+      "sha256": "9baab7e692f47aac75e42524e9c6fda20b02995ac0dbf8d0718ac6c686cc85d7"
+    },
+    {
+      "path": "docs/evidence/20260907-environment-audit.json",
+      "sha256": "c8e4683b6a48cdba25aa2eb9e2782ec7001a392e6e1a542e42cf9bf453c1677d"
+    }
+  ],
+  "recheck": "on_change",
+  "valid_until": null,
+  "depends_on": {
+    "docs/environment.md": "b759c135b33c8a12f4486989be55edfc2a59beb76b5fbdae5b9a2be67eebee6f",
+    "docs/evidence/20260907-environment-audit.json": "c8e4683b6a48cdba25aa2eb9e2782ec7001a392e6e1a542e42cf9bf453c1677d",
+    "docs/evidence/20260907-system-python-build-failure.txt": "9baab7e692f47aac75e42524e9c6fda20b02995ac0dbf8d0718ac6c686cc85d7"
+  },
+  "supersedes": [],
+  "attempt": {
+    "symptom": "历史uv sync退出1，CMake找不到patchlevel.h/Development.Module，独立检查系统Python.h不存在。",
+    "hypothesis": "所选系统Python缺少开发头文件导致构建不能完成。",
+    "intervention": "先检查头文件，再切换uv管理Python3.12.14执行locked camera/gui安装。",
+    "observation": "原诊断摘录记录退出1和头文件缺失；后续环境审计记录退出0、79包和ruckig0.15.3导入。此次为历史证据复核，未重新安装。",
+    "verdict": "inconclusive",
+    "confounders": [
+      "同时更换Python分发及补丁版本，未做仅补头文件的单变量对照",
+      "原失败仅有诊断摘录，无完整构建日志；当前机器状态未测"
+    ],
+    "retry_when": "确认所选解释器include目录含Python.h、开发组件或解释器选择已变化，并核对编译器与当前锁文件后，才重试该构建；新环境失败应保存独立日志。"
+  },
+  "retrieval": {
+    "terms": [
+      "Python.h",
+      "ruckig",
+      "构建失败",
+      "Development.Module",
+      "环境",
+      "重试"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/environment.md#构建失败的检查与重试条件"
+      },
+      {
+        "relation": "repair",
+        "source": "docs/environment.md#首次安装"
+      }
+    ]
+  }
+}

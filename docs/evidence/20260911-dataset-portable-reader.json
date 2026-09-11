@@ -1,0 +1,15 @@
+{
+  "reader": "0.5.1",
+  "restored_root": "/tmp/yam-ui-restored-20260911/payload/145f6fa0bf054a73b995dfa75013a7ad",
+  "frames": 6,
+  "tasks": [
+    "sort blocks",
+    "put blocks away"
+  ],
+  "rgb_shape": [
+    3,
+    32,
+    32
+  ],
+  "scope": "simulated dataset copied through UI portable TAR; not remote server test"
+}

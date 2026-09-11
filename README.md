@@ -12,7 +12,9 @@
 uv run --no-sync python -m yam_abc_reproduce.dataset_workbench.web --port 8767
 ```
 
-打开 [数据集清洗与转换](http://127.0.0.1:8767/)：导入 YAM 原始目录、三路逐帧审阅、完整性检查、失败归类、集合合并、逐集移除/恢复，以及后台转换 LeRobot v3.0。与采集独立运行。详见 [中文操作手册](docs/dataset_workbench.md)。
+打开 [数据集清洗与转换](http://127.0.0.1:8767/)：导入 YAM 原始或 LeRobot v3.0 数据、格式筛选、三路逐帧审阅、完整性检查、失败归类、集合合并、逐集移除/恢复，原始转换 LeRobot v3.0，以及携带审核/集合的打包迁移。与采集独立运行。详见 [中文操作手册](docs/dataset_workbench.md)。
+
+迁移到新机器可用独立环境启动：`uv run --locked --script scripts/dataset_workbench.py --catalog /data/yam_catalog`，无需机械臂 SDK 或 Torch。
 
 ## 四种模式
 

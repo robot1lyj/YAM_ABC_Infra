@@ -46,9 +46,9 @@ def test_quality_preview_and_multi_task_merge(tmp_path):
     assert preview(raw / "a", "top", 1).startswith(b"\xff\xd8")
     catalog = Catalog(tmp_path / "catalog")
     catalog.scan(raw)
-    entries = catalog.listing()["episodes"]
+    entries = sorted(catalog.listing()["episodes"], key=lambda e: e["path"])
     catalog.curate([entries[1]["id"]], "label", "failure")
-    entries = catalog.listing()["episodes"]
+    entries = sorted(catalog.listing()["episodes"], key=lambda e: e["path"])
     result = export_selected(entries, tmp_path / "out")
     assert result["frames"] == 6 and result["tasks"] == 2
     assert result["packet_copy_episodes"] == 2

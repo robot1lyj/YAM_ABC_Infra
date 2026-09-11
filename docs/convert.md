@@ -94,3 +94,12 @@ uv run --no-sync yam-export data/recovered/新目录 --output data/rebuilt/审�
 ## 图形化整理入口
 
 独立数据集工作台支持原始目录索引、逐集审阅、失败分类、回收站、集合合并与多 task LeRobot v3.0 导出，详见 [操作手册](dataset_workbench.md)。采集工作台不启动转换。
+
+## 可复用工具与重试条件
+
+| 工具与入口 | 配置、适用输入与输出 | 验证方法与边界 |
+|---|---|---|
+| [一键转换](../scripts/convert_lerobot.py) | 命令见“采集与转换完全独立”；PEP723配置及 [独立锁](../scripts/convert_lerobot.py.lock)，Python3.12/uv；已结束原始集→每来源独立v3.0及conversion_report.json | `uv run --no-sync pytest -q tests/test_offline_conversion.py tests/test_lerobot_convert.py tests/test_lerobot_export.py` 为基础导出回归；完整脚本验收另见 [验收](acceptance.md)。回读需核对14维/三路RGB、任务和帧边界，不能只看退出码 |
+| [异常恢复](../yam_abc_reproduce/hil/recovery.py) | 本文“异常恢复”命令；项目pyproject.toml/uv.lock；停止录制后，原集→新recovered目录，保留共同可解码前缀 | [录制测试](../tests/test_segmented_storage.py)中的恢复案例（`uv run --no-sync pytest -q tests/test_segmented_storage.py -k recover`）及 [历史验收](acceptance.md)；恢复后人工审核、回读，再决定allow-recovered；没有真断电零丢失保证 |
+
+帧率/分辨率不一致、媒体缺失或输出冲突属于待排查症状，不能在没有报告时断言具体成因。记录实际检查/干预和结果；重试条件是输入修复或重新筛选、必要兼容条件已确认、使用新输出目录。保留旧partial和失败报告，不覆盖原件，不对同一未变输入盲目重复转换。恢复工具不能修复所有异常；无法恢复的范围与原因未知时如实记录。

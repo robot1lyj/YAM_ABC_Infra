@@ -1,6 +1,6 @@
 # 项目记忆路由
 
-先明确本次任务，再读对应规范。下面的“规范所有者”是当前入口；历史英文归档和旧工具不进入默认检索。
+先明确本次任务和缺失事实，再读相关摘要与对应规范章节；必要时展开原文，足以支持下一步就停止检索。完整资料保留，不默认读取所有摘要或全部历史，无默认累计读取额度。下面的“规范所有者”是当前入口；历史英文归档和旧工具不进入默认检索。
 本表由人工维护，`scripts/check_project_memory.py` 检查其链接和记录指纹，不自动判断语义正确性。
 
 | 任务 | 规范所有者 | 何时补充读取 |
@@ -25,3 +25,15 @@
 
 按需证据放在 `docs/evidence/`，带范围的记录放在 `docs/cache/records/`。
 所有路径相对本仓库；外部大模型/数据仅记录身份与引用，不复制到记忆目录。
+
+## 问题与行动路由
+
+先选一行，按缺口只展开相应检查或尝试。命令在规范所有者处，索引不复制完整操作流程。
+
+| 问题/关键词 | 检查方法及前提 | 历史尝试 / 可复用工具 |
+|---|---|---|
+| 数据集检查、坏集、多task合并 | [检查和清洗](../dataset_workbench.md#检查和清洗)、[配置与实测](../dataset_workbench.md#配置预期与实测边界) | [工作台能力记录](records/dataset-workbench-capability-20260911.json)、[入口和验收](../dataset_workbench.md#可复用工具与验证) |
+| 转换失败、partial、恢复、帧率不一致 | [转换工具条件](../convert.md#可复用工具与重试条件)、[异常恢复](../convert.md#异常恢复) | [离线转换验收](../acceptance.md#2026-09-11后续采集与转换完全分离)；具体新失败的原因和结果从conversion_report.json或.partial/failure.json读取，未取得日志时标未知 |
+| Python.h、ruckig、构建失败 | [环境排查与重试](../environment.md#构建失败的检查与重试条件) | [失败尝试记录](records/system-python-attempt-20260907.json)、[首次安装](../environment.md#首次安装) |
+| 测试互斥、BlockingIOError | [历史目录隔离尝试](../acceptance.md#历史尝试测试目录互斥) | [当前测试](../../tests/test_workbench.py)；旧自动转换队列已退出主线，不能直接照搬旧修复 |
+| 记忆找不到工具、旧额度、证据失效 | [工程经验与问题检索](../memory.md#工程经验与问题检索)、[计量边界](../memory.md#选择性检索与计量边界) | [检索工具](../../scripts/memory_gate.py)、[检查工具](../../scripts/check_project_memory.py)；证据失效先核查，不自动更新哈希 |

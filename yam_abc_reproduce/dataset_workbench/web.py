@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,7 +20,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..hil.storage import atomic_json
 from .catalog import Catalog
-from .operations import check_episode, export_selected, preview
+from .formats import cameras
+from .operations import check_episode, export_selected
+from .portable import create_package, restore_package
+from .reading import check_lerobot, preview_entry
 
 
 class Action(BaseModel):
@@ -30,12 +34,100 @@ class Action(BaseModel):
     name: str = ""
     deep: bool = False
     expert_only: bool = False
+    destination: str = ""
+
+
+def execute_job(root, identity, kind, request, payload):
+    catalog = Catalog(root, recover_jobs=False)
+
+    def save(state):
+        with catalog.db() as db:
+            db.execute(
+                "UPDATE jobs SET state=?,payload=? WHERE id=?",
+                (state, json.dumps(payload), identity),
+            )
+
+    previous = [0.0]
+
+    def progress(count, message):
+        payload.update(progress=count, message=message)
+        if time.monotonic() - previous[0] >= 0.5:
+            save("running")
+            previous[0] = time.monotonic()
+
+    try:
+        save("running")
+        ids = request.get("ids", [])
+        if kind == "import":
+            result = catalog.scan(request["path"], progress)
+        elif kind == "package":
+            result = create_package(catalog, ids, request["path"], progress)
+        elif kind == "restore":
+            result = restore_package(catalog, request["path"], request["destination"], progress)
+        elif kind == "export":
+            result = export_selected(
+                [catalog.get(i) for i in ids],
+                request["path"],
+                expert_only=request["expert_only"],
+                progress=progress,
+            )
+        elif kind == "check":
+            reports = catalog.root / "jobs" / f"{identity}.episodes.jsonl"
+            reports.parent.mkdir(exist_ok=True)
+            good, bad = 0, 0
+            fingerprints = {}
+            duplicates = []
+            with reports.open("w") as output:
+                for index, episode_id in enumerate(ids):
+                    entry = catalog.get(episode_id)
+                    try:
+                        report = (
+                            check_lerobot(entry, request["deep"])
+                            if entry["format"] == "lerobot_v3"
+                            else check_episode(entry["path"], request["deep"])
+                        )
+                    except Exception as exc:
+                        report = dict(ok=False, issues=[str(exc)], checked_at=time.time())
+                    with catalog.db() as db:
+                        db.execute(
+                            "UPDATE episodes SET report=?,check_ok=? WHERE id=?",
+                            (json.dumps(report), int(report["ok"]), episode_id),
+                        )
+                    key = report.get("content_hash")
+                    if key:
+                        if key in fingerprints:
+                            duplicates.append([fingerprints[key], episode_id])
+                        else:
+                            fingerprints[key] = episode_id
+                    output.write(json.dumps({"id": episode_id, **report}) + "\n")
+                    good += int(report["ok"])
+                    bad += int(not report["ok"])
+                    progress(index + 1, f"{index + 1}/{len(ids)} 集")
+            result = dict(
+                checked=len(ids),
+                passed=good,
+                issues=bad,
+                report_file=reports.name,
+                duplicate_pairs=duplicates,
+            )
+        else:
+            raise ValueError("未知任务")
+        report_path = catalog.root / "jobs" / f"{identity}.json"
+        report_path.parent.mkdir(exist_ok=True)
+        atomic_json(report_path, result)
+        payload.update(report_available=True, message="已完成")
+        save("complete")
+    except Exception as exc:
+        payload.update(error=str(exc), message="执行失败")
+        save("failed")
 
 
 class Jobs:
     def __init__(self, catalog):
         self.catalog = catalog
-        self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dataset-offline")
+        self.pool = ProcessPoolExecutor(
+            max_workers=1, mp_context=multiprocessing.get_context("spawn")
+        )
         self.slots = threading.BoundedSemaphore(4)
 
     def save(self, identity, state, payload):
@@ -44,34 +136,33 @@ class Jobs:
                 "INSERT OR REPLACE INTO jobs VALUES (?,?,?)", (identity, state, json.dumps(payload))
             )
 
-    def submit(self, kind, operation):
+    def submit(self, kind, request):
         if not self.slots.acquire(blocking=False):
-            raise ValueError("后台已有 4 项任务，请等待完成")
+            raise ValueError("后台已有4项任务，请等待完成")
         identity = uuid.uuid4().hex
-        payload = {"kind": kind, "created_at": time.time(), "progress": 0, "message": "等待执行"}
+        names = {
+            "import": "导入索引",
+            "check": "数据检查",
+            "export": "转换 LeRobot v3.0",
+            "package": "打包迁移",
+            "restore": "恢复迁移包",
+        }
+        payload = dict(kind=names[kind], created_at=time.time(), progress=0, message="等待执行")
         self.save(identity, "queued", payload)
+        future = self.pool.submit(
+            execute_job, str(self.catalog.root), identity, kind, request, payload
+        )
 
-        def run():
-            def progress(count, message):
-                payload.update(progress=count, message=message)
-                self.save(identity, "running", payload)
-
+        def finished(task):
             try:
-                progress(0, "正在执行")
-                result = operation(progress)
-                report_path = self.catalog.root / "jobs" / f"{identity}.json"
-                report_path.parent.mkdir(exist_ok=True)
-                atomic_json(report_path, result)
-                payload["report_available"] = True
-                payload["message"] = "已完成"
-                self.save(identity, "complete", payload)
+                task.result()
             except Exception as exc:
-                payload.update(error=str(exc), message="执行失败")
+                payload.update(error=str(exc), message="工作进程异常")
                 self.save(identity, "failed", payload)
             finally:
                 self.slots.release()
 
-        self.pool.submit(run)
+        future.add_done_callback(finished)
         return identity
 
     def list(self):
@@ -120,8 +211,22 @@ def create_app(root):
         return FileResponse(static / "index.html")
 
     @app.get("/api/episodes")
-    def episodes(view: str = "all", query: str = "", collection: str = "", offset: int = 0):
-        return catalog.listing(view=view, query=query, collection=collection, offset=offset)
+    def episodes(
+        view: str = "all",
+        query: str = "",
+        collection: str = "",
+        offset: int = 0,
+        cursor: str = "",
+        format: str = "",
+    ):
+        return catalog.listing(
+            view=view,
+            query=query,
+            collection=collection,
+            offset=offset,
+            cursor=cursor,
+            format=format,
+        )
 
     @app.get("/api/jobs")
     def list_jobs():
@@ -136,11 +241,20 @@ def create_app(root):
             raise HTTPException(404, "任务尚无完整报告")
         return FileResponse(path, media_type="application/json")
 
+    @app.get("/api/jobs/{identity}/episodes")
+    def episode_report(identity: str):
+        if len(identity) != 32 or any(c not in "0123456789abcdef" for c in identity):
+            raise HTTPException(404, "任务不存在")
+        path = catalog.root / "jobs" / f"{identity}.episodes.jsonl"
+        if not path.is_file():
+            raise HTTPException(404, "没有逐集报告")
+        return FileResponse(path, media_type="application/x-ndjson", filename=path.name)
+
     @app.post("/api/import")
     def import_data(body: Action):
         if not body.path.strip():
             raise ValueError("请填写原始数据目录")
-        return {"id": jobs.submit("导入索引", lambda p: catalog.scan(body.path, p))}
+        return {"id": jobs.submit("import", body.model_dump())}
 
     @app.post("/api/curate")
     def curate(body: Action):
@@ -153,58 +267,44 @@ def create_app(root):
 
     @app.post("/api/check")
     def check(body: Action):
-        entries = [catalog.get(i) for i in body.ids]
-        if not entries:
+        if not body.ids:
             raise ValueError("请选择需要检查的集")
-
-        def operation(progress):
-            reports, duplicates = [], {}
-            for index, entry in enumerate(entries):
-                try:
-                    report = check_episode(entry["path"], body.deep)
-                except Exception as exc:
-                    report = {"ok": False, "issues": [str(exc)], "checked_at": time.time()}
-                if report.get("content_hash"):
-                    duplicates.setdefault(report["content_hash"], []).append(entry["id"])
-                with catalog.db() as db:
-                    db.execute(
-                        "UPDATE episodes SET report=? WHERE id=?", (json.dumps(report), entry["id"])
-                    )
-                reports.append({"id": entry["id"], **report})
-                progress(index + 1, f"{index + 1}/{len(entries)} 集")
-            return {
-                "reports": reports,
-                "duplicate_groups": [v for v in duplicates.values() if len(v) > 1],
-            }
-
-        return {"id": jobs.submit("深度检查" if body.deep else "快速检查", operation)}
+        return {"id": jobs.submit("check", body.model_dump())}
 
     @app.post("/api/export")
     def export(body: Action):
-        entries = [catalog.get(i) for i in dict.fromkeys(body.ids)]
-        if not body.path.strip() or not entries:
-            raise ValueError("请选择集并填写新的输出目录")
-        return {
-            "id": jobs.submit(
-                "合并转换 LeRobot v3.0",
-                lambda p: export_selected(
-                    entries, body.path, expert_only=body.expert_only, progress=p
-                ),
-            )
-        }
+        if not body.ids or not body.path.strip():
+            raise ValueError("请选择集并填写输出目录")
+        if "lerobot_v3" in catalog.selected_formats(body.ids):
+            raise ValueError("转换只接受原始采集包，不能混选LeRobot；LeRobot支持浏览、检查和迁移")
+        return {"id": jobs.submit("export", body.model_dump())}
+
+    @app.post("/api/package")
+    def package(body: Action):
+        if not body.ids or not body.path.strip():
+            raise ValueError("请选择集和.tar输出路径")
+        return {"id": jobs.submit("package", body.model_dump())}
+
+    @app.post("/api/restore")
+    def restore(body: Action):
+        if not body.path.strip() or not body.destination.strip():
+            raise ValueError("请填写迁移包和新的恢复目录")
+        return {"id": jobs.submit("restore", body.model_dump())}
 
     @app.get("/api/episodes/{identity}/preview/{role}")
     def image(identity: str, role: str, frame: int = 0):
         try:
             return Response(
-                preview(catalog.get(identity)["path"], role, frame), media_type="image/jpeg"
+                preview_entry(catalog.get(identity), role, frame), media_type="image/jpeg"
             )
         except (OSError, ValueError, StopIteration) as exc:
             raise HTTPException(404, str(exc)) from exc
 
     @app.get("/api/episodes/{identity}")
     def detail(identity: str):
-        return catalog.get(identity)
+        entry = catalog.get(identity)
+        entry["cameras"] = cameras(entry["metadata"])
+        return entry
 
     return app
 

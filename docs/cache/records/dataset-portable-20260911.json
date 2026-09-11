@@ -1,0 +1,63 @@
+{
+  "id": "dataset-portable-20260911",
+  "kind": "observation",
+  "claim": "双格式管理、轻量目录与可校验TAR迁移已实现；本机模拟全量254通过/2跳过/17子测试，末次专项9通过，10万索引和一小时低分辨率视频及官方0.5.1迁移回读通过；非100小时D405实测。",
+  "owner": "docs/dataset_workbench.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-x86_64",
+    "runtime": "dataset-portable-v1"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-11T09:21:58.032843+00:00",
+  "recorded_at": "2026-09-11T09:21:58.032843+00:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260911-dataset-portable-tests.txt",
+      "sha256": "deb6e901cb3897763620d982d0fbc9d1089a6d30df9d8ba8914493577e6473d0"
+    },
+    {
+      "path": "docs/evidence/20260911-dataset-portable-final-tests.txt",
+      "sha256": "d11a4ed6bb9f4e50366ca301cd9ad9a8dc7c1bc65da34c29f76b589a2bd20d64"
+    },
+    {
+      "path": "docs/evidence/20260911-dataset-scale.json",
+      "sha256": "0f680d030c0484594379792f279084394c01fc23fd7e10653eaa975cde05de22"
+    },
+    {
+      "path": "docs/evidence/20260911-dataset-standalone.json",
+      "sha256": "bb7384c784bf7c0e6df8538072aa523a427f35545db62b62d75f9db23ace9730"
+    },
+    {
+      "path": "docs/evidence/20260911-dataset-portable-ui.json",
+      "sha256": "cd9f8becc7fece45bda282c8d378a1359edb57dff652baf3e5739ee6e7fb1de6"
+    },
+    {
+      "path": "docs/evidence/20260911-dataset-portable-reader.json",
+      "sha256": "d790292f8b6cf5b61e8c24deaffbb9425c85e8c52d06dd6df730a1c1ccd352a0"
+    }
+  ],
+  "recheck": "on_change",
+  "valid_until": null,
+  "depends_on": {
+    "yam_abc_reproduce/dataset_workbench/operations.py": "32b259ec63f9b4b48ba4c46e21c6622fb6fd5569b8823b922e5c28fe696b6aa1",
+    "yam_abc_reproduce/dataset_workbench/catalog.py": "d35259eae75978fa63fb1fce002fc642311a6ea2c9cff81fb7bc607fa11fd02d",
+    "yam_abc_reproduce/dataset_workbench/formats.py": "1ea9530e8f6959648b856f3acbafc0b9037b0e6174a0cb5c45bad2d3f1ab5853",
+    "yam_abc_reproduce/dataset_workbench/web.py": "901540049d9c8e3480a37799b099e1fe4db8334f126a2ce6ff881eb93399df5e",
+    "yam_abc_reproduce/dataset_workbench/reading.py": "e3dd51fa5ccabb21109b0b299ed5372240b22f8b8cb37f5f4a314aad6228af49",
+    "yam_abc_reproduce/dataset_workbench/portable.py": "f4f8ed6748873648aec1ac4190a39c65726e6ec693391076938fb9ee74bccb91",
+    "yam_abc_reproduce/dataset_workbench/__init__.py": "d704d2d91e2477715ff3d07f0407be9391bab7dc244524d91062372e403696e0",
+    "yam_abc_reproduce/dataset_workbench/static/app.js": "e99e5de3a784ee61531ecef2dd6d0786890a4b850e798f8f38a7e29e8eb79631",
+    "yam_abc_reproduce/dataset_workbench/static/style.css": "41f555632271ff0c5c4ed5893061fcd366912465312f9a757d573e9413c312c2",
+    "yam_abc_reproduce/dataset_workbench/static/index.html": "233692833adba6bf1784148e4d5a3ce4262be6e3e0880130248a5a9c1d98e8a6",
+    "scripts/dataset_workbench.py": "9a7e7a547ecb5355df7a0ed91e70972c202beb6cbb445aa6d2c9d394a91b2889",
+    "scripts/dataset_workbench.py.lock": "1a85c4aaa3173801d7c0287d3a84c7716371884499b198547322f904b79c9660",
+    "scripts/benchmark_dataset_workbench.py": "771c909925946930c52452ed37f52820b7005e53f87a995183e85acbd9e293cf",
+    "tests/test_dataset_workbench.py": "c00b68a03fd4315b329f128ce04a36de90ab0b9fe9a5e6877983b8dbf36eb41a",
+    "tests/test_dataset_portable.py": "cac718680353530dc25c06feab283321a05240f4caa153716b55342ec89fc689",
+    "docs/dataset_workbench.md": "69630fbcf979ae20722e2de30a60f1a8f095aaaa16a618a4994a0b8d9674574e"
+  },
+  "supersedes": [
+    "dataset-workbench-20260911"
+  ]
+}

@@ -70,7 +70,7 @@ class MemoryGateTest(unittest.TestCase):
             gate.pack(self.root, "case", ["docs/current.md", "docs/large.md"], [])
         self.assertEqual(self.state(), before)
 
-    def test_cumulative_and_duplicate_admission(self):
+    def test_default_retrieval_has_no_cumulative_stop_and_deduplicates(self):
         gate.pack(self.root, "case", ["docs/current.md"], [])
         before = self.state()
         with self.assertRaises(gate.GateError):
@@ -80,12 +80,14 @@ class MemoryGateTest(unittest.TestCase):
             gate.initialize(self.root, "case", ["AGENTS.md"])
         for index in range(8):
             self.write(f"docs/{index}.md", "x" * 6000)
-            try:
-                gate.pack(self.root, "case", [f"docs/{index}.md"], [])
-            except gate.GateError:
-                break
-        self.assertLessEqual(self.state()["used"], gate.CONTEXT_BYTES)
-        self.assertGreater(self.state()["used"], 24_000)
+            gate.pack(self.root, "case", [f"docs/{index}.md"], [])
+        self.assertIsNone(self.state()["cap"])
+        self.assertGreater(self.state()["used"], 48_000)
+        report = gate.usage(self.state())
+        self.assertEqual(report["tracked_bytes"], self.state()["used"])
+        self.assertIsNone(report["context_tokens"])
+        self.assertIsNone(report["remaining_transfer_bytes"])
+        self.assertFalse(report["exact_token_enforcement"])
 
     def test_sections_keep_children_and_ignore_code_headings(self):
         self.write("docs/sections.md", "## Gate\n```text\n## Fake\n```\n### Child\nkeep\n## End\nomit\n")
@@ -103,16 +105,106 @@ class MemoryGateTest(unittest.TestCase):
         output = gate.pack(self.root, "case", ["docs/current.md"], [])
         self.assertEqual(self.state()["used"], before + len(output))
 
-    def test_path_escape_and_budget_increase_rejected(self):
+    def test_resize_preserves_accounting_and_rejects_invalid_limits(self):
+        gate.pack(self.root, "case", ["docs/current.md"], [])
+        before = self.state()
+        gate.resize(self.root, "case", 196608, "user-authorized task expansion")
+        after = self.state()
+        for key in before:
+            if key != "cap":
+                self.assertEqual(after[key], before[key])
+        self.assertEqual(after["cap"], 196608)
+        self.assertEqual(after["adjustments"][0]["old_cap"], before["cap"])
+        for cap, reason in ((0, "zero"), (-1, "negative"), (True, "boolean"), (1, "below used"), (65536, " ")):
+            with self.assertRaises(gate.GateError):
+                gate.resize(self.root, "case", cap, reason)
+            self.assertEqual(self.state(), after)
+
+    def test_path_escape_rejected(self):
         with self.assertRaises(gate.GateError):
             gate.select(self.root, "../outside.md", {})
         (self.root / "linked.md").symlink_to("/etc/passwd")
         with self.assertRaises(gate.GateError):
             gate.select(self.root, "linked.md", {})
+
+    def test_required_section_can_exceed_default_packet_without_truncation(self):
+        original = "## Gate\n" + "Evidence and conditions. " * 800 + "\nRequired final condition.\n"
+        self.write("docs/large.md", original)
+        before = self.state()
         with self.assertRaises(gate.GateError):
-            gate.pack(self.root, "case", ["docs/current.md"], [], limit=gate.PACKET_BYTES + 1)
+            gate.pack(self.root, "case", ["docs/large.md#Gate"], [])
+        self.assertEqual(self.state(), before)
+        output = gate.pack(self.root, "case", ["docs/large.md#Gate"], [], limit=25_000)
+        self.assertGreater(len(output), gate.PACKET_BYTES)
+        self.assertLessEqual(len(output), 25_000)
+        self.assertEqual(json.loads(output)["items"][0]["text"], original)
+        self.assertEqual((self.root / "docs/large.md").read_text(), original)
+
+    def test_legacy_quota_is_preserved_until_explicit_removal(self):
+        legacy = self.state() | {"cap": 32768}
+        gate.save(gate.ledger_path(self.root, "case"), legacy)
+        for index in range(5):
+            self.write(f"docs/{index}.md", "x" * 6000)
+            gate.pack(self.root, "case", [f"docs/{index}.md"], [])
+        self.write("docs/next.md", "x" * 6000)
+        before = self.state()
+        with self.assertRaises(gate.GateError):
+            gate.pack(self.root, "case", ["docs/next.md"], [])
+        self.assertEqual(self.state(), before)
+        gate.resize(self.root, "case", None, "Explicit project policy removed the transfer quota")
+        after = self.state()
+        self.assertEqual(after["used"], before["used"])
+        self.assertEqual(after["seen"], before["seen"])
+        self.assertIsNone(after["cap"])
+        self.assertEqual(after["adjustments"][0]["old_cap"], 32768)
+        self.assertIsNone(after["adjustments"][0]["new_cap"])
+        gate.pack(self.root, "case", ["docs/next.md"], [])
+        self.assertGreater(self.state()["used"], 32768)
+
+    def test_reload_restores_selected_excerpt_and_counts_it_once(self):
+        spec = "docs/current.md#Gate"
+        gate.pack(self.root, "case", [spec], [])
+        before = self.state()["used"]
+        output = gate.pack(self.root, "case", [spec, spec], [], reload=True)
+        packet = json.loads(output)
+        self.assertEqual(len(packet["items"]), 1)
+        self.assertEqual(packet["unchanged"], 1)
+        self.assertEqual(self.state()["used"], before + len(output))
+        self.assertNotIn("Cold details", packet["items"][0]["text"])
+
+    def test_reload_cannot_bypass_evidence_or_scope(self):
+        record = self.record()
+        spec = "docs/cache/records/reload.json"
+        self.write(spec, json.dumps(record))
+        gate.pack(self.root, "case", [spec], [], record["scope"])
+        before = self.state()
+        with self.assertRaises(gate.GateError):
+            gate.pack(self.root, "case", [spec], [], {}, reload=True)
+        self.write("norm.json", '{"scale":2}')
+        with self.assertRaises(gate.GateError):
+            gate.pack(self.root, "case", [spec], [], record["scope"], reload=True)
+        self.assertEqual(self.state(), before)
+
+    def test_preloads_are_optional_deduplicated_and_not_context_measurement(self):
+        report = gate.initialize(self.root, "empty", [])
+        self.assertEqual(report["tracked_bytes"], 0)
+        self.assertIsNone(report["context_tokens"])
+        size = len((self.root / "AGENTS.md").read_bytes())
+        report = gate.initialize(self.root, "preloaded", ["AGENTS.md", "AGENTS.md"], cap=size)
+        self.assertEqual(report["tracked_bytes"], size)
+        self.assertEqual(report["remaining_transfer_bytes"], 0)
+
+    def test_explicit_quota_accepts_large_configuration_and_remains_atomic(self):
+        report = gate.initialize(self.root, "large", [], cap=1_000_000)
+        self.assertEqual(report["transfer_limit_bytes"], 1_000_000)
+        gate.initialize(self.root, "small", [], cap=50)
+        before = gate.ledger_path(self.root, "small").read_bytes()
+        with self.assertRaises(gate.GateError):
+            gate.pack(self.root, "small", ["docs/current.md"], [], limit=25_000)
+        self.assertEqual(gate.ledger_path(self.root, "small").read_bytes(), before)
 
     def test_concurrent_packers_cannot_overspend(self):
+        gate.resize(self.root, "case", 32768, "Explicit quota for concurrent retrieval")
         for index in range(8):
             self.write(f"docs/concurrent{index}.md", "x" * 6000)
 
@@ -126,7 +218,42 @@ class MemoryGateTest(unittest.TestCase):
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             sizes = list(pool.map(execute, range(8)))
         self.assertEqual(self.state()["used"], before + sum(sizes))
-        self.assertLessEqual(self.state()["used"], gate.CONTEXT_BYTES)
+        self.assertLessEqual(self.state()["used"], 32768)
+
+    def test_cli_init_resize_reload_and_audit(self):
+        def run(*args):
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), *args, "--root", str(self.root), "--session", "cli"],
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            return json.loads(result.stdout)
+
+        self.assertIsNone(run("init")["transfer_limit_bytes"])
+        run("pack", "--required", "docs/current.md")
+        run("pack", "--required", "docs/current.md", "--reload", "--max-bytes", "20000")
+        before = run("audit")
+        run("resize", "--context-bytes", "65536", "--reason", "Explicit quota")
+        after = run("resize", "--no-total-limit", "--reason", "Quota removed by project policy")
+        self.assertEqual(after["tracked_bytes"], before["tracked_bytes"])
+        self.assertIsNone(after["transfer_limit_bytes"])
+        self.assertIsNone(after["context_tokens"])
+
+    def test_request_cli_requires_explicit_byte_limit_and_does_not_claim_token_enforcement(self):
+        request = self.write("request.json", json.dumps({"messages": [{"content": "x" * 100000}]}))
+        command = [sys.executable, str(SCRIPT), "request", "--input", str(request)]
+        missing_limit = subprocess.run(command, capture_output=True, check=False)
+        self.assertEqual(missing_limit.returncode, 2)
+        for limit, code in ((100, 2), (110000, 0)):
+            result = subprocess.run([*command, "--max-bytes", str(limit)], capture_output=True, check=False)
+            self.assertEqual(result.returncode, code)
+            if code == 0:
+                report = json.loads(result.stdout)
+                self.assertEqual(report["request_bytes"], request.stat().st_size)
+                self.assertFalse(report["exact_token_enforcement"])
+            else:
+                self.assertEqual(result.stdout, b"")
 
     def test_scope_and_fingerprints_gate_reuse(self):
         record = self.record()

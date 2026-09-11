@@ -1,0 +1,27 @@
+{
+  "scope": "local browser with simulated data",
+  "viewport": [
+    1137,
+    1286
+  ],
+  "page": [
+    1137,
+    1286
+  ],
+  "format": "LeRobot \u00b7 v3.0",
+  "images_loaded": [
+    true,
+    true,
+    true
+  ],
+  "image_widths": [
+    32,
+    32,
+    32
+  ],
+  "import": "complete",
+  "package": "complete",
+  "restore": "complete",
+  "restored_root": "/tmp/yam-ui-restored-20260911",
+  "source_files_untouched": true
+}

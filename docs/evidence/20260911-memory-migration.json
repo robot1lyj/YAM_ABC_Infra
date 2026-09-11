@@ -1,0 +1,58 @@
+{
+  "recorded_at": "2026-09-11T08:03:49.620674+00:00",
+  "scope": "Local memory policy, helper and ledger migration; no hardware validation",
+  "skill_source": "/home/wuyan-lyj/.codex/skills/mlops-memory/SKILL.md",
+  "skill_sha256": "7cae19913c007ab04afc1d89e58fb7a2560941f15a749db7def2d746c3880812",
+  "helper_matches_installed_skill": "AST identical, import ordering normalized by project ruff",
+  "ledger": {
+    "session": "setup-20260907",
+    "old_cap": 32768,
+    "new_cap": null,
+    "tracked_bytes_preserved": 31830,
+    "seen_entries_preserved": 7,
+    "adjustments": [
+      {
+        "old_cap": 32768,
+        "new_cap": null,
+        "reason": "2026-09-11用户要求按新版mlops-memory技能取消旧累计读取额度；保留计数与去重历史",
+        "at": "2026-09-11T08:03:05.426327+00:00"
+      }
+    ]
+  },
+  "historical_snapshots": "Original four skill reference files preserved byte-for-byte and verified against original ledger digests; prior entry points replaced with historical notices. Existing evidence and records unchanged.",
+  "tests": {
+    "command": "/home/wuyan-lyj/.local/bin/uv run --no-sync pytest -q tests/test_memory_gate.py tests/test_project_memory.py",
+    "exit_code": 0,
+    "result": "29 passed, 9 subtests passed in 0.43s"
+  },
+  "files": {
+    "AGENTS.md": "548c4341c243e0f00983dd16fa5238a6b75b00f3123eff33a914cd54631d4b8b",
+    "docs/memory.md": "8d3e1ca41a9849cd214d49335250f8bf5adedcc2916ca309734700cf49d86252",
+    "docs/decisions.md": "9459189acf34a2d95000c50c8c18dcbbb5fcc1f207870145d302a40be3da76fa",
+    "docs/cache/context_index.md": "d740863efae6c27b37989a95ebabcfef27d2bd7c1a860364fee1cf1da5b5c076",
+    "docs/cache/kernel.md": "a1499c93c7eafb2b6ba2fb13268aa2aa4f0b501c15d55ec8b776248903fb7a30",
+    "docs/cache/checkpoint.md": "c8bc1933b51c263d9d840b3f10c8cdfa0fa46248e9c505aead6e4ce5cf11bb7d",
+    "scripts/memory_gate.py": "8390cd99e3c7e8ce7aacd117d01f98f72c802fd2f1d881dc0415d7dd31d6592b",
+    "tests/test_memory_gate.py": "6a5b473efe68c3f0755b9bdc1a1b22daeccc1879c0167b0463ea1c19d3cee993"
+  },
+  "project_memory_check": {
+    "errors": [],
+    "review_only": [
+      "仅历史审阅：approved-modes-20260908-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：capture-layout-20260909-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：english-task-20260909-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：environment-20260907-collection.json: dependency changed; revalidation required",
+      "需现场复查或仅供审阅：environment-20260908-local-observation.json",
+      "仅历史审阅：fullscreen-type-20260909-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：hdf5-segments-20260911-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：hil-runtime-20260908-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：offline-conversion-20260911.json: dependency changed; revalidation required",
+      "仅历史审阅：operator-workbench-20260908-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：system-style-20260909-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：task-workbench-20260908-offline.json: dependency changed; revalidation required",
+      "仅历史审阅：uv-cli-20260908-offline.json: dependency changed; revalidation required"
+    ],
+    "validated_records": 1,
+    "documents": 22
+  }
+}

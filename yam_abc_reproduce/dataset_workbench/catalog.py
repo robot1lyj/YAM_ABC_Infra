@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sqlite3
@@ -13,10 +12,11 @@ from pathlib import Path
 
 
 class Catalog:
-    def __init__(self, root):
+    def __init__(self, root, *, recover_jobs=True):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         with self.db() as db:
+            db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS episodes (
                     id TEXT PRIMARY KEY, path TEXT UNIQUE, metadata TEXT,
@@ -28,7 +28,56 @@ class Catalog:
                 CREATE TABLE IF NOT EXISTS audit (time REAL, action TEXT, details TEXT);
                 CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, state TEXT, payload TEXT);
             """)
-            db.execute("UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running')")
+            self.migrate(db)
+            db.execute("CREATE INDEX IF NOT EXISTS episode_page ON episodes(deleted,id)")
+            if recover_jobs:
+                db.execute(
+                    "UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running')"
+                )
+
+    def migrate(self, db):
+        if "format" in {r["name"] for r in db.execute("PRAGMA table_info(episodes)")}:
+            return
+        db.executescript("""
+            BEGIN IMMEDIATE;
+            ALTER TABLE episodes RENAME TO episodes_old;
+            CREATE TABLE episodes (id TEXT PRIMARY KEY,path TEXT NOT NULL,metadata TEXT,
+                label TEXT DEFAULT 'unreviewed',note TEXT DEFAULT '',deleted INTEGER DEFAULT 0,
+                report TEXT,fingerprint TEXT,format TEXT,episode_key TEXT DEFAULT '',title TEXT,task TEXT,
+                steps INTEGER,fps REAL,check_ok INTEGER,UNIQUE(path,episode_key));
+            CREATE INDEX episode_view ON episodes(deleted,label,id);
+            CREATE INDEX episode_format ON episodes(deleted,format,id);
+            CREATE INDEX episode_check ON episodes(deleted,check_ok,id);
+            CREATE TABLE counters(label TEXT,deleted INTEGER,count INTEGER,PRIMARY KEY(label,deleted));
+            CREATE TRIGGER episode_insert AFTER INSERT ON episodes BEGIN
+                INSERT INTO counters VALUES(NEW.label,NEW.deleted,1) ON CONFLICT(label,deleted) DO UPDATE SET count=count+1;
+            END;
+            CREATE TRIGGER episode_delete AFTER DELETE ON episodes BEGIN
+                UPDATE counters SET count=count-1 WHERE label=OLD.label AND deleted=OLD.deleted;
+            END;
+            CREATE TRIGGER episode_update AFTER UPDATE OF label,deleted ON episodes BEGIN
+                UPDATE counters SET count=count-1 WHERE label=OLD.label AND deleted=OLD.deleted;
+                INSERT INTO counters VALUES(NEW.label,NEW.deleted,1) ON CONFLICT(label,deleted) DO UPDATE SET count=count+1;
+            END;
+        """)
+        for old in db.execute("SELECT * FROM episodes_old"):
+            m = json.loads(old["metadata"])
+            self.upsert(
+                db,
+                old["path"],
+                m,
+                old["fingerprint"],
+                identity=old["id"],
+                label=old["label"],
+                note=old["note"],
+                deleted=old["deleted"],
+            )
+            report = json.loads(old["report"]) if old["report"] else None
+            db.execute(
+                "UPDATE episodes SET report=?,check_ok=? WHERE id=?",
+                (old["report"], None if report is None else int(report["ok"]), old["id"]),
+            )
+        db.execute("DROP TABLE episodes_old")
 
     @contextmanager
     def db(self):
@@ -51,100 +100,192 @@ class Catalog:
         value = dict(row)
         value["metadata"] = json.loads(value["metadata"])
         value["report"] = json.loads(value["report"]) if value["report"] else None
+        value["metadata"]["_format"] = value["format"]
+        value["metadata"]["_episode_key"] = value["episode_key"]
         return value
 
     def scan(self, root, progress=lambda *args: None):
+        from .formats import lerobot_metadata, raw_metadata
+
         root = Path(root).expanduser().resolve()
         if not root.is_dir():
             raise ValueError("请填写运行工作台的机器上的数据目录")
-        imported, skipped, errors = 0, [], []
+        imported, errors, skipped = 0, [], []
+        batch = []
+
+        def flush():
+            nonlocal batch
+            with self.db() as db:
+                for path, metadata, token in batch:
+                    self.upsert(db, path, metadata, token)
+            batch = []
+
         for folder, dirs, files in os.walk(root, followlinks=False):
             dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "exports")
-            path = Path(folder)
-            if (path / "meta/info.json").exists():
-                skipped.append(
-                    {"path": str(path), "reason": "已转换 LeRobot 数据：首版仅索引 YAM 原始集"}
-                )
+            path = Path(folder).resolve()
+            if self.root.is_relative_to(path) and path == self.root:
                 dirs.clear()
                 continue
-            if "manifest.json" not in files:
-                continue
-            dirs.clear()
             try:
-                manifest = json.loads((path / "manifest.json").read_text())
-                if manifest.get("schema") not in ("yam_hil_v1", "yam_hil_v2"):
-                    raise ValueError("不支持的 manifest schema")
-                if manifest.get("outcome") == "recording":
-                    raise ValueError("录制尚未结束，请保存后重新扫描")
-                from ..hil.storage import episode_segments
-
-                # Validate containment before exposing indexed media.
-                list(episode_segments(path))
-                identity = hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:24]
-                fingerprint = hashlib.sha256((path / "manifest.json").read_bytes()).hexdigest()
-                with self.db() as db:
-                    db.execute(
-                        """INSERT INTO episodes(id,path,metadata,fingerprint) VALUES (?,?,?,?)
-                        ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,
-                        report=CASE WHEN fingerprint=excluded.fingerprint THEN report ELSE NULL END,
-                        fingerprint=excluded.fingerprint""",
-                        (identity, str(path.resolve()), json.dumps(manifest), fingerprint),
-                    )
-                imported += 1
-                progress(imported, str(path))
+                if (path / "meta/info.json").exists():
+                    dirs.clear()
+                    records = lerobot_metadata(path)
+                elif "manifest.json" in files:
+                    dirs.clear()
+                    records = [raw_metadata(path)]
+                else:
+                    continue
+                for metadata, token in records:
+                    batch.append((path, metadata, token))
+                    imported += 1
+                    if len(batch) >= 256:
+                        flush()
+                        progress(imported, str(path))
             except Exception as exc:
-                errors.append({"path": str(path), "error": str(exc)})
+                if len(errors) < 1000:
+                    errors.append({"path": str(path), "error": str(exc)})
+        flush()
+        progress(imported, f"已索引 {imported} 集")
         with self.db() as db:
             self.audit(db, "import", {"root": str(root), "imported": imported})
         return {"imported": imported, "errors": errors, "skipped": skipped}
 
-    def listing(self, *, view="all", query="", collection="", offset=0, limit=100):
-        clauses, params = [], []
-        if view == "trash":
-            clauses.append("deleted=1")
-        else:
-            clauses.append("deleted=0")
-            if view in ("failure", "success", "unreviewed"):
-                clauses.append("label=?")
-                params.append(view)
-            elif view == "issues":
-                clauses.append("report IS NOT NULL AND json_extract(report,'$.ok')=0")
+    def upsert(
+        self, db, path, metadata, token, *, identity=None, label="unreviewed", note="", deleted=0
+    ):
+        key = str(metadata.get("_episode_key", ""))
+        fmt = metadata.get("_format", metadata.get("schema", "yam_hil_v2"))
+        title = (
+            metadata.get("_title")
+            or (metadata.get("collection_task") or {}).get("name")
+            or metadata.get("station", {}).get("task_name", "")
+        )
+        task = metadata.get("_task", metadata.get("station", {}).get("task_name", ""))
+        # Existing path identity is preserved; a portable package explicitly carries IDs.
+        old = db.execute(
+            "SELECT id,fingerprint FROM episodes WHERE path=? AND episode_key=?", (str(path), key)
+        ).fetchone()
+        if old and old["fingerprint"] == token:
+            return old["id"]
+        identity = old["id"] if old else identity or uuid.uuid4().hex
+        db.execute(
+            """INSERT INTO episodes(id,path,metadata,fingerprint,format,episode_key,title,task,steps,fps,label,note,deleted)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+            path=excluded.path,metadata=excluded.metadata,format=excluded.format,episode_key=excluded.episode_key,
+            title=excluded.title,task=excluded.task,steps=excluded.steps,fps=excluded.fps,
+            report=CASE WHEN fingerprint=excluded.fingerprint THEN report ELSE NULL END,
+            check_ok=CASE WHEN fingerprint=excluded.fingerprint THEN check_ok ELSE NULL END,
+            fingerprint=excluded.fingerprint""",
+            (
+                identity,
+                str(path),
+                json.dumps(metadata, ensure_ascii=False),
+                token,
+                fmt,
+                key,
+                title,
+                task,
+                metadata.get("steps", 0),
+                metadata.get("fps", 30),
+                label,
+                note,
+                deleted,
+            ),
+        )
+        return identity
+
+    def listing(
+        self, *, view="all", query="", collection="", offset=0, limit=100, cursor="", format=""
+    ):
+        clauses, params = ["deleted=?"], [int(view == "trash")]
+        if view in ("failure", "success", "unreviewed"):
+            clauses.append("label=?")
+            params.append(view)
+        elif view == "issues":
+            clauses.append("check_ok=0")
         if query:
-            clauses.append("(path LIKE ? OR metadata LIKE ? OR note LIKE ?)")
+            clauses.append("(title LIKE ? OR task LIKE ? OR note LIKE ?)")
             params.extend(["%" + query + "%"] * 3)
+        if format:
+            clauses.append("format=?")
+            params.append(format)
         if collection:
             clauses.append("id IN (SELECT episode FROM members WHERE collection=?)")
             params.append(collection)
+        if cursor:
+            clauses.append("id>?")
+            params.append(cursor)
         where = " AND ".join(clauses)
+        size = min(200, max(1, limit))
         with self.db() as db:
-            total = db.execute("SELECT count(*) FROM episodes WHERE " + where, params).fetchone()[0]
-            ids = db.execute(
-                "SELECT id FROM episodes WHERE " + where + " ORDER BY path LIMIT ? OFFSET ?",
-                params + [min(200, max(1, limit)), max(0, offset)],
+            rows = db.execute(
+                "SELECT id,path,title,task,steps,fps,format,episode_key,label,note,deleted,check_ok FROM episodes WHERE "
+                + where
+                + " ORDER BY id LIMIT ? OFFSET ?",
+                params + [size + 1, max(0, offset) if not cursor else 0],
             ).fetchall()
-            counts = dict(
-                db.execute(
-                    "SELECT label,count(*) FROM episodes WHERE deleted=0 GROUP BY label"
-                ).fetchall()
-            )
+            counts = dict(db.execute("SELECT label,count FROM counters WHERE deleted=0"))
+            total = sum(counts.values())
+            if view in ("failure", "success", "unreviewed"):
+                total = counts.get(view, 0)
+            elif view == "trash":
+                total = db.execute(
+                    "SELECT coalesce(sum(count),0) FROM counters WHERE deleted=1"
+                ).fetchone()[0]
+            if collection:
+                total = db.execute(
+                    "SELECT count(*) FROM members WHERE collection=?", (collection,)
+                ).fetchone()[0]
             collections = [
                 dict(r)
-                for r in db.execute(
-                    "SELECT c.*,count(m.episode) AS count FROM collections c LEFT JOIN members m ON c.id=m.collection GROUP BY c.id ORDER BY c.name"
-                )
+                for r in db.execute("SELECT id,name FROM collections ORDER BY name LIMIT 1000")
             ]
+        values = []
+        for row in rows[:size]:
+            e = dict(row)
+            e["metadata"] = {
+                "_format": e["format"],
+                "_title": e["title"],
+                "_task": e["task"],
+                "_episode_key": e["episode_key"],
+                "steps": e["steps"],
+                "fps": e["fps"],
+                "station": {"task_name": e["task"]},
+                "collection_task": {"name": e["title"]},
+            }
+            e["report"] = None if e["check_ok"] is None else {"ok": bool(e["check_ok"])}
+            values.append(e)
+        # Totals for filtered queries are intentionally not scanned on each page.
         return {
-            "episodes": [self.get(r["id"]) for r in ids],
+            "episodes": values,
             "total": total,
             "counts": counts,
             "collections": collections,
+            "has_more": len(rows) > size,
+            "next_cursor": rows[size - 1]["id"] if len(rows) > size else None,
         }
+
+    def selected_formats(self, ids):
+        formats = set()
+        ids = list(dict.fromkeys(ids))
+        with self.db() as db:
+            for start in range(0, len(ids), 500):
+                batch = ids[start : start + 500]
+                rows = db.execute(
+                    "SELECT id,format FROM episodes WHERE id IN ("
+                    + ",".join("?" for _ in batch)
+                    + ")",
+                    batch,
+                ).fetchall()
+                if len(rows) != len(batch):
+                    raise ValueError("部分选择的集不存在，请刷新")
+                formats.update(r["format"] for r in rows)
+        return formats
 
     def curate(self, ids, action, value=""):
         if not ids or len(ids) > 10000:
             raise ValueError("请选择 1–10000 集")
-        for identity in ids:
-            self.get(identity)
+        self.selected_formats(ids)
         with self.db() as db:
             if action == "label" and value in ("success", "failure", "unreviewed"):
                 db.executemany("UPDATE episodes SET label=? WHERE id=?", [(value, i) for i in ids])
@@ -174,8 +315,7 @@ class Catalog:
         name = name.strip()
         if not name or len(name) > 100:
             raise ValueError("集合名称需为 1–100 个字符")
-        for identity in ids:
-            self.get(identity)
+        self.selected_formats(ids)
         identity = uuid.uuid4().hex
         with self.db() as db:
             db.execute("INSERT INTO collections VALUES (?,?)", (identity, name))

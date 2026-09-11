@@ -34,13 +34,19 @@ def check_episode(path, deep=False):
             with av.open(str(file)) as video:
                 stream = video.streams.video[0]
                 shapes.add((stream.width, stream.height))
+                declared = next(
+                    (
+                        item.get("video_frames", {}).get(role)
+                        for item in manifest.get("segments", [])
+                        if item.get("path") == segment.name
+                    ),
+                    None,
+                )
                 count = (
-                    sum(1 for _ in video.decode(video=0))
-                    if deep or not stream.frames
-                    else stream.frames
+                    sum(1 for _ in video.decode(video=0)) if deep else (stream.frames or declared)
                 )
                 if not count:
-                    raise ValueError("无法取得帧数，请运行深度检查")
+                    raise ValueError("快速检查无法确认帧数，请运行深度检查")
                 counts[(str(segment), role)] = count
             if deep:
                 content.update(digest(file).encode())
@@ -112,42 +118,11 @@ def check_episode(path, deep=False):
 
 
 def preview(path, role, frame):
-    if role not in ROLES or frame < 0:
-        raise ValueError("无效相机或帧号")
-    path = Path(path)
-    manifest = json.loads((path / "manifest.json").read_text())
-    segment_path, local_frame = path, frame
-    if manifest.get("schema") == "yam_hil_v2":
-        segment_path = None
-        for entry, segment in zip(manifest["segments"], episode_segments(path), strict=True):
-            if local_frame < entry["steps"]:
-                segment_path = segment
-                break
-            local_frame -= entry["steps"]
-        if segment_path is None:
-            raise ValueError("帧号超出范围")
-    row = next(itertools.islice(read_rows(segment_path), local_frame, local_frame + 1), None)
-    if row is not None and segment_path != path:
-        row["_segment"] = str(segment_path)
-    if row is None:
-        raise ValueError("帧号超出范围")
-    index = row.get("video_indices", {}).get(role, -1)
-    if index < 0:
-        raise ValueError("这一帧没有有效图像")
-    segment = Path(row.get("_segment", path))
-    files = {(str(s), r): p for s, r, p in media_files(path)}
-    with av.open(str(files[(str(segment), role)])) as video:
-        # Decode at most one raw segment; requests are user-triggered, never 30 Hz.
-        image = next(itertools.islice(video.decode(video=0), int(index), int(index) + 1), None)
-        if image is None:
-            raise ValueError("视频缺帧")
-        from io import BytesIO
+    from .formats import raw_metadata
+    from .reading import preview_entry
 
-        result = BytesIO()
-        pil = image.to_image()
-        pil.thumbnail((960, 540))
-        pil.save(result, format="JPEG", quality=80)
-        return result.getvalue()
+    metadata, _ = raw_metadata(Path(path))
+    return preview_entry({"path": str(path), "metadata": metadata}, role, frame)
 
 
 def export_selected(episodes, output, *, expert_only=False, progress=lambda *args: None):
@@ -159,6 +134,8 @@ def export_selected(episodes, output, *, expert_only=False, progress=lambda *arg
         raise ValueError("请选择需要转换的集")
     manifests, dimensions = [], set()
     for entry in episodes:
+        if entry.get("format") == "lerobot_v3" or entry["metadata"].get("_format") == "lerobot_v3":
+            raise ValueError("转换仅接受原始采集包；LeRobot可浏览、检查、整理和打包迁移")
         path = Path(entry["path"]).resolve()
         if output.is_relative_to(path) or path.is_relative_to(output):
             raise ValueError("输出目录必须与来源独立")

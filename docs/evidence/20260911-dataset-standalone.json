@@ -1,0 +1,6 @@
+{
+  "entrypoint": "uv run --locked --script scripts/dataset_workbench.py",
+  "worker": "complete",
+  "lerobot_episodes": 2,
+  "dependencies": "independent script lock; no Torch/camera SDK"
+}

@@ -13,3 +13,4 @@ header{margin:0;min-height:52px}.eyebrow{font-size:9px}h1{font-size:25px;margin:
 }
 @media(min-width:1001px) and (max-height:760px){main{padding-top:10px;gap:9px}header{min-height:42px}.eyebrow{display:none}.metrics{padding:7px 0}.panel-heading{padding:9px 14px}.detail-body{max-height:215px;gap:3px 8px}.field-label{display:none}.review-actions{margin:2px 0}#issues{max-height:30px}.sidebar-foot{padding-top:10px}}
 @media(min-width:1001px){.jobs .panel-heading>div{display:flex;align-items:center;gap:10px}.jobs #all-jobs{font-size:10px;padding:4px 8px}}
+.header-actions{display:flex;gap:8px;align-items:center}.format-chip{font-size:10px;color:#40536a;white-space:normal}th:nth-child(2){width:32%}th:nth-child(3){width:20%}#format-filter{max-width:150px;font-size:11px;padding:7px}.library .panel-heading{flex-wrap:wrap}.library .panel-heading input{flex:1;min-width:130px}.badge{white-space:nowrap;letter-spacing:0}.toolbar{flex-wrap:wrap}

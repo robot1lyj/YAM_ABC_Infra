@@ -153,8 +153,13 @@ class DatasetWriter:
         self.stats = {}
         self.episodes, self.total = [], 0
         self.copied_episodes = self.reencoded_episodes = 0
+        self.tasks = [task]
 
-    def add_episode(self, source, rows, outcome, copy_sources=None):
+    def add_episode(self, source, rows, outcome, copy_sources=None, task=None):
+        task = self.task if task is None else task
+        if task not in self.tasks:
+            self.tasks.append(task)
+        task_index = self.tasks.index(task)
         index = len(self.episodes)
         chunk, file = divmod(index, 1000)
         data = self.root / DATA_PATH.format(chunk_index=chunk, file_index=file)
@@ -199,7 +204,7 @@ class DatasetWriter:
                     "frame_index": n,
                     "episode_index": index,
                     "index": self.total + n,
-                    "task_index": 0,
+                    "task_index": task_index,
                     "complementary_info.is_intervention": bool(row["is_intervention"]),
                     "complementary_info.action_source": {"human": 0, "policy": 1, "hold": 2}[
                         row["source"]
@@ -309,7 +314,7 @@ class DatasetWriter:
             self.reencoded_episodes += 1
         episode = {
             "episode_index": index,
-            "tasks": [self.task],
+            "tasks": [task],
             "length": n,
             "dataset_from_index": self.total,
             "dataset_to_index": self.total + n,
@@ -348,7 +353,9 @@ class DatasetWriter:
         pq.write_table(
             pa.Table.from_pylist(self.episodes), meta / "episodes/chunk-000/file-000.parquet"
         )
-        tasks = pd.DataFrame({"task_index": [0]}, index=pd.Index([self.task], name="task"))
+        tasks = pd.DataFrame(
+            {"task_index": list(range(len(self.tasks)))}, index=pd.Index(self.tasks, name="task")
+        )
         tasks.to_parquet(meta / "tasks.parquet")
         _json(
             meta / "info.json",
@@ -357,7 +364,7 @@ class DatasetWriter:
                 "robot_type": "yam_bimanual",
                 "total_episodes": len(self.episodes),
                 "total_frames": self.total,
-                "total_tasks": 1,
+                "total_tasks": len(self.tasks),
                 "chunks_size": 1000,
                 "data_files_size_in_mb": 100,
                 "video_files_size_in_mb": 200,

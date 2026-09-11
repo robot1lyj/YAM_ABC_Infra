@@ -1,0 +1,26 @@
+{
+  "reader": "0.5.1",
+  "dataset": "/tmp/yam-workbench-multitask-validation/lerobot",
+  "frames": 6,
+  "tasks": [
+    "sort blocks",
+    "put blocks away"
+  ],
+  "images": {
+    "top": [
+      3,
+      32,
+      32
+    ],
+    "left": [
+      3,
+      32,
+      32
+    ],
+    "right": [
+      3,
+      32,
+      32
+    ]
+  }
+}

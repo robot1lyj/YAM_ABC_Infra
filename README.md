@@ -6,6 +6,14 @@
 
 当前第一版已完成软件接入和离线验证，**尚未完成真实四臂、D405 和 Thor/RK3588 联调**。先从模拟模式开始。
 
+## 数据集工作台
+
+```bash
+uv run --no-sync python -m yam_abc_reproduce.dataset_workbench.web --port 8767
+```
+
+打开 [数据集清洗与转换](http://127.0.0.1:8767/)：导入 YAM 原始目录、三路逐帧审阅、完整性检查、失败归类、集合合并、逐集移除/恢复，以及后台转换 LeRobot v3.0。与采集独立运行。详见 [中文操作手册](docs/dataset_workbench.md)。
+
 ## 四种模式
 
 | 模式 | Follower 动作来源 | Leader 行为 |

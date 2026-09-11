@@ -90,3 +90,7 @@ uv run --no-sync yam-export data/recovered/新目录 --output data/rebuilt/审�
 ```
 
 目前恢复是CLI操作，未提供界面自动修复或断电一致性保证。程序被终止测试与真实断电测试必须区分。
+
+## 图形化整理入口
+
+独立数据集工作台支持原始目录索引、逐集审阅、失败分类、回收站、集合合并与多 task LeRobot v3.0 导出，详见 [操作手册](dataset_workbench.md)。采集工作台不启动转换。

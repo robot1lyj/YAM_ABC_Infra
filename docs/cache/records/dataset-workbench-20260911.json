@@ -1,0 +1,38 @@
+{
+  "id": "dataset-workbench-20260911",
+  "kind": "observation",
+  "claim": "独立YAM数据整理工作台及多task导出完成，228通过/2跳过/9子测试，官方0.5.1双task回读成功；仅本机mock范围。",
+  "owner": "docs/dataset_workbench.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-x86_64",
+    "runtime": "dataset-workbench-v1"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-11T05:24:39.340802+00:00",
+  "recorded_at": "2026-09-11T05:24:39.340802+00:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260911-dataset-workbench-tests.txt",
+      "sha256": "896c8307e02d5bb6a92ce29e395da299726d8cf7fafd9aae65eaf9fb7f31c99b"
+    },
+    {
+      "path": "docs/evidence/20260911-dataset-workbench-reader.json",
+      "sha256": "5327afb09db0e694b918c972a9cf73df52f8cf062461bb6e1ea5dc3739b6c0c6"
+    }
+  ],
+  "recheck": "on_change",
+  "valid_until": null,
+  "depends_on": {
+    "yam_abc_reproduce/dataset_workbench/operations.py": "f37e1b497e9253e51ea3ef4660b78c25665024d030fa8bb213ae59a4611c3b70",
+    "yam_abc_reproduce/dataset_workbench/catalog.py": "f12c8c0820a773942234f2fb0f5a13c7395ad7d47553cb630c13c6bea177580b",
+    "yam_abc_reproduce/dataset_workbench/web.py": "8b10c1a187b8880c9c542277c104b1a0f2c71204c3e8a87e7e1266ac1c438fc3",
+    "yam_abc_reproduce/dataset_workbench/__init__.py": "d704d2d91e2477715ff3d07f0407be9391bab7dc244524d91062372e403696e0",
+    "yam_abc_reproduce/dataset_workbench/static/app.js": "f34dd428ac38fe5de30e63674bd39ae256007073f0e2f574d8edb71ccd9690fd",
+    "yam_abc_reproduce/dataset_workbench/static/style.css": "1390c573dd56feef01869aadc33c732783146929171721016dfe11d9eb432997",
+    "yam_abc_reproduce/dataset_workbench/static/index.html": "38b5684a24059e34b7867b7ef0d9217e38936a0c7ffaa703531d248b522d44a8",
+    "yam_abc_reproduce/hil/lerobot_export.py": "93848ea40faa120a4386ebadcf39b880b953e4b0ed240172b445498439469801",
+    "tests/test_dataset_workbench.py": "12aad4c3e0d1d74fa86a1cb8c21b6fe58a8edadef627af6e10f696208e6d9ba4"
+  },
+  "supersedes": []
+}

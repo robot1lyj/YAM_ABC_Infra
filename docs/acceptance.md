@@ -82,3 +82,11 @@
 
 
 2026-09-09系统应用风格：工作台与任务专项23通过；浏览器检查1920/1120布局、88px维护按钮与任务表单。[测试](evidence/20260909-system-style-tests.txt)、[功能边界核查](evidence/20260909-system-style.json)。页面实际连接后端，但真机配置占位和Thor联调仍未验收，软件暂停不能替代物理急停。
+
+## 2026-09-11 数据集工作台
+
+独立 8767 工作台完成 YAM 原始目录索引、分类/备注、集合合并、回收站、三路按需预览、快速/深度检查及多 task LeRobot v3.0 后台导出。
+全量 `uv run --no-sync pytest -q`：228 passed、2 skipped、9 subtests，见 [测试日志](evidence/20260911-dataset-workbench-tests.txt)。
+双任务 6 帧导出由官方 0.5.1 读取器回读，task 与三路图像正确，见 [回读证据](evidence/20260911-dataset-workbench-reader.json)。
+浏览器导入 3 集已有 mock 乐高数据，逐集三路预览、检查与失败分类可操作；单屏布局在 2226×1286 视口下 page/viewport 等高，无整页溢出。
+只验证本机模拟数据；未验证 RK3588 一小时运行、海量目录吞吐、真实传感器、跨服务器部署。LeRobot 成品导入、任意裁剪/自动视觉清洗、分布式任务未实现。

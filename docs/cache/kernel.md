@@ -26,3 +26,5 @@
 - 工作台任务：name/instruction供采集员中文查看，英文task用于模型prompt、原始task和LeRobot任务文本；完整任务身份存collection_task。旧任务需编辑补填，历史数据不改写。来源：docs/collect.md。
 
 - 新采集格式MP4＋HDF5＋JSON分段清单，默认60秒物理段不拆逻辑集；工作台逐集保存，转换只由独立一键脚本显式运行，目标LeRobot v3.0。旧JSONL可读；恢复须审核。来源：docs/convert.md。
+
+- 独立数据集工作台默认8767：YAM原始集索引、审核分类、集合/回收站、三路预览、检查、多task LeRobot v3.0后台导出；桌面一屏布局。来源：[数据集工作台](../dataset_workbench.md)。不支持LeRobot成品导入，不自动触发采集转换。

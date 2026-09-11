@@ -8,7 +8,7 @@
     "platform": "linux-x86_64",
     "runtime": "offline-conversion-v1"
   },
-  "status": "verified",
+  "status": "stale",
   "observed_at": "2026-09-11T04:41:38.216655+00:00",
   "recorded_at": "2026-09-11T04:41:38.216655+00:00",
   "evidence": [

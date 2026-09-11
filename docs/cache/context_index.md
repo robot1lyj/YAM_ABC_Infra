@@ -13,6 +13,7 @@
 | D405配对、多臂同步、性能 | [同步设计](../synchronization_design.md) | 先看实测，再决定升级 |
 | Thor/condapi模型接口 | [模型契约](../condapi_interface.md) | 再读condapi对应章节，不全量搬库 |
 | 示范采集、双按钮、片段管理 | [采集手册](../collect.md) | 操作与事件仲裁变更时 |
+| 数据集导入、清洗、分类、合并界面 | [数据集工作台](../dataset_workbench.md) | 索引、检查和离线任务变更时 |
 | 专家导出、格式转换 | [转换手册](../convert.md) | 核对具体episode和转换产物 |
 | 软件/真机验收与下一步 | [验收边界](../acceptance.md) | 具体证据和现场状态 |
 | 外部参考与源码来源 | [参考记录](../reference_sources.md) | 依赖源变更时重新核对 |

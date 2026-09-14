@@ -117,7 +117,16 @@
       "camera_serials_detected": ["260422271123", "260522271298", "260522275397"],
       "motor_interfaces_after_check": "all DOWN"
     },
-    "verification": "265 tests passed, 2 skipped, 17 subtests passed; Ruff, JavaScript syntax, JSON and project-memory checks passed."
+    "lan_service": {
+      "commit": "912105feda5c2ec8b511363d5a660e92272f50f7",
+      "url": "http://192.168.110.140:8766",
+      "listen": "192.168.110.140:8766 only",
+      "service": "yam-workstation.service user unit, enabled and active",
+      "browser_observation": "A separate LAN client rendered the real-device workstation with devices disconnected.",
+      "security": "Same-origin POST token and explicit Host allowlist retained; wildcard bind requires an explicit allowed host.",
+      "postcondition": "No camera or arm connection was requested; all four CAN interfaces remained DOWN."
+    },
+    "verification": "267 tests passed, 2 skipped, 17 subtests passed; Ruff, JavaScript syntax, JSON and project-memory checks passed."
   },
   "acceptance": {
     "passed": [

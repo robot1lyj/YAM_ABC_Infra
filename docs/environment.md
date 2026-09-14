@@ -95,29 +95,47 @@ uv sync 会移除本次未选择的 extras/groups。
 
 现场 IPC 已通过网线管理链路接入：IPC `lan1=192.168.250.2/24`，本机 `enp1s0=192.168.250.1/24`，两端均不设置网关或 DNS；IPC 的 Wi-Fi `wlan0=192.168.110.140/23` 继续承担默认路由。网线 SSH 已强制绑定 `enp1s0` 验证成功，IPC 访问互联网仍经 `wlan0`。
 
-实测目标环境为 Ubuntu 22.04.3 LTS、6.1.118 `PREEMPT_RT`、`arm64`、Python 3.10.12；未找到 `uv`，也未在有限搜索范围内发现 YAM checkout。项目当前规范要求 Python 3.12/uv，因此 IPC 尚未达到直接运行当前 YAM 工作站入口的部署条件。`bcan0`～`bcan3` 已枚举但均为停止状态，Thor 地址、模型服务可达性、板载或 USB-CAN 角色和相机映射仍待现场配置与验收。
+首次 bootstrap 快照为 Ubuntu 22.04.3 LTS、6.1.118 `PREEMPT_RT`、`arm64`、Python 3.10.12，未找到 `uv`，也未在有限搜索范围内发现 YAM checkout；随后已完成 P1 的 Python 3.12/uv/YAM 部署并迁移至 NVMe，当前状态见下方 P1 与 NVMe 小节。`bcan0`～`bcan3` 已枚举但均为停止状态，Thor 地址、模型服务可达性、四臂 USB-CAN 角色和相机流仍待现场验收；三台 D405 的身份映射已完成。
 
 详细证据：[20260914-rk3588-ipc-bootstrap.txt](evidence/20260914-rk3588-ipc-bootstrap.txt)。
 
 Wi-Fi 配置 `琶洲模方` 已现场复核为 `connection.autoconnect=yes`，`wlan0` 当前在线；IPC 的 Gitea 专用密钥已成功认证到 `git@192.168.110.142:2222`，Gitea 身份为 `wuyan_lyj`。详细证据见 [20260914-rk3588-ipc-gitea-wifi.txt](evidence/20260914-rk3588-ipc-gitea-wifi.txt)。
 
-正式部署按 [架构基线 P1](dagger_architecture.md#后续-agent-工作包与依赖)执行：认证成功不等于目标 YAM 仓库/子模块已 clone；优先复用项目锁文件核验 ARM64 的相机、编码、HDF5 和 i2rt 二进制依赖，不能只做模块可发现性检查。NVMe 挂载和绝对 `save_root` 尚未确定，先盘点已有内容，不直接格式化；保留 eMMC 系统盘与已登记管理网络。配置/代码可以自启动为未连接界面，不随开机自动构造机器人、开始推理或恢复上一轮运动。
+正式部署按 [架构基线 P1](dagger_architecture.md#后续-agent-工作包与依赖)执行：认证成功不等于目标 YAM 仓库/子模块已 clone；优先复用项目锁文件核验 ARM64 的相机、编码、HDF5 和 i2rt 二进制依赖，不能只做模块可发现性检查。NVMe 已完成初始化并挂载到 `/data`，YAM 绝对路径为 `/data/YAM`；后续原始数据的绝对 `save_root` 仍需在运行配置中明确，不能回落 eMMC。保留 eMMC 系统盘与已登记管理网络。配置/代码可以自启动为未连接界面，不随开机自动构造机器人、开始推理或恢复上一轮运动。
 
 ## RK3588 IPC P1 部署快照（2026-09-14）
 
-已通过 Gitea 将当前 `main` checkout 到 `/home/linux/YAM`，提交为
+已通过 Gitea 将当前 `main` checkout 到 `/data/YAM`，提交为
 `de8053219525da4f0003fa6d0ca7f4be039bbb62`，并补齐固定 `third_party/i2rt` 子模块
 `5d47b358bafb30c65e397f2ece506550a0db4594`。仓库配置了专用 Gitea SSH key，后续可直接
 执行 `git fetch/pull origin`。uv `0.12.13`、Python `3.12.14` 和
 `uv sync --locked --extra camera --extra gui --extra deploy` 已在 ARM64 IPC 完成，锁文件
-dry-run 无待变更，核心依赖导入和 mock CLI 检查通过。完整命令、版本和边界见
-[P1 部署证据](evidence/20260914-rk3588-ipc-p1-deploy.txt)。
+dry-run 无待变更，核心依赖导入和 mock CLI 检查通过。随后已在 NVMe 新路径重新同步 editable 环境；完整命令、版本和边界见
+[P1 部署证据](evidence/20260914-rk3588-ipc-p1-deploy.txt) 和 [NVMe 迁移证据](evidence/20260914-rk3588-ipc-nvme.txt)。
 
 主环境的 `pyrealsense2` wheel 要求 GLIBC 2.38，与 IPC Ubuntu 22.04 的 GLIBC 2.35 不兼容；
 没有升级系统 glibc。已另备仅用于设备身份枚举的 Python 3.10.12 辅助环境
-`/home/linux/.venv-yam-camera310`，其 RealSense 导入成功，但本次枚举没有发现外接 D405、
-USB-CAN 或视频节点。相机流接入 YAM 主运行环境前仍需采用与 3.12/GLIBC 2.35 兼容的绑定
-方案并在硬件接入后复验。
+`/home/linux/.venv-yam-camera310`，其 RealSense 导入成功并已识别三台外接 D405。相机身份
+已写入 `configs/cameras.yaml`；相机流接入 YAM 主运行环境前仍需采用与 3.12/GLIBC 2.35
+兼容的绑定方案并在硬件接入后复验。
+
+## RK3588 IPC NVMe 与 YAM 路径（2026-09-14）
+
+现场确认 NVMe 型号为 `TIMAR S97M8-PY 1TB SSD`、序列号 `6HJ7011000234`；整盘原先没有可识别分区或文件系统，经用户明确授权后初始化为 GPT 单分区。当前 `nvme0n1p1` 使用 ext4，标签 `yam-data`，UUID 为 `501fb615-1346-455d-9d50-61c1d113faf5`，挂载点为 `/data`，约 938 GiB 可用。
+
+`/etc/fstab` 已登记 `UUID=501fb615-1346-455d-9d50-61c1d113faf5 /data ext4 defaults,noatime,nofail,x-systemd.device-timeout=10s 0 2`；root 权限的 `findmnt --verify` 检查无错误或警告。YAM 从 eMMC 上的 `/home/linux/YAM` 迁移至 NVMe 的 `/data/YAM`，rsync 差异校验返回 0，旧目录已删除，不创建软链接。
+
+现有 uv `0.12.13`（aarch64）未重装；在 `/data/YAM` 执行 `uv sync --locked --extra camera --extra gui --extra deploy` 成功，editable 包路径已更新为 `/data/YAM`。`uv lock --check`、`yam-workstation --help`、YAM 与 `i2rt` 导入均通过。为避免 uv 缓存位于 eMMC、项目环境位于 NVMe 时的硬链接告警，用户登录环境已设置 `UV_LINK_MODE=copy`。
+
+## RK3588 IPC USB-CAN 驱动（2026-09-14）
+
+初始现场仅能通过 USB 枚举看到四个 CANable 2.5（`1d50:606f`），内核 `6.1.118` 的 `CONFIG_CAN_GS_USB` 未启用，因而没有 `can0`～`can3`。已使用匹配的 `/usr/src/linux-headers-6.1.118` 和官方 Linux stable `v6.1.118` 的 `drivers/net/can/usb/gs_usb.c` 编译模块；模块 vermagic 为 `6.1.118 SMP preempt_rt mod_unload aarch64`。
+
+模块已安装到 `/lib/modules/6.1.118/extra/gs_usb.ko`，执行 `depmod` 并加载成功；`/etc/modules-load.d/gs_usb.conf` 已登记 `gs_usb` 以便开机加载。当前四个 USB-backed CAN 接口已按固定 USB-Hub 下联口固化为 `can_lead_l`、`can_lead_r`、`can_left`、`can_right`，均保持 `DOWN/STOPPED`。适配器序列号仅作为审计信息，机械臂本体 S/N 不参与映射；该规则不替代四个机械臂接线/端接验收。详细证据见 [gs_usb 修复证据](evidence/20260914-rk3588-ipc-gs-usb.txt) 和 [CAN端口命名证据](evidence/20260914-rk3588-ipc-can-port-names.txt)。
+
+## RK3588 IPC D405 相机身份与稳定入口（2026-09-14）
+
+三台 D405 已按用户确认的物理标签与 RealSense API 拔插复核完成角色登记：`right=260422271123`、`top=260522275397`、`left=260522271298`。`/data/YAM/configs/cameras.yaml` 已使用这些 RealSense S/N。IPC 已应用 `/etc/udev/rules.d/91-yam-cameras.rules`，当前稳定入口为 `/dev/yam-camera-right`→`video12`、`/dev/yam-camera-top`→`video6`、`/dev/yam-camera-left`→`video0`；入口只作为 UVC 便利路径，应用层仍按 RealSense S/N 选择设备。right/top 的 UVC 父设备暴露内部序列号，left 的 USB2 UVC 层未暴露该字段，因此 left 规则使用已核验的固定 USB 路径。此步骤未启动相机采集或任何电机/CAN动作。
 
 ## 构建失败的检查与重试条件
 

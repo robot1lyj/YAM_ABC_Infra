@@ -1,0 +1,56 @@
+# RK3588 IPC D405 identity and stable udev entry evidence
+
+- Observed: 2026-09-14 14:39:56 +08:00, via passwordless SSH as `linux@192.168.110.140`.
+- Source report: `/data/YAM/yam_hardware_identity-20260914-143334.json`.
+- Source report SHA256: `31219e2a3a002694498f1c1711b029ba49b73aa58a2c76ea3fc01a6dfdbc84b7`.
+- The report is read-only, reports `probe_error: null`, and records the same serial before and after each of the three camera unplug/replug checks.
+- User manually checked the physical camera labels and confirmed the following role mapping:
+
+| Role | RealSense serial number | Model | USB type |
+|---|---|---|---|
+| right | `260422271123` | RealSense D405 | 3.2 |
+| top | `260522275397` | RealSense D405 | 3.2 |
+| left | `260522271298` | RealSense D405 | 2.1 |
+
+## RealSense API physical ports
+
+The IPC helper `/home/linux/.venv-yam-camera310/bin/python` reported:
+
+```text
+260422271123 | RealSense D405 | 3.2 | /sys/devices/platform/usbdrd3_0/fc000000.usb/xhci-hcd.8.auto/usb10/10-1/10-1:1.0/video4linux/video12
+260522271298 | RealSense D405 | 2.1 | /sys/devices/platform/fc880000.usb/usb3/3-1/3-1:1.0/video4linux/video0
+260522275397 | RealSense D405 | 3.2 | /sys/devices/platform/usbdrd3_1/fc400000.usb/xhci-hcd.7.auto/usb8/8-1/8-1:1.0/video4linux/video6
+```
+
+## Applied udev rule
+
+File: `/etc/udev/rules.d/91-yam-cameras.rules`
+SHA256: `787a8ab57e5bd81df0e405bd66befbb892d3272500356d16d567742b546e6ba1`
+
+```text
+SUBSYSTEM=="video4linux", KERNEL=="video[0-9]*", ATTR{index}=="0", ATTRS{serial}=="255323070072", SYMLINK+="yam-camera-right"
+SUBSYSTEM=="video4linux", KERNEL=="video[0-9]*", ATTR{index}=="0", ATTRS{serial}=="255323077320", SYMLINK+="yam-camera-top"
+SUBSYSTEM=="video4linux", KERNEL=="video[0-9]*", ATTR{index}=="0", ENV{ID_PATH}=="platform-fc880000.usb-usb-0:1:1.0", SYMLINK+="yam-camera-left"
+```
+
+The right and top UVC parent devices expose internal UVC serials `255323070072` and
+`255323077320`. The USB2 left UVC device does not expose a serial in udev, so its
+already-confirmed fixed USB path is used for the convenience symlink. The application
+configuration remains keyed by the RealSense serial number, not by `/dev/videoN`.
+
+After `udevadm control --reload-rules` and targeted add triggers, the IPC resolved:
+
+```text
+/dev/yam-camera-right -> /dev/video12
+/dev/yam-camera-top -> /dev/video6
+/dev/yam-camera-left -> /dev/video0
+```
+
+`udevadm test --action=add` matched the corresponding rule for all three nodes and
+reported the same `DEVLINKS` entries. The current configuration
+`/data/YAM/configs/cameras.yaml` has SHA256
+`5530a7791335ff9b5d7e51116ae334581bc35f908df4546cd018afbcba4257a2` and contains the
+confirmed RealSense serials for `top`, `left`, and `right`.
+
+No camera stream was started. No CAN interface was brought up, no CAN frame was sent,
+and no motor, robot, or Thor process was started during this change.

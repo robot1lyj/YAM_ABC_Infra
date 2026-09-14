@@ -1,0 +1,36 @@
+# RK3588 IPC USB-CAN fixed-port naming evidence
+
+- Observed: 2026-09-14 14:46:50 +08:00, via passwordless SSH as `linux@192.168.110.140`.
+- Identity report: `/data/YAM/yam_hardware_identity-20260914-143107.json`.
+- Identity report SHA256: `0be63f006e1908dbc78f209eb0648bd9ba370c16be8ad78bac0fa65b4972f7b3`.
+- User clarified and confirmed the operating identity boundary: the stable mapping is the
+  USB-Hub downstream port where each arm's USB-CAN cable is plugged in. Robot-body serial
+  numbers are not required and are not used by the runtime mapping.
+
+## Applied udev rule
+
+File: `/etc/udev/rules.d/70-yam-can.rules`
+SHA256: `1a40ce1bf1322400594b5c44910c32f818cfeadf6eb267642a31978a013068a0`
+
+```text
+SUBSYSTEM=="net", ACTION=="add", KERNELS=="5-2.4", NAME:="can_right"
+SUBSYSTEM=="net", ACTION=="add", KERNELS=="5-2.3", NAME:="can_left"
+SUBSYSTEM=="net", ACTION=="add", KERNELS=="5-2.2", NAME:="can_lead_r"
+SUBSYSTEM=="net", ACTION=="add", KERNELS=="5-2.1", NAME:="can_lead_l"
+```
+
+The rule is matched by the fixed USB-Hub downstream port, not by the robot-body serial
+number and not by Linux's `can0` enumeration order. The adapter serials below are retained
+only as audit cross-checks:
+
+| USB-Hub port | Stable name | Adapter audit serial | State |
+|---|---|---|---|
+| `5-2.1` | `can_lead_l` | `207F34A658455017` | `DOWN/STOPPED` |
+| `5-2.2` | `can_lead_r` | `205534A258455017` | `DOWN/STOPPED` |
+| `5-2.3` | `can_left` | `207D34A258455017` | `DOWN/STOPPED` |
+| `5-2.4` | `can_right` | `207C378445465006` | `DOWN/STOPPED` |
+
+After `udevadm control --reload-rules` and targeted add triggers, `ip -br link show type
+can` showed all four stable names. The board CAN interfaces `bcan0` through `bcan3`
+remain separate and `DOWN`. No CAN interface was brought up, no CAN frame was sent, and
+no motor, robot, or Thor process was started.

@@ -1,0 +1,37 @@
+# RK3588 IPC gs_usb driver repair evidence
+
+- Observed at: 2026-09-14T14:26:33+08:00
+- Scope: YAM / linux-aarch64-rk3588 / IPC `linux@192.168.110.140`
+- Method: read-only kernel/USB inspection, matched-kernel module build, authorized module installation/loading, and read-only adapter enumeration
+
+## Diagnosis
+
+- Running kernel: `6.1.118`, `PREEMPT_RT`, `aarch64`.
+- Four USB devices were present as CANable 2.5 Candlelight adapters with USB ID `1d50:606f`, but no USB-backed CAN network interfaces existed.
+- Kernel config contained `CONFIG_CAN=y` and `CONFIG_CAN_DEV=y`, but explicitly had `# CONFIG_CAN_GS_USB is not set`.
+- `/lib/modules/6.1.118` had no `gs_usb` module before the repair. Matching build headers were present at `/usr/src/linux-headers-6.1.118`.
+
+## Build and install
+
+- Source: Linux stable `v6.1.118`, `drivers/net/can/usb/gs_usb.c`; source SHA-256: `4617d004d03b8cedc03d1bc4d1c7a03b3e890404e40fd69922b0cf9aba076eb5`.
+- The module was built out-of-tree with `make -C /lib/modules/6.1.118/build M=/home/linux/gs_usb-build modules`; build and MODPOST exited 0.
+- Built module SHA-256: `513caff387c8cb1c73df189fc0ee1d9ab8574dff74ff153b91110fa0967a8f66`.
+- `modinfo` vermagic: `6.1.118 SMP preempt_rt mod_unload aarch64`; architecture: ARM aarch64; license: GPL v2.
+- Installed path: `/lib/modules/6.1.118/extra/gs_usb.ko`; `depmod -a 6.1.118` completed; `modprobe gs_usb` loaded successfully.
+- Persistent loading: `/etc/modules-load.d/gs_usb.conf` contains `gs_usb`.
+
+## Live validation
+
+- `gs_usb` is loaded and four USB-backed interfaces exist:
+  - `can0` ← USB path `5-2.1`, serial `207F34A658455017`
+  - `can1` ← USB path `5-2.2`, serial `205534A258455017`
+  - `can2` ← USB path `5-2.3`, serial `207D34A258455017`
+  - `can3` ← USB path `5-2.4`, serial `207C378445465006`
+- All four are `can_state=STOPPED` and link state `DOWN`; no bitrate was configured, no CAN interface was brought up, and no CAN frame was sent.
+- From `/data/YAM`, the script baseline snapshot returned `CAN_TOTAL=4` and `USB_BACKED=4`; YAM, uv, and the driver are therefore ready for the interactive P0 role-mapping wizard.
+
+## Boundaries and next step
+
+- This repair did not construct a robot, start YAM, open a CAN socket, connect cameras, call Thor, or move a motor.
+- The four adapter serials and USB paths are adapter identities only. They do not establish right/left follower/leader roles.
+- Run `uv run --no-sync python scripts/identify_arm_usb.py --only arms` only with the arms powered off or in hardware emergency stop, and follow the wizard's one-adapter-at-a-time unplug/replug prompts.

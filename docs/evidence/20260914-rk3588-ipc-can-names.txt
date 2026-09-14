@@ -1,0 +1,33 @@
+# RK3588 IPC USB-CAN stable naming evidence
+
+- Observed: 2026-09-14 14:46:50 +08:00, via passwordless SSH as `linux@192.168.110.140`.
+- Identity report: `/data/YAM/yam_hardware_identity-20260914-143107.json`.
+- Identity report SHA256: `0be63f006e1908dbc78f209eb0648bd9ba370c16be8ad78bac0fa65b4972f7b3`.
+- Four CANable 2.5 adapters are USB-backed through the loaded `gs_usb` driver.
+
+## Applied udev rule
+
+File: `/etc/udev/rules.d/70-yam-can.rules`
+SHA256: `3f4f47a2397f9ed3164f3ad126931634ea358f6acb9f67b25a5eae1c51f06fff`
+
+```text
+SUBSYSTEM=="net", ACTION=="add", ATTRS{serial}=="207C378445465006", NAME:="can_right"
+SUBSYSTEM=="net", ACTION=="add", ATTRS{serial}=="207D34A258455017", NAME:="can_left"
+SUBSYSTEM=="net", ACTION=="add", ATTRS{serial}=="205534A258455017", NAME:="can_lead_r"
+SUBSYSTEM=="net", ACTION=="add", ATTRS{serial}=="207F34A658455017", NAME:="can_lead_l"
+```
+
+The rule was moved before the system default network naming rule and the non-matching
+`DRIVERS=="gs_usb"` condition was removed. After `udevadm control --reload-rules` and
+targeted add triggers, the live interfaces resolved as:
+
+| Stable name | Adapter serial | USB path | State |
+|---|---|---|---|
+| `can_right` | `207C378445465006` | `5-2.4` | `DOWN/STOPPED` |
+| `can_left` | `207D34A258455017` | `5-2.3` | `DOWN/STOPPED` |
+| `can_lead_r` | `205534A258455017` | `5-2.2` | `DOWN/STOPPED` |
+| `can_lead_l` | `207F34A658455017` | `5-2.1` | `DOWN/STOPPED` |
+
+The four board CAN interfaces `bcan0` through `bcan3` remain separate and `DOWN`;
+they are not included in this USB adapter naming rule. The naming change did not bring
+up a CAN bus or send a frame, and no motor, robot, or Thor process was started.

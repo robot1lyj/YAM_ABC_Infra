@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Identify YAM USB-CAN adapters and RealSense cameras by unplugging them one at a time.
+"""Identify YAM USB-CAN ports and RealSense cameras by unplugging them one at a time.
 
 The wizard is intentionally read-only.  It does not open a CAN socket, bring a
 CAN interface up, write udev rules, or construct an i2rt robot.  With all four
@@ -8,8 +8,9 @@ adapter that disappears/reappears with the following physical roles:
 
     right follower -> left follower -> right leader -> left leader
 
-The resulting JSON contains the observed interface name, USB sysfs path, udev
-serial/VID/PID/path properties, and a ready-to-review project channel mapping.
+The resulting JSON contains the observed interface name, USB sysfs path, USB-CAN
+adapter properties, and a ready-to-review project channel mapping. It does not
+require or infer a robot-body serial number; the stable role is the fixed USB port.
 The interface name is only an observation; stable names must be assigned later
 after reviewing the report and the physical labels.
 
@@ -688,7 +689,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
         "notes": [
             "CAN interface_at_replug is an observation, not a stable name",
-            "review physical labels and serials before creating 90-can.rules",
+            "review the fixed USB ports and audit serials before creating 70-yam-can.rules",
             "camera serials should be copied into configs/cameras.yaml after review",
             "this report does not prove that an arm is powered or CAN communication works",
         ],

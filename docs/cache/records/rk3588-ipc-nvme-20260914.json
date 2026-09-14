@@ -1,0 +1,48 @@
+{
+  "id": "rk3588-ipc-nvme-20260914",
+  "kind": "observation",
+  "claim": "RK3588 IPC NVMe was explicitly initialized as GPT plus one ext4 partition, mounted persistently at /data by UUID, and the YAM checkout was migrated from eMMC /home/linux/YAM to /data/YAM without a compatibility symlink. Existing uv 0.12.13 was reused and the locked project environment was resynchronized successfully at the new path.",
+  "owner": "docs/environment.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-aarch64-rk3588",
+    "phase": "P1 NVMe initialization and YAM migration",
+    "environment": "linux@192.168.110.140"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-14T14:14:35+08:00",
+  "recorded_at": "2026-09-14T14:15:00+08:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260914-rk3588-ipc-nvme.txt",
+      "sha256": "77a075f30980c5c38dd653dd95f4a55c50f6b73ecdef4f9101c91f6e79267f57"
+    }
+  ],
+  "recheck": "always",
+  "valid_until": null,
+  "supersedes": [
+    "rk3588-ipc-p1-deploy-20260914"
+  ],
+  "retrieval": {
+    "terms": [
+      "RK3588",
+      "NVMe",
+      "mount",
+      "/data",
+      "/data/YAM",
+      "YAM migration",
+      "uv",
+      "i2rt"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/workstation.md"
+      },
+      {
+        "relation": "check",
+        "source": "docs/dagger_architecture.md"
+      }
+    ]
+  }
+}

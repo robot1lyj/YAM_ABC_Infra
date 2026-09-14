@@ -1,0 +1,40 @@
+# RK3588 IPC NVMe initialization and YAM migration evidence
+
+- Observed at: 2026-09-14T14:14:35+08:00
+- Scope: YAM / linux-aarch64-rk3588 / IPC `linux@192.168.110.140`
+- Method: authenticated SSH inspection and explicitly authorized storage initialization, migration, and offline validation
+
+## Pre-initialization storage
+
+- NVMe model: `TIMAR S97M8-PY 1TB SSD`; serial: `6HJ7011000234`; capacity observed as 953.9 GiB.
+- Before initialization, `/dev/nvme0n1` had no partition device, no `blkid` filesystem result, and no mountpoint. Privileged read-only `wipefs -n`/`fdisk -l` found no recognizable signature or partition table; `fdisk` reported only the disk geometry.
+- The eMMC root remained `/dev/mmcblk0p6`, ext4, mounted at `/`, with about 115 GiB total and 6.2–6.3 GiB used during the migration.
+
+## NVMe initialization and persistent mount
+
+- After the user explicitly authorized initialization, `/dev/nvme0n1` was given a GPT partition table and one full-size partition `/dev/nvme0n1p1`.
+- `/dev/nvme0n1p1` was formatted ext4 with label `yam-data`; filesystem UUID: `501fb615-1346-455d-9d50-61c1d113faf5`.
+- Current mount: `/dev/nvme0n1p1 /data ext4 rw,noatime`; about 938 GiB available.
+- `/etc/fstab` entry: `UUID=501fb615-1346-455d-9d50-61c1d113faf5 /data ext4 defaults,noatime,nofail,x-systemd.device-timeout=10s 0 2`.
+- Root-privileged `findmnt --verify --verbose` reported no errors or warnings for the entry. The `nofail` option prevents a missing NVMe from blocking boot.
+
+## YAM migration
+
+- Source before migration: `/home/linux/YAM`, measured at about 1.4 GiB; no YAM or uv process was running.
+- `rsync -aHAX --numeric-ids` copied the checkout to `/data/YAM`; a subsequent `rsync -aHAXn --delete --numeric-ids` comparison returned exit 0.
+- The old `/home/linux/YAM` directory was then removed by the user-authorized migration. `/data/YAM` is the only checkout; no compatibility symlink was created. Final size observed: about 1.5 GiB.
+
+## uv and project validation
+
+- Existing uv was reused: `uv 0.12.13 (aarch64-unknown-linux-gnu)`; uv was not reinstalled.
+- `uv sync --locked --extra camera --extra gui --extra deploy` succeeded from `/data/YAM`. It rebuilt the editable packages and changed their paths from `/home/linux/YAM` to `/data/YAM`.
+- `uv lock --check` succeeded (`Resolved 400 packages`). The generated `yam-workstation` shebang is `#!/data/YAM/.venv/bin/python3`.
+- `uv run --no-sync yam-workstation --help` succeeded; YAM and `i2rt` imports succeeded from `/data/YAM` and `/data/YAM/third_party/i2rt`.
+- The submodule is present at fixed commit `5d47b358bafb30c65e397f2ece506550a0db4594` (`v1.2.4`) with shallow Git metadata; full historical pack data was not retained on the IPC.
+- `/home/linux/.profile` contains the existing uv user path and `UV_LINK_MODE=copy`, which avoids hardlink warnings when the uv cache and project environment are on different filesystems.
+
+## Boundary and remaining work
+
+- This operation did not start YAM hardware connections, CAN, cameras, Thor inference, or motor control.
+- The NVMe mount is verified, but the runtime configuration still needs an explicit absolute data `save_root`; do not infer that all future recordings automatically use `/data` until that configuration is set and tested.
+- The old eMMC checkout and the NVMe filesystem contents are not a backup; reformatting the NVMe or deleting `/data/YAM` would be destructive.

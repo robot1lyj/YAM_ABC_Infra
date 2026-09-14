@@ -1,0 +1,56 @@
+{
+  "id": "rk3588-ipc-can-port-names-20260914",
+  "kind": "procedure",
+  "claim": "The RK3588 IPC binds the four YAM USB-CAN logical roles to fixed USB-Hub downstream ports, not to robot-body serial numbers or Linux can0 enumeration: 5-2.1=can_lead_l, 5-2.2=can_lead_r, 5-2.3=can_left, and 5-2.4=can_right. All four interfaces are present under those stable names and remain DOWN/STOPPED.",
+  "owner": "docs/workstation.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-aarch64-rk3588",
+    "phase": "P0 USB-CAN fixed-port naming",
+    "environment": "linux@192.168.110.140"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-14T14:46:50+08:00",
+  "recorded_at": "2026-09-14T14:50:00+08:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260914-rk3588-ipc-can-port-names.txt",
+      "sha256": "a93c4707c95361b8e4d3b2b85c10f298763f9a3bc84c12ccf6320d7715cd5592"
+    }
+  ],
+  "recheck": "always",
+  "valid_until": null,
+  "supersedes": [
+    "rk3588-ipc-can-names-20260914"
+  ],
+  "retrieval": {
+    "terms": [
+      "USB-CAN",
+      "CANable",
+      "gs_usb",
+      "USB port",
+      "Hub downstream port",
+      "can_right",
+      "can_left",
+      "can_lead_r",
+      "can_lead_l",
+      "robot serial not required",
+      "udev",
+      "P0"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/workstation.md"
+      },
+      {
+        "relation": "check",
+        "source": "docs/environment.md"
+      },
+      {
+        "relation": "prerequisite",
+        "source": "docs/cache/records/rk3588-ipc-gs-usb-20260914.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "id": "rk3588-ipc-gs-usb-20260914",
+  "kind": "procedure",
+  "claim": "On the RK3588 IPC running kernel 6.1.118 PREEMPT_RT, an out-of-tree gs_usb module built from Linux stable v6.1.118 matched the running kernel, loaded successfully, was configured for boot loading, and exposed the four CANable 2.5 adapters as USB-backed can0 through can3 while keeping all interfaces DOWN/STOPPED.",
+  "owner": "docs/environment.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-aarch64-rk3588",
+    "phase": "P0 USB-CAN driver enablement",
+    "environment": "linux@192.168.110.140"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-14T14:26:33+08:00",
+  "recorded_at": "2026-09-14T14:26:33+08:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260914-rk3588-ipc-gs-usb.txt",
+      "sha256": "88fb1ca305aae5b13a662118fe455ce43fa66e6f4cc300781e268aedb729b5e3"
+    }
+  ],
+  "recheck": "always",
+  "valid_until": null,
+  "supersedes": [],
+  "retrieval": {
+    "terms": [
+      "gs_usb",
+      "CANable",
+      "USB-CAN",
+      "can0",
+      "can1",
+      "can2",
+      "can3",
+      "P0",
+      "identify_arm_usb"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/workstation.md"
+      },
+      {
+        "relation": "check",
+        "source": "docs/environment.md"
+      }
+    ]
+  }
+}

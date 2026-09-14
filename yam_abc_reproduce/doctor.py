@@ -133,7 +133,7 @@ def check_can(expected: dict[str, str], do_listen: bool) -> list[Finding]:
         out.append(Finding(
             "can.udev", WARN,
             f"unnamed adapters present: {', '.join(unnamed)}",
-            "run: python scripts/setup_can_udev.py (writes /etc/udev/rules.d/90-can.rules)"))
+            "run: python scripts/setup_can_udev.py (writes /etc/udev/rules.d/70-yam-can.rules)"))
     for ch, kind in sorted(expected.items()):
         if ch not in present:
             out.append(Finding(
@@ -244,10 +244,10 @@ def check_system(repo_root: Path, expected_ch: dict[str, str]) -> list[Finding]:
         out.append(Finding("sys.sudoers", WARN,
                            f"could not determine (sudo -n said: {err.strip()[:80]})",
                            "verify manually: sudo -n ip link set can_left down"))
-    rules = Path("/etc/udev/rules.d/90-can.rules")
+    rules = Path("/etc/udev/rules.d/70-yam-can.rules")
     named_needed = any(not re.fullmatch(r"can\d+", c) for c in expected_ch)
     if named_needed and not rules.exists():
-        out.append(Finding("sys.udev", WARN, "90-can.rules missing (names rely on plug order)",
+        out.append(Finding("sys.udev", WARN, "70-yam-can.rules missing (names rely on plug order)",
                            "python scripts/setup_can_udev.py"))
     else:
         out.append(Finding("sys.udev", PASS, "udev rules present" if rules.exists()

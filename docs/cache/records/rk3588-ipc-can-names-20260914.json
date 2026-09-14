@@ -1,0 +1,51 @@
+{
+  "id": "rk3588-ipc-can-names-20260914",
+  "kind": "procedure",
+  "claim": "The RK3588 IPC now uses adapter-serial-based udev naming for the four USB-CAN adapters: can_right=207C378445465006, can_left=207D34A258455017, can_lead_r=205534A258455017, and can_lead_l=207F34A658455017. All four interfaces are live under the stable names and remain DOWN/STOPPED.",
+  "owner": "docs/workstation.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-aarch64-rk3588",
+    "phase": "P0 USB-CAN stable naming",
+    "environment": "linux@192.168.110.140"
+  },
+  "status": "superseded",
+  "observed_at": "2026-09-14T14:46:50+08:00",
+  "recorded_at": "2026-09-14T14:47:00+08:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260914-rk3588-ipc-can-names.txt",
+      "sha256": "098aa0ab5a03fb4421779ba65dad14b8fa855451bea3b3d1c57f290a48e65751"
+    }
+  ],
+  "recheck": "always",
+  "valid_until": null,
+  "supersedes": [],
+  "retrieval": {
+    "terms": [
+      "USB-CAN",
+      "CANable",
+      "gs_usb",
+      "can_right",
+      "can_left",
+      "can_lead_r",
+      "can_lead_l",
+      "udev",
+      "P0"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/workstation.md"
+      },
+      {
+        "relation": "check",
+        "source": "docs/environment.md"
+      },
+      {
+        "relation": "prerequisite",
+        "source": "docs/cache/records/rk3588-ipc-gs-usb-20260914.json"
+      }
+    ]
+  }
+}

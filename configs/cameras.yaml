@@ -11,7 +11,7 @@ cameras:
     type: realsense
     role: top
     mode: mono
-    serial: "128422272025"   # RealSense S/N (yam-abc-cameras)
+    serial: "260522275397"   # RealSense S/N; stable role: top
     width: 640
     height: 480
     fps: 30
@@ -21,7 +21,7 @@ cameras:
     type: realsense
     role: left
     mode: mono
-    serial: "218622272630"
+    serial: "260522271298"   # RealSense S/N; stable role: left
     width: 640
     height: 480
     fps: 30
@@ -31,7 +31,7 @@ cameras:
     type: realsense
     role: right
     mode: mono
-    serial: "218622274205"
+    serial: "260422271123"   # RealSense S/N; stable role: right
     width: 640
     height: 480
     fps: 30

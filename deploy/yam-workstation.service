@@ -7,6 +7,9 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/data/YAM
 Environment=PYTHONUNBUFFERED=1
+# The IPC kernel reserves RK3588's Cortex-A76 cores with isolcpus/nohz_full=4-7.
+# Explicit affinity is required because ordinary services otherwise stay on 0-3.
+CPUAffinity=4 5 6 7
 ExecStart=/data/YAM/.venv/bin/yam-workstation --station /data/YAM/configs/station_hil.yaml --mode collect --web-port 8766 --web-host 192.168.110.140
 Restart=on-failure
 RestartSec=3

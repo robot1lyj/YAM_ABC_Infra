@@ -149,6 +149,7 @@
       "parallel_read_only": {"io_read_p50_ms": 15.4, "io_read_p95_ms": 52.2, "control_work_p95_ms": 53.57, "deadline_miss_rate_approx_percent": 18.6},
       "lock_free_snapshot_on_efficiency_cores": {"io_read_p50_ms": 2.7, "io_read_p95_ms": 12.63, "control_work_p95_ms": 14.35, "io_apply_p95_ms": 0.65, "deadline_miss_rate_percent": 1.09},
       "isolated_performance_cores_15s": {"ticks": 449, "deadline_misses": 1, "deadline_miss_rate_percent": 0.223, "io_read_p50_ms": 0.353, "io_read_p95_ms": 0.745, "control_work_p50_ms": 0.881, "control_work_p95_ms": 1.435, "io_apply_p95_ms": 0.183, "sdk_state_age_ms": [2.15, 2.44, 5.4, 0.79]},
+      "persistent_service_restart_retest_15s": {"ticks": 450, "deadline_misses": 0, "deadline_miss_rate_percent": 0.0, "io_read_p50_ms": 0.35, "io_read_p95_ms": 0.804, "control_work_p50_ms": 0.879, "control_work_p95_ms": 1.335, "io_apply_p95_ms": 0.181, "sdk_state_age_ms": [5.06, 2.36, 4.72, 5.45], "service_cpu_affinity": "4-7"},
       "transport": "During the optimized hold test all four CAN links remained ERROR-ACTIVE at 1 Mbit/s with zero RX/TX errors, drops, restarts, bus errors, error-passive transitions, or bus-off.",
       "scope": "This proves ample 30 Hz compute and IO margin in a supervised hold session with three cameras active. It does not replace low-amplitude physical teleoperation, emergency-stop, long-duration recording, or thermal acceptance."
     },

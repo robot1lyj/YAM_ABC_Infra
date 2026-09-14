@@ -106,6 +106,19 @@
     "change": "Write the candidate episode list to session.json before publishing the in-memory completion signal.",
     "verification": "The focused checkpoint test passed 20 consecutive runs; the final full suite passed 263 tests with 2 skipped and 17 subtests."
   },
+  "device_initialization_platform": {
+    "commit": "d40b83807e6e97e60726690e95edc55315f06ff8",
+    "workflow": "Five in-page steps: read-only inventory preflight, three-camera validation, initialization-only four-arm connection, supervised follower/leader gravity checks, and atomic local acceptance report.",
+    "safety": "Initialization reuses the production Runtime in collect/hold, blocks start/record/mode changes, does not require a collection task, does not write motor zeros, and does not command home.",
+    "mock_ui": "At desktop width the visible wizard progressed from 0/5 to 3/5 through preflight, cameras and four-arm mock connection; the safety confirmation was displayed before connection.",
+    "ipc_read_only_preflight": {
+      "ok": true,
+      "can_interfaces_present": ["can_left", "can_right", "can_lead_l", "can_lead_r"],
+      "camera_serials_detected": ["260422271123", "260522271298", "260522275397"],
+      "motor_interfaces_after_check": "all DOWN"
+    },
+    "verification": "265 tests passed, 2 skipped, 17 subtests passed; Ruff, JavaScript syntax, JSON and project-memory checks passed."
+  },
   "acceptance": {
     "passed": [
       "Four independent CAN mappings communicate with arm motor IDs 1-6 at 1 Mbit/s.",

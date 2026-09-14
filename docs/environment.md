@@ -103,6 +103,22 @@ Wi-Fi 配置 `琶洲模方` 已现场复核为 `connection.autoconnect=yes`，`w
 
 正式部署按 [架构基线 P1](dagger_architecture.md#后续-agent-工作包与依赖)执行：认证成功不等于目标 YAM 仓库/子模块已 clone；优先复用项目锁文件核验 ARM64 的相机、编码、HDF5 和 i2rt 二进制依赖，不能只做模块可发现性检查。NVMe 挂载和绝对 `save_root` 尚未确定，先盘点已有内容，不直接格式化；保留 eMMC 系统盘与已登记管理网络。配置/代码可以自启动为未连接界面，不随开机自动构造机器人、开始推理或恢复上一轮运动。
 
+## RK3588 IPC P1 部署快照（2026-09-14）
+
+已通过 Gitea 将当前 `main` checkout 到 `/home/linux/YAM`，提交为
+`de8053219525da4f0003fa6d0ca7f4be039bbb62`，并补齐固定 `third_party/i2rt` 子模块
+`5d47b358bafb30c65e397f2ece506550a0db4594`。仓库配置了专用 Gitea SSH key，后续可直接
+执行 `git fetch/pull origin`。uv `0.12.13`、Python `3.12.14` 和
+`uv sync --locked --extra camera --extra gui --extra deploy` 已在 ARM64 IPC 完成，锁文件
+dry-run 无待变更，核心依赖导入和 mock CLI 检查通过。完整命令、版本和边界见
+[P1 部署证据](evidence/20260914-rk3588-ipc-p1-deploy.txt)。
+
+主环境的 `pyrealsense2` wheel 要求 GLIBC 2.38，与 IPC Ubuntu 22.04 的 GLIBC 2.35 不兼容；
+没有升级系统 glibc。已另备仅用于设备身份枚举的 Python 3.10.12 辅助环境
+`/home/linux/.venv-yam-camera310`，其 RealSense 导入成功，但本次枚举没有发现外接 D405、
+USB-CAN 或视频节点。相机流接入 YAM 主运行环境前仍需采用与 3.12/GLIBC 2.35 兼容的绑定
+方案并在硬件接入后复验。
+
 ## 构建失败的检查与重试条件
 
 2026-09-07系统Python构建失败的 [诊断摘录](evidence/20260907-system-python-build-failure.txt) 记录退出1、缺失patchlevel.h/Development.Module，独立检查Python.h不存在；它不是完整构建日志。

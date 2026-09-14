@@ -1,0 +1,45 @@
+{
+  "id": "rk3588-ipc-p1-deploy-20260914",
+  "kind": "observation",
+  "claim": "RK3588 IPC has the YAM main checkout from Gitea, uv-managed Python 3.12.14, and the locked camera/gui/deploy environment; core imports and mock checks pass, while the locked CPython 3.12 RealSense binding is incompatible with IPC GLIBC 2.35 and no external P0 devices were connected during the snapshot.",
+  "owner": "docs/environment.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-aarch64-rk3588",
+    "phase": "P1 deployment and P0 inventory",
+    "environment": "linux@192.168.110.140"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-14T11:32:56+08:00",
+  "recorded_at": "2026-09-14T11:35:00+08:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260914-rk3588-ipc-p1-deploy.txt",
+      "sha256": "62e544e4a53efe0160f98f14d7a604593e391146d100f8c12bdd20320567e978"
+    }
+  ],
+  "recheck": "always",
+  "valid_until": null,
+  "supersedes": [],
+  "retrieval": {
+    "terms": [
+      "RK3588",
+      "IPC deployment",
+      "uv",
+      "Tsinghua mirror",
+      "Gitea",
+      "pyrealsense2 GLIBC",
+      "P0 inventory"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/workstation.md#第一步设备身份登记-p0"
+      },
+      {
+        "relation": "check",
+        "source": "docs/dagger_architecture.md#后续-agent-工作包与依赖"
+      }
+    ]
+  }
+}

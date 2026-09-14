@@ -1,0 +1,67 @@
+# RK3588 IPC P1 deployment and P0 inventory snapshot
+
+- Observed at: 2026-09-14T11:32:56+08:00
+- Scope: YAM / linux-aarch64-rk3588 / IPC `linux@192.168.110.140`
+- Method: authenticated SSH over the IPC Wi-Fi management address. No CAN interface was
+  brought up, no robot SDK session was constructed, and no motor or vendor service was
+  stopped.
+
+## Code checkout
+
+- Checkout: `/home/linux/YAM`
+- Gitea remote: `ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`
+- `origin/main` and local `HEAD`: `de8053219525da4f0003fa6d0ca7f4be039bbb62`
+- Fixed submodule: `third_party/i2rt` at `5d47b358bafb30c65e397f2ece506550a0db4594`
+- The initial recursive clone left the submodule worktree without its recorded object. The
+  fixed revision was fetched from the submodule's upstream and checked out detached before
+  the final sync.
+- Repository state after deployment: `main...origin/main`, no tracked or untracked changes.
+- Repository-local Git SSH command is configured to use
+  `/home/linux/.ssh/id_ed25519_gitea` with `IdentitiesOnly=yes`; `git ls-remote origin` exits 0.
+
+## uv environment
+
+- uv: `0.12.13 (aarch64-unknown-linux-gnu)` at `/home/linux/.local/bin/uv`
+- Python: `3.12.14`, uv-managed; project environment `/home/linux/YAM/.venv`
+- Final command: `uv sync --locked --extra camera --extra gui --extra deploy` — exit 0.
+- Final dry-run: `uv sync --locked --extra camera --extra gui --extra deploy --dry-run` —
+  `Would make no changes`.
+- Core imports (`i2rt`, `yam_abc_reproduce`, `cv2`, `av`, `h5py`, `pyarrow`, `fastapi`,
+  `websockets`) — `core_imports=OK`.
+- Mock station check — exit 0; configuration/dependency discovery passed.
+
+## Package mirror and system prerequisites
+
+- The checkout's `pyproject.toml` declares the Tsinghua PyPI index as the default index:
+  `https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple`.
+- `uv.lock` package sources point to the same mirror. The explicit PyTorch indexes remain
+  scoped in the project and were not replaced by a global unsafe index.
+- Installed/confirmed native prerequisites include `build-essential`, `python3-dev`,
+  `iproute2`, `can-utils`, `pkg-config`, `libusb-1.0-0-dev`, `libudev-dev`, `libssl-dev`,
+  `ffmpeg`, and `v4l-utils`.
+- `apt-get update` reported an unrelated pre-existing Docker repository key error
+  (`NO_PUBKEY 7EA0A9C3F273FCD8`). Ubuntu package installation still completed successfully
+  from the available Ubuntu ports indexes; the Docker source key should be repaired before
+  relying on a clean future full `apt update`.
+
+## RealSense compatibility boundary
+
+- IPC libc: Ubuntu GLIBC `2.35`.
+- The locked CPython 3.12 ARM64 `pyrealsense2` wheel imports fail because the extension
+  requires `GLIBC_2.38`. System glibc was not upgraded or replaced.
+- Auxiliary identity-only environment: `/home/linux/.venv-yam-camera310`, CPython `3.10.12`
+  with `pyrealsense2==2.58.4`; import succeeds and `rs.context().query_devices()` returned
+  `[]`. This environment is not the primary YAM runtime.
+
+## P0 device inventory at observation time
+
+- `lsusb` showed only the internal USB2 hub and Realtek Bluetooth radio.
+- No external USB-CAN adapter was enumerated.
+- No `/dev/video*` node was present; `v4l2-ctl --list-devices` could not open `/dev/video0`.
+- No D405 serial number or camera role could be assigned.
+- Board CAN interfaces `bcan0`–`bcan3` were all `DOWN`/`STOPPED`; they were not treated as
+  arm channels.
+- This is an inventory snapshot with hardware absent, not a pass for four-arm or camera
+  communication. Repeat P0 after the USB Hub, four USB-CAN adapters and three D405 cameras
+  are physically connected and labelled.
+

@@ -371,6 +371,49 @@
           </div>
         </div>
         <div id="devices-page" hidden>
+          <section class="panel initialization-panel">
+            <div class="panel-heading initialization-heading">
+              <div>
+                <div class="eyebrow">NEW DEVICE COMMISSIONING</div>
+                <h2>设备初始化向导</h2>
+              </div>
+              <span id="init-progress" class="pill">0 / 5</span>
+            </div>
+            <p class="initialization-intro">
+              新工作站或更换设备后按顺序执行。流程只在明确操作时连接硬件，不写机械臂零位、不自动回零，也不会启动遥操作。
+            </p>
+            <div id="init-inventory" class="init-inventory"></div>
+            <div class="init-steps">
+              <article class="init-step" id="init-step-preflight">
+                <span class="init-number">1</span>
+                <div><strong>核对配置与端口</strong><small id="init-preflight-status">检查 4 路 CAN、夹爪型号和 3 台相机序列号</small></div>
+                <button class="button" id="init-preflight">只读预检</button>
+              </article>
+              <article class="init-step" id="init-step-cameras">
+                <span class="init-number">2</span>
+                <div><strong>验证三路相机</strong><small id="init-camera-status">连接 top / left / right 并确认画面新鲜</small></div>
+                <button class="button" id="init-cameras">连接相机</button>
+              </article>
+              <article class="init-step" id="init-step-arms">
+                <span class="init-number">3</span>
+                <div><strong>初始化四臂与夹爪</strong><small id="init-arm-status">夹爪先闭合并清空行程；连接后保持当前位置</small></div>
+                <button class="button" id="init-arms">初始化连接</button>
+              </article>
+              <article class="init-step" id="init-step-gravity">
+                <span class="init-number">4</span>
+                <div><strong>重力补偿与 Leader 检查</strong><small>进入重力补偿，轻推双 Follower；同时确认双 Leader 顺滑、松手基本停留</small></div>
+                <button class="button" id="init-gravity">进入重力补偿</button>
+                <label class="init-check"><input type="checkbox" id="init-gravity-check" />双 Follower 通过</label>
+                <label class="init-check"><input type="checkbox" id="init-leader-check" />双 Leader 通过</label>
+              </article>
+              <article class="init-step" id="init-step-complete">
+                <span class="init-number">5</span>
+                <div><strong>保存迁移验收记录</strong><small id="init-complete-status">保存配置指纹、设备清单和夹爪行程测量</small></div>
+                <button class="button primary" id="init-complete">完成初始化</button>
+              </article>
+            </div>
+            <p class="maintenance-note">任何异常先按顶部软件急停；现场危险使用物理急停。退出重力补偿后机械臂保持，再保存验收记录。</p>
+          </section>
           <div class="device-layout">
             <section class="panel">
               <div class="panel-heading">

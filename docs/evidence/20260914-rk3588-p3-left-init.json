@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "date": "2026-09-14",
-  "scope": "RK3588 IPC P3 partial: four-arm motor communication and official left-follower initialization",
+  "scope": "RK3588 IPC P3 partial: four-arm communication, follower initialization and supervised zero-gravity checks",
   "sources": {
     "yam_manual": "https://doc.i2rt.com/products/yam",
     "yam_cell_manual": "https://doc.i2rt.com/products/yam-cell",
@@ -92,7 +92,14 @@
     "left": {"channel": "can_lead_l", "position_rad_min": 0.006574, "position_rad_max": 0.01534, "button_idle_states": [[0, 0]]},
     "right": {"channel": "can_lead_r", "position_rad_min": 0.006574, "position_rad_max": 0.013148, "button_idle_states": [[0, 0]]},
     "interpretation": "Both released-handle readings are close to the official near-zero expectation and the idle button bits were stable; no routine encoder re-zero is indicated.",
-    "remaining": "Press transitions and active leader gravity-compensation still require supervised checks."
+    "remaining": "Button press transitions still require supervised checks."
+  },
+  "dual_leader_supervised_float_test": {
+    "configuration": "Both official YAM leaders used yam_teaching_handle with bilateral_kp=0; no follower synchronization or position target was enabled.",
+    "operator_observation": "Both leaders were manually tested and the operator reported no material issue.",
+    "result": "pass for supervised qualitative active leader zero-gravity behavior",
+    "shutdown": "Both leader objects completed zero-torque close; motor IDs 1-6 on both channels then acknowledged explicit OFF.",
+    "final_state": "All four CAN interfaces DOWN."
   },
   "recording_regression_fix": {
     "observation": "A full-suite run intermittently saw RecordingSession.episodes update before the atomic session.json checkpoint became visible.",
@@ -107,10 +114,11 @@
       "Left follower numerical drift and CAN transport remain bounded for the measured 10-second window.",
       "Right follower initializes and calibrates with bounded 10-second numerical drift and no CAN errors.",
       "Both followers qualitatively float and hold under supervised manual testing with wrist cameras installed.",
+      "Both official leaders qualitatively float under supervised manual testing with yam_teaching_handle configured.",
       "Patched shutdown completes without the observed CAN-socket race and all seven left-follower motors acknowledge OFF."
     ],
     "not_yet_passed": [
-      "Leader button press transitions and active gravity-compensation.",
+      "Leader button press transitions.",
       "Single-pair and dual-pair low-amplitude synchronization, direction, pause and emergency-stop behavior.",
       "A taught ready/home pose; no all-zero home command has been issued."
     ]

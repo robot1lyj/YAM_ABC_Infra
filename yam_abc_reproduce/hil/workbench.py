@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import socket
 import threading
 import time
 import uuid
@@ -56,6 +57,13 @@ class Workbench:
         self._camera_workers = []
         self._camera_generation = 0
         self.task = None
+        self.initializing = False
+        self._session_task = None
+        self._initialization = {"preflight": None, "accepted": None}
+        self._initialization_path = Path("data/workstation") / (
+            "initialization_mock.json" if args.mock else "initialization_real.json"
+        )
+        self._load_initialization()
         self.log("工作台已就绪，设备尚未连接")
         self._monitor = threading.Thread(target=self._observe, daemon=True, name="ui-preview")
         self._monitor.start()
@@ -66,6 +74,144 @@ class Workbench:
 
     def log(self, message):
         self._log.append({"time": time.strftime("%H:%M:%S"), "message": message})
+
+    def _station_path(self):
+        return Path(getattr(self.args, "station", "configs/station_hil.yaml"))
+
+    def _station_inventory(self):
+        from ..config import (
+            build_station_config,
+            controller_channel_for,
+            robot_channel_for,
+        )
+
+        path = self._station_path()
+        cfg = build_station_config(path)
+        followers = [
+            {
+                "side": "left" if robot.type.endswith("left") else "right",
+                "type": robot.type,
+                "channel": robot_channel_for(robot),
+                "gripper": robot.gripper,
+                "gripper_limits": robot.gripper_limits,
+            }
+            for robot in cfg.robot.robots
+        ]
+        leaders = [
+            {
+                "side": "left" if controller.type.endswith("left") else "right",
+                "type": controller.type,
+                "channel": controller_channel_for(controller),
+                "controls": controller.controls,
+                "gripper": cfg.robot.leader_gripper_type,
+            }
+            for controller in cfg.robot.controllers
+        ]
+        cameras = [
+            {"role": camera.role, "type": camera.type, "serial": camera.serial}
+            for camera in cfg.cameras
+        ]
+        return {
+            "station": str(path),
+            "station_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "followers": followers,
+            "leaders": leaders,
+            "cameras": cameras,
+        }
+
+    def _load_initialization(self):
+        try:
+            report = json.loads(self._initialization_path.read_text())
+            if report.get("station_sha256") == self._station_inventory()["station_sha256"]:
+                self._initialization["accepted"] = report
+        except (OSError, ValueError, KeyError):
+            pass
+
+    def initialization_preflight(self):
+        """Read-only station/config inventory. Never constructs cameras or motors."""
+        from ..config import build_station_config
+        from .run import validate_station
+
+        inventory = self._station_inventory()
+        errors = []
+        try:
+            cfg = build_station_config(self._station_path())
+            validate_station(cfg, mock=self.args.mock)
+        except (OSError, ValueError) as exc:
+            errors.append(str(exc))
+
+        interfaces = {name for _, name in socket.if_nameindex()}
+        can = []
+        for item in [*inventory["followers"], *inventory["leaders"]]:
+            channel = item["channel"]
+            present = bool(self.args.mock or channel in interfaces)
+            can.append({"channel": channel, "present": present})
+            if not present:
+                errors.append(f"未找到 CAN 接口 {channel}")
+
+        expected = {c["serial"] for c in inventory["cameras"] if c.get("serial")}
+        detected = set(expected) if self.args.mock else set()
+        if not self.args.mock:
+            try:
+                import pyrealsense2 as rs
+
+                detected = {
+                    device.get_info(rs.camera_info.serial_number)
+                    for device in rs.context().query_devices()
+                }
+            except Exception as exc:  # SDK availability is itself a preflight result.
+                errors.append("RealSense 枚举失败：" + str(exc))
+        missing = sorted(expected - detected)
+        if missing:
+            errors.append("未找到相机序列号：" + ", ".join(missing))
+
+        result = {
+            "ok": not errors,
+            "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "can": can,
+            "camera_serials": sorted(detected),
+            "errors": errors,
+        }
+        self._initialization["preflight"] = result
+        self.log("设备初始化预检通过" if result["ok"] else "设备初始化预检发现问题")
+        return result
+
+    def complete_initialization(self, *, gravity_checked, leader_checked):
+        if not gravity_checked or not leader_checked:
+            raise ValueError("请完成重力补偿和两台 Leader 手感确认")
+        if self.state != "connected" or self.runtime is None:
+            raise ValueError("请先完成四臂初始化连接")
+        ages = self.runtime.status.get("sdk_state_age_s", [])
+        if len(ages) != 4 or any(age is None or age >= 0.25 for age in ages):
+            raise ValueError("四臂反馈尚未全部稳定，请先检查设备状态")
+        cameras = self._snapshot.get("cameras", [])
+        if self.camera_state != "connected" or len(cameras) != 3 or not all(
+            camera.get("healthy") for camera in cameras
+        ):
+            raise ValueError("三路相机尚未全部稳定")
+        if self.runtime.status.get("maintenance") != "idle":
+            raise ValueError("请先结束重力补偿并保持")
+
+        inventory = self._station_inventory()
+        measured = []
+        for unit in self.runtime.io.units:
+            limits = getattr(unit.robot, "gripper_limits", lambda: None)()
+            measured.append({"side": unit.name, "gripper_limits": limits})
+        report = {
+            **inventory,
+            "accepted_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "gravity_checked": True,
+            "leader_checked": True,
+            "camera_roles": [camera["role"] for camera in cameras],
+            "gripper_measurements": measured,
+        }
+        self._initialization_path.parent.mkdir(parents=True, exist_ok=True)
+        temp = self._initialization_path.with_suffix(".tmp")
+        temp.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+        temp.replace(self._initialization_path)
+        self._initialization["accepted"] = report
+        self.log("设备初始化验收已保存，可用于迁移复核")
+        return report
 
     @property
     def status(self):
@@ -103,6 +249,8 @@ class Workbench:
             if self._preview_at
             else None,
             "home_reason": "请先示教并保存四台机械臂的准备位",
+            "initializing": self.initializing,
+            "initialization": {**self._initialization, "inventory": self._station_inventory()},
         }
 
     def heartbeat(self):
@@ -220,13 +368,17 @@ class Workbench:
         self.camera_state = "fault" if errors else "disconnected"
         self.log("相机已断开" if not errors else "相机关闭失败：" + self.camera_error)
 
-    def connect(self, *, ready=False, url=None):
+    def connect(self, *, ready=False, initialize=False, url=None):
         with self._lock:
             if self.thread and self.thread.is_alive():
                 raise ValueError("设备正在连接、运行或整理数据，请等待")
-            if self.selected_task is None:
+            if self.selected_task is None and not initialize:
                 raise ValueError("请先创建或选择采集任务，再连接机械臂")
-            if not self.selected_task.get("task"):
+            if (
+                not initialize
+                and self.selected_task is not None
+                and not self.selected_task.get("task")
+            ):
                 raise ValueError("请编辑当前任务，补填英文 task 后再连接机械臂")
             if self.cleanup_error:
                 raise ValueError("上次关闭设备失败，请现场检查并重启工作台")
@@ -237,10 +389,23 @@ class Workbench:
                 if url and (parsed.scheme not in ("ws", "wss") or not parsed.hostname):
                     raise ValueError("Thor地址应为 ws://主机:端口 或 wss://主机:端口")
                 self.args.url = url or None
-            if self.mode in ("hil", "inference") and not (self.args.mock or self.args.url):
+            if not initialize and self.mode in ("hil", "inference") and not (
+                self.args.mock or self.args.url
+            ):
                 raise ValueError("请先填写Thor模型服务地址")
             # Freeze task identity for the entire arm/recording session.
-            self.task = self.selected_task["task"]
+            self.initializing = bool(initialize)
+            self._session_task = (
+                {
+                    "id": "device-initialization",
+                    "name": "设备初始化",
+                    "instruction": "只进行设备初始化与维护验收，不采集任务数据。",
+                    "task": "Initialize and validate the robot station.",
+                }
+                if initialize
+                else dict(self.selected_task)
+            )
+            self.task = self._session_task["task"]
             self.runtime = None
             self._previews = {}
             self._snapshot = {}
@@ -248,7 +413,11 @@ class Workbench:
             self.error = None
             self.state = "connecting"
             self.heartbeat()
-            self.log("正在独立连接四台机械臂；连接后保持，等待开始")
+            self.log(
+                "正在按初始化流程连接四台机械臂；连接后保持，不自动回零"
+                if initialize
+                else "正在独立连接四台机械臂；连接后保持，等待开始"
+            )
             self.thread = threading.Thread(target=self._run, daemon=True, name="workstation-owner")
             self.thread.start()
 
@@ -259,7 +428,7 @@ class Workbench:
             "--station",
             self.args.station,
             "--mode",
-            self.mode,
+            "collect" if self.initializing else self.mode,
             "--segment-seconds",
             str(getattr(self.args, "segment_seconds", 60)),
             "--min-free-gb",
@@ -275,9 +444,11 @@ class Workbench:
             from ..config import build_station_config
 
             base = Path(self.args.output or build_station_config(self.args.station).save_root)
+            if self.initializing:
+                base = Path("data/workstation/initialization_sessions")
             output = (
                 base
-                / self.selected_task["id"]
+                / self._session_task["id"]
                 / (time.strftime("session_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6])
             )
             argv.extend(("--output", str(output)))
@@ -289,13 +460,14 @@ class Workbench:
             self.runtime = None
             self._previews = {}
             self.state = "fault" if self.error or self.cleanup_error else "disconnected"
+            self.initializing = False
             self.log("设备会话已结束" if not self.error else "请处理故障后重新连接")
 
     def attach(self, runtime, output):
         runtime.prompt = self.task
         runtime.recorder.metadata["operator_task"] = self.task
         runtime.recorder.metadata["task"] = self.task
-        runtime.recorder.metadata["collection_task"] = dict(self.selected_task)
+        runtime.recorder.metadata["collection_task"] = dict(self._session_task)
         runtime.recorder.metadata["station"]["task_name"] = self.task
         if self._profile_path.exists():
             try:
@@ -325,6 +497,11 @@ class Workbench:
             if not self.preview_enabled:
                 self._previews = {}
             return
+        if self.initializing and (
+            event in ("start", "record", "takeover", "resume_policy")
+            or event.startswith("mode:")
+        ):
+            raise ValueError("初始化会话只允许保持、重力补偿和有限设备调试")
         if event.startswith("mode:"):
             mode = Mode(event.split(":", 1)[1]).value
             with self._lock:
@@ -364,7 +541,8 @@ class Workbench:
                 raise ValueError("正在初始化，请等待完成；现场风险请使用物理急停")
             if self.runtime is None:
                 raise ValueError("没有可断开的设备会话")
-            self.mode = self.runtime.status.get("mode", self.mode)
+            if not self.initializing:
+                self.mode = self.runtime.status.get("mode", self.mode)
             self.state = "disconnecting"
             self.runtime.event("quit")
             self.log("正在断开并保存当前会话")

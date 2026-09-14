@@ -846,6 +846,105 @@ footer {
   grid-template-columns: 1fr 1fr;
   gap: 18px;
 }
+.initialization-panel {
+  margin-bottom: 18px;
+}
+.initialization-heading {
+  align-items: flex-start;
+}
+.initialization-heading .eyebrow {
+  margin-bottom: 5px;
+}
+.initialization-intro {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 0 18px 14px;
+}
+.init-inventory {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0 18px 14px;
+}
+.init-inventory span {
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #4f6072;
+  font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.init-steps {
+  display: grid;
+  gap: 8px;
+  padding: 0 18px 14px;
+}
+.init-step {
+  display: grid;
+  grid-template-columns: 32px minmax(230px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid #e2e6eb;
+  border-radius: 12px;
+  background: #fbfcfd;
+}
+#init-step-gravity {
+  grid-template-columns: 32px minmax(230px, 1fr) auto auto auto;
+}
+.init-step.done {
+  border-color: #b9ddc7;
+  background: #f4fbf6;
+}
+.init-step.active {
+  border-color: #9bc5f2;
+  box-shadow: 0 0 0 3px #0071e312;
+}
+.init-number {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e9edf2;
+  color: #596574;
+  font-size: 12px;
+  font-weight: 700;
+}
+.init-step.done .init-number {
+  background: #1f8a4c;
+  color: white;
+  font-size: 0;
+}
+.init-step.done .init-number::before {
+  content: "✓";
+  font-size: 13px;
+}
+.init-step > div {
+  display: grid;
+  gap: 4px;
+}
+.init-step strong {
+  font-size: 14px;
+}
+.init-step small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.init-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #4d5662;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.init-check input {
+  width: auto;
+  margin: 0;
+}
 .device-layout > .panel {
   grid-column: 1/-1;
 }
@@ -1184,6 +1283,9 @@ textarea::placeholder {
     gap: 18px;
     align-items: start;
   }
+  #devices-page > .initialization-panel {
+    grid-column: 1 / -1;
+  }
   #devices-page .device-layout {
     display: contents;
   }
@@ -1353,6 +1455,17 @@ textarea::placeholder {
   }
   .device-layout {
     gap: 0;
+  }
+  .init-step {
+    grid-template-columns: 32px 1fr;
+  }
+  #init-step-gravity {
+    grid-template-columns: 32px 1fr;
+  }
+  .init-step > .button,
+  .init-step > .init-check {
+    grid-column: 2;
+    justify-self: start;
   }
   .gripper-control {
     flex-wrap: wrap;

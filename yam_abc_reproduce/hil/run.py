@@ -472,6 +472,10 @@ class Runtime:
                     "follower_state": q.tolist(),
                     "leader_state": leader.tolist(),
                     "sdk_state_age_s": list(ages),
+                    "gripper_limits": [
+                        getattr(unit.robot, "gripper_limits", lambda: None)()
+                        for unit in getattr(self.io, "units", [])
+                    ],
                     "buttons": buttons,
                     "jog_active": self.jog.target is not None,
                     "performance": performance,

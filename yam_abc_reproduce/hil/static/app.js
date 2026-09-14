@@ -83,7 +83,7 @@ function render() {
     mode = state.mode || "collect",
     recording = !!state.recording;
   const canRun =
-      connected && !latched && camerasConnected() && !!state.selected_task,
+      connected && !state.initializing && !latched && camerasConnected() && !!state.selected_task,
     canMaintain = connected && !latched && paused && !recording,
     idle = maint === "idle";
   text("environment", state.mock ? "模拟工作站" : "真实设备");
@@ -128,7 +128,8 @@ function render() {
     b.classList.toggle("active", b.dataset.mode === mode);
     b.querySelector(".mode-state").textContent =
       b.dataset.mode === mode ? "● 当前模式" : "选择模式 →";
-    b.disabled = !online || transitional || latched || state.phase === "fault";
+    b.disabled =
+      !online || transitional || !!state.initializing || latched || state.phase === "fault";
   });
   text("mode-name", names[mode]);
   $("takeover").parentElement.hidden = mode !== "hil";
@@ -413,7 +414,101 @@ function render() {
           ? "准备位已保存 · 回位前请清空完整运动路径"
           : "尚未保存准备位",
   );
+  renderInitialization({ connected, canMaintain, idle, maint, transitional });
   text("clock", new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+}
+let initInventorySignature = "";
+function renderInitialization(context) {
+  const init = state.initialization || {},
+    inventory = init.inventory || {},
+    preflight = init.preflight,
+    accepted = init.accepted,
+    cameras = state.cameras || [],
+    cameraDone =
+      camerasConnected() && cameras.length === 3 && cameras.every((c) => c.healthy),
+    ages = state.sdk_state_age_s || [],
+    armDone = context.connected && ages.length === 4 && ages.every((x) => x < 0.25),
+    gravityDone = $("init-gravity-check").checked && $("init-leader-check").checked;
+
+  const signature = JSON.stringify(inventory);
+  if (signature !== initInventorySignature) {
+    initInventorySignature = signature;
+    $("init-inventory").replaceChildren();
+    const labels = [
+      ...(inventory.followers || []).map(
+        (d) => `${d.side} follower · ${d.channel} · ${d.gripper}`,
+      ),
+      ...(inventory.leaders || []).map(
+        (d) => `${d.side} leader · ${d.channel} · ${d.gripper}`,
+      ),
+      ...(inventory.cameras || []).map(
+        (d) => `${d.role} camera · ${d.serial || "未填序列号"}`,
+      ),
+    ];
+    for (const label of labels) {
+      const chip = document.createElement("span");
+      chip.textContent = label;
+      $("init-inventory").append(chip);
+    }
+  }
+
+  const done = [!!preflight?.ok, cameraDone, armDone, gravityDone, !!accepted];
+  ["preflight", "cameras", "arms", "gravity", "complete"].forEach((name, i) => {
+    $("init-step-" + name).classList.toggle("done", done[i]);
+    $("init-step-" + name).classList.toggle(
+      "active",
+      !done[i] && done.slice(0, i).every(Boolean),
+    );
+  });
+  text("init-progress", `${done.filter(Boolean).length} / 5`);
+  text(
+    "init-preflight-status",
+    preflight
+      ? preflight.ok
+        ? `预检通过 · ${preflight.can?.length || 0} 路 CAN · ${preflight.camera_serials?.length || 0} 台相机`
+        : `发现问题：${(preflight.errors || []).join("；")}`
+      : "检查 4 路 CAN、夹爪型号和 3 台相机序列号",
+  );
+  text(
+    "init-camera-status",
+    cameraDone
+      ? "三路画面均在线且帧龄正常"
+      : state.camera_connection === "connecting"
+        ? "正在连接并等待新鲜画面"
+        : "连接 top / left / right 并确认画面新鲜",
+  );
+  const limits = state.gripper_limits || [];
+  text(
+    "init-arm-status",
+    armDone
+      ? `四臂反馈正常 · 夹爪行程 ${limits.map((x) => x?.map((v) => Number(v).toFixed(3)).join(" → ") || "—").join(" / ")}`
+      : state.connection === "connecting"
+        ? "正在顺序连接设备；未固定行程的夹爪会先完成自动标定"
+        : "夹爪先闭合并清空行程；连接后保持当前位置",
+  );
+  text(
+    "init-complete-status",
+    accepted
+      ? `上次验收：${accepted.accepted_at || "已保存"}`
+      : "保存配置指纹、设备清单和夹爪行程测量",
+  );
+
+  $("init-preflight").disabled = !online || context.transitional;
+  $("init-cameras").disabled =
+    !online || cameraDone || ["connecting", "disconnecting"].includes(state.camera_connection);
+  $("init-arms").disabled =
+    !online || !preflight?.ok || !cameraDone || state.connection !== "disconnected";
+  $("init-gravity").disabled =
+    context.maint === "gravity"
+      ? !context.connected
+      : !(context.canMaintain && context.idle);
+  text(
+    "init-gravity",
+    context.maint === "gravity" ? "结束补偿并保持" : "进入重力补偿",
+  );
+  $("init-gravity-check").disabled = !armDone || context.maint === "gravity";
+  $("init-leader-check").disabled = !armDone;
+  $("init-complete").disabled = !(preflight?.ok && cameraDone && armDone && gravityDone);
 }
 function healthRow(label, value, ok) {
   const row = document.createElement("div");
@@ -533,6 +628,44 @@ $("gravity").onclick = () =>
     "请手扶机械臂后继续。模型和遥操作将停止；四臂关节可手动摆放，Follower夹爪保持。完成后点击“结束补偿 / 保持”。",
     () => action("/event/gravity"),
   );
+$("init-preflight").onclick = async () => {
+  try {
+    const result = await post("/initialize/preflight");
+    await poll();
+    toast(result.ok ? "只读预检通过，可以连接相机" : (result.errors || []).join("；"));
+  } catch (error) {
+    toast(error.message);
+  }
+};
+$("init-cameras").onclick = () => action("/cameras/connect");
+$("init-arms").onclick = () =>
+  confirmAction(
+    "开始四臂初始化？",
+    "请确认两只 Follower 夹爪已手动闭合、夹爪行程无障碍，四台机械臂已固定，手柄按钮全部释放且有人照看。连接可能施加力矩并执行夹爪标定，但不会自动回零或启动遥操作。",
+    () => action("/connect", { ready: true, initialize: true }),
+  );
+$("init-gravity").onclick = () => {
+  if (state.maintenance === "gravity") return action("/event/hold");
+  confirmAction(
+    "进入初始化重力补偿测试？",
+    "请手扶机械臂后继续。轻推两台 Follower 并观察松手后是否基本停留；同时检查两台 Leader 是否顺滑。完成后点击“结束补偿并保持”。",
+    () => action("/event/gravity"),
+  );
+};
+$("init-gravity-check").onchange = render;
+$("init-leader-check").onchange = render;
+$("init-complete").onclick = async () => {
+  try {
+    await post("/initialize/complete", {
+      gravity_checked: $("init-gravity-check").checked,
+      leader_checked: $("init-leader-check").checked,
+    });
+    await poll();
+    toast("设备初始化验收已保存；现在可以结束补偿、保存准备位或进入采集工作台");
+  } catch (error) {
+    toast(error.message);
+  }
+};
 $("discard").onclick = () =>
   confirmAction(
     "放弃当前这一集？",
@@ -557,7 +690,7 @@ $("connect").onclick = () => {
 };
 $("connect-form").onsubmit = async (e) => {
   e.preventDefault();
-  const payload = { ready: true };
+  const payload = { ready: true, initialize: false };
   if ($("url-input").value.trim()) payload.url = $("url-input").value.trim();
   $("connect-dialog").close();
   await action("/connect", payload);

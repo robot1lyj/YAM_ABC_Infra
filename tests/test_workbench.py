@@ -1,6 +1,8 @@
+import json
 import queue
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -125,6 +127,91 @@ def test_browser_service_initialization_never_constructs_devices(tmp_path, monke
         assert service.runtime is None
         service.event("mode:hil")
         assert service.mode == "hil"
+    finally:
+        service.close()
+
+
+def test_initialization_preflight_is_read_only_and_exposes_inventory(tmp_path, monkeypatch):
+    from yam_abc_reproduce.hil import run
+    from yam_abc_reproduce.hil.workbench import Workbench
+
+    monkeypatch.setattr(run, "build_arm_units", lambda *a, **k: pytest.fail("device constructed"))
+    service = Workbench(
+        SimpleNamespace(
+            mode="collect",
+            mock=True,
+            url=None,
+            station="configs/station_hil.yaml",
+            task_root=tmp_path / "tasks",
+        )
+    )
+    try:
+        result = service.initialization_preflight()
+        assert result["ok"] is True
+        assert {x["channel"] for x in result["can"]} == {
+            "can_left",
+            "can_right",
+            "can_lead_l",
+            "can_lead_r",
+        }
+        inventory = service.status["initialization"]["inventory"]
+        assert [x["gripper"] for x in inventory["followers"]] == [
+            "linear_4310",
+            "linear_4310",
+        ]
+        assert {x["role"] for x in inventory["cameras"]} == {"top", "left", "right"}
+        assert service.runtime is None and service.state == "disconnected"
+    finally:
+        service.close()
+
+
+def test_initialization_connect_does_not_require_collection_task(tmp_path, monkeypatch):
+    from yam_abc_reproduce.hil.workbench import Workbench
+
+    monkeypatch.chdir(tmp_path)
+    station = Path(__file__).parents[1] / "configs/station_hil.yaml"
+    service = Workbench(
+        SimpleNamespace(
+            mode="hil",
+            mock=True,
+            url=None,
+            station=str(station),
+            task_root=tmp_path / "tasks",
+            output=None,
+            baseline=False,
+            segment_seconds=60,
+            min_free_gb=0.01,
+        )
+    )
+    try:
+        assert service.initialization_preflight()["ok"] is True
+        service.connect_cameras()
+        deadline = time.monotonic() + 5
+        while service.camera_state == "connecting" and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert service.camera_state == "connected", service.status
+        service.connect(ready=True, initialize=True)
+        deadline = time.monotonic() + 5
+        while service.state == "connecting" and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert service.state == "connected", service.status
+        assert service.initializing is True
+        assert service.runtime.status["mode"] == "collect"
+        assert service.selected_task is None
+        with pytest.raises(ValueError, match="初始化会话"):
+            service.event("start")
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            cameras = service.status.get("cameras", [])
+            if len(cameras) == 3 and all(camera.get("healthy") for camera in cameras):
+                break
+            time.sleep(0.02)
+        report = service.complete_initialization(gravity_checked=True, leader_checked=True)
+        assert report["gravity_checked"] and report["leader_checked"]
+        saved = json.loads((tmp_path / "data/workstation/initialization_mock.json").read_text())
+        assert saved["station_sha256"] == report["station_sha256"]
+        assert len(saved["gripper_measurements"]) == 2
+        service.disconnect(supported=True)
     finally:
         service.close()
 

@@ -16,6 +16,7 @@ STATIC = Path(__file__).with_name("static")
 class Connect(BaseModel):
     model_config = ConfigDict(extra="forbid")
     ready: bool = False
+    initialize: bool = False
     url: str | None = Field(default=None, max_length=500)
 
 
@@ -35,6 +36,12 @@ class JogRequest(BaseModel):
     arm: str
     joint: int = Field(strict=True, ge=0, le=6)
     delta: float = Field(allow_inf_nan=False)
+
+
+class InitializationComplete(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    gravity_checked: bool
+    leader_checked: bool
 
 
 def create_app(runtime):
@@ -110,6 +117,14 @@ def create_app(runtime):
             raise HTTPException(409, "此演示会话已连接")
         invoke(runtime.connect, **body.model_dump())
         return {"queued": "connect"}
+
+    @app.post("/initialize/preflight")
+    def initialize_preflight():
+        return invoke(runtime.initialization_preflight)
+
+    @app.post("/initialize/complete")
+    def initialize_complete(body: InitializationComplete):
+        return invoke(runtime.complete_initialization, **body.model_dump())
 
     @app.post("/disconnect")
     def disconnect(body: Disconnect):

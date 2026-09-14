@@ -233,14 +233,17 @@ class RecordingSession:
             active.close(outcome)
             self._completed_steps += active.written
             self._active = None
-            self.episodes.append(
-                {
-                    "path": active.path.name,
-                    "steps": active.written,
-                    "outcome": "aborted" if active.error else outcome,
-                }
-            )
-            self._write_manifest()
+            entry = {
+                "path": active.path.name,
+                "steps": active.written,
+                "outcome": "aborted" if active.error else outcome,
+            }
+            # Publish the in-memory checkpoint only after its atomic on-disk
+            # manifest is visible. Readers use ``episodes`` as the completion
+            # signal and must never observe it ahead of ``session.json``.
+            pending_episodes = [*self.episodes, entry]
+            self._write_manifest(episodes=pending_episodes)
+            self.episodes.append(entry)
             if active.error:
                 raise RuntimeError(active.error)
             if outcome == "discarded":
@@ -301,7 +304,7 @@ class RecordingSession:
         finally:
             self._write_manifest()
 
-    def _write_manifest(self):
+    def _write_manifest(self, *, episodes=None):
         try:
             from .storage import atomic_json
 
@@ -310,7 +313,7 @@ class RecordingSession:
                 dict(
                     self.metadata,
                     schema="yam_session_v2",
-                    episodes=self.episodes,
+                    episodes=self.episodes if episodes is None else episodes,
                     session_queue_peak=self.queue_peak,
                     error=self.error,
                     outcome="aborted" if self.error else self.outcome,

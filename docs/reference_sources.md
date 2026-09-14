@@ -46,3 +46,15 @@
 - `nyanmisaka/ffmpeg-rockchip` master（`d90e3a1c18d7929383cf88c1b3da2e2d1c966cbf`）：非Rockchip官方FFmpeg分支；以最小功能构建安装到RK3588的`/opt/yam-rkmpp`，提供`h264_rkmpp`录制子进程。软件回退不依赖它。
 
 名称枚举不作为可用证据；当前IPC硬编能力以实际开帧探针为准，见[P2证据](evidence/20260914-rk3588-p2-camera-debug.json)。
+
+## i2rt YAM初始化（2026-09-14快照）
+
+- i2rt官方[YAM手册](https://doc.i2rt.com/products/yam)：1 Mbit/s CAN、逐臂零重力测试、
+  `linear_4310`启动标定、真实夹爪模型与重力补偿参数。
+- i2rt官方[YAM Cell手册](https://doc.i2rt.com/products/yam-cell)：四臂独立CAN、逐臂漂浮
+  测试、同步前leader/follower姿态匹配及0.1–0.2双边增益起点。
+- i2rt官方[Leader手册](https://doc.i2rt.com/products/yam-leader)：先读teaching handle，只有
+  磁铁移位或维修后才重置编码器零点。
+- 固定子模块由v1.2.4 `5d47b35`快进到官方未合并PR #81 `4b3d6b5`，解决控制线程尚未
+  退出便关闭CAN socket的竞态；其未合并状态是后续升级时必须复核的适用条件。现场结果见
+  [P3左臂证据](evidence/20260914-rk3588-p3-left-init.json)。

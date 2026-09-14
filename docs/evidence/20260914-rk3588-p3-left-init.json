@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-14",
+  "scope": "RK3588 IPC P3 partial: four-arm motor communication and official left-follower initialization",
+  "sources": {
+    "yam_manual": "https://doc.i2rt.com/products/yam",
+    "yam_cell_manual": "https://doc.i2rt.com/products/yam-cell",
+    "yam_leader_manual": "https://doc.i2rt.com/products/yam-leader",
+    "shutdown_fix_pr": "https://github.com/i2rt-robotics/i2rt/pull/81"
+  },
+  "safety_scope": {
+    "user_confirmed_left_gripper_closed_and_travel_clear": true,
+    "no_motor_zero_writes": true,
+    "no_all-zero_joint_target": true,
+    "no_leader_follower_sync": true,
+    "final_can_state": {
+      "can_left": "DOWN",
+      "can_right": "DOWN",
+      "can_lead_l": "DOWN",
+      "can_lead_r": "DOWN"
+    }
+  },
+  "per_motor_communication": {
+    "method": "Each arm joint motor ID 1-6 was enabled, read once, and explicitly disabled; no position target was sent.",
+    "channels": ["can_left", "can_right", "can_lead_l", "can_lead_r"],
+    "motor_error_code": "0x1 for every motor",
+    "temperature_range_c": [28, 34],
+    "per_channel_can_frames": {"tx": 12, "rx": 12},
+    "can_errors_or_drops": 0
+  },
+  "invalid_gravity_trial": {
+    "configuration": "physical linear_4310 attached but software used no_gripper to avoid calibration",
+    "duration_seconds": 3,
+    "max_drift_rad": [0.000381476, 0.899901, 0.00801099, 0.186923, 0.0186923, 0.0915541],
+    "interpretation": "Not valid evidence for YAM gravity compensation because the software model omitted the physical gripper mass and inertia.",
+    "shutdown_observation": "Pinned i2rt v1.2.4 reproduced the control-thread/CAN-socket close race described by upstream PR 81.",
+    "postcondition": "Motor IDs 1-6 were explicitly disabled after the trial."
+  },
+  "i2rt_shutdown_fix": {
+    "previous_commit": "5d47b358bafb30c65e397f2ece506550a0db4594",
+    "deployed_commit": "4b3d6b5e43782cd8c55e3bdb832f8b3c40c6cd8d",
+    "upstream_status": "official repository pull request 81, open when checked",
+    "change": "Retain and join the DMChain control thread before closing its CAN socket.",
+    "deployment": "Thin git bundle transferred over the LAN because the IPC submodule remote was a developer-host local path.",
+    "result": "The negative-file-descriptor shutdown exception did not recur in the official left-follower initialization."
+  },
+  "official_left_follower_initialization": {
+    "channel": "can_left",
+    "bitrate_bit_s": 1000000,
+    "arm_type": "yam",
+    "gripper_type": "linear_4310",
+    "zero_gravity_mode": true,
+    "gripper_auto_calibration": true,
+    "gripper_limits_raw_rad_closed_open": [0.62123, -5.04368],
+    "gripper_span_rad": 5.66491,
+    "observation_seconds_after_calibration": 10,
+    "joint_start_rad": [-0.00706, 0.00362, 0.00057, -0.09136, -0.00439, -0.01049],
+    "joint_end_rad": [-0.00706, 0.00629, 0.00515, -0.07343, -0.00439, -0.01049],
+    "max_drift_rad": [0.0, 0.00267, 0.00458, 0.01793, 0.0, 0.0],
+    "gripper_normalized_observed": {"start": 0.0, "end": -0.00074, "min": -0.00074, "max": 0.0},
+    "can_frames": {"tx": 23211, "rx": 23211},
+    "can_errors": {"rx_errors": 0, "tx_errors": 0, "dropped": 0, "bus_error": 0, "bus_off": 0},
+    "shutdown": "zero-torque command, patched bounded thread join, then explicit motor-off replies for IDs 1-7"
+  },
+  "recording_regression_fix": {
+    "observation": "A full-suite run intermittently saw RecordingSession.episodes update before the atomic session.json checkpoint became visible.",
+    "change": "Write the candidate episode list to session.json before publishing the in-memory completion signal.",
+    "verification": "The focused checkpoint test passed 20 consecutive runs; the final full suite passed 263 tests with 2 skipped and 17 subtests."
+  },
+  "acceptance": {
+    "passed": [
+      "Four independent CAN mappings communicate with arm motor IDs 1-6 at 1 Mbit/s.",
+      "Left follower initializes with the correct standard YAM and linear_4310 model.",
+      "Left linear gripper auto-calibration returns a non-collapsed range.",
+      "Left follower numerical drift and CAN transport remain bounded for the measured 10-second window.",
+      "Patched shutdown completes without the observed CAN-socket race and all seven left-follower motors acknowledge OFF."
+    ],
+    "not_yet_passed": [
+      "On-site tactile/visual confirmation that the left follower floats and holds as expected.",
+      "Right follower official initialization and gripper calibration.",
+      "Leader teaching-handle readout and button idle polarity.",
+      "Single-pair and dual-pair low-amplitude synchronization, direction, pause and emergency-stop behavior.",
+      "A taught ready/home pose; no all-zero home command has been issued."
+    ]
+  }
+}

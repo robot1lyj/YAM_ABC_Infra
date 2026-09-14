@@ -1,0 +1,67 @@
+{
+  "id": "product-memory-baseline-20260914",
+  "recorded_at": "2026-09-14T14:59:04+08:00",
+  "source_head": "b47e472be47deb19009a47c4aea897db41c2af9e",
+  "user_requirements": [
+    "P0与接线已完成，后续开发面向产品交付",
+    "完整可靠但不过度防御或过度抽象",
+    "以用户为中心长期维护采集平台和数据集平台，未来扩展沿交付场景推进",
+    "记忆分层，限制热记忆幅度，低频细节降为冷记忆按需搜索"
+  ],
+  "P0_boundary": "用户确认P0/接线完成；已有USB-CAN端口命名与D405身份证据支持角色映射。本轮未远端复测，不把P0完成提升为CAN/视频流/运动/模型闭环通过。",
+  "P0_sources": [
+    {
+      "path": "docs/evidence/20260914-rk3588-ipc-can-port-names.txt",
+      "sha256": "a93c4707c95361b8e4d3b2b85c10f298763f9a3bc84c12ccf6320d7715cd5592"
+    },
+    {
+      "path": "docs/evidence/20260914-rk3588-ipc-cameras.txt",
+      "sha256": "83c9ddc3f6128c471d021ed363b99a10ab293943e0cc45da911daa5a39e6f642"
+    }
+  ],
+  "skill_audit": {
+    "canonical_path": "/home/wuyan-lyj/condapi/skills/mlops-memory/SKILL.md",
+    "canonical_sha256": "afc4ac722d904dfd838744bd3d3e4a1096cb5a0af648b2dc9376916b6e8657e7",
+    "installed_path": "/home/wuyan-lyj/.codex/skills/mlops-memory/SKILL.md",
+    "installed_sha256": "afc4ac722d904dfd838744bd3d3e4a1096cb5a0af648b2dc9376916b6e8657e7",
+    "already_requires": [
+      "compact sourced entrypoint",
+      "move details out of default loading path without deleting evidence",
+      "task-focused on-demand retrieval",
+      "kernel is projection; evidence stays at owner"
+    ],
+    "missing": "没有量化热记忆文件上限，也没有已安装的宿主全上下文hook；本轮在YAM项目规则补充文档预算，不修改共享skill。"
+  },
+  "file_bytes_before": {
+    "AGENTS.md": 6344,
+    "docs/cache/kernel.md": 6727,
+    "docs/cache/checkpoint.md": 6440,
+    "docs/cache/context_index.md": 5579
+  },
+  "planned_file_limits_utf8_bytes": {
+    "AGENTS.md": 6144,
+    "docs/cache/kernel.md": 3072,
+    "docs/cache/checkpoint.md": 3072,
+    "docs/cache/context_index.md": 4096
+  },
+  "limits_scope": "完整文件UTF-8字节（含链接/标题）；仅约束这些入口文件，不是token预算、总上下文限制、长期资料上限或累计检索额度。",
+  "preserved_history": [
+    "docs/archive/kernel-before-product-baseline-20260914.md",
+    "docs/archive/checkpoint-before-product-baseline-20260914.md"
+  ],
+  "deferred_implementation": "只改架构、用户平台维护约束、阶段进度和记忆分层；不改业务代码/配置，不新建自动兜底、服务或全局memory库。",
+  "user_followups": [
+    "同时更新共享记忆技能，确保分层与热记忆不无序扩张",
+    "采集平台升级为设备与采集平台，包含已有设备本体调试界面、日常初始化/维护和系统记录",
+    "两个平台开放LAN端口，支持局域网跨平台浏览器访问"
+  ],
+  "LAN_source_audit": {
+    "files": [
+      "yam_abc_reproduce/hil/web.py",
+      "yam_abc_reproduce/dataset_workbench/web.py"
+    ],
+    "observed": "两者uvicorn绑定127.0.0.1、TrustedHost仅本机；尚未满足LAN直接访问。",
+    "planned": "可配置监听/允许主机/端口与客户端地址、两平台真实用户路径跨OS浏览器验收",
+    "implemented_this_turn": false
+  }
+}

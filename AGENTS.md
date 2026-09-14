@@ -1,71 +1,39 @@
 # YAM 项目工作约定
 
-## 当前项目
+## 产品与职责
 
-此仓库是本地 YAM 工作站的软件主仓库。默认分支为 `main`。
-**内网优先、双远端同步**：`origin` = `ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`；
-`github` = `git@github.com:robot1lyj/YAM_ABC_Infra.git`。代码提交后先推 `origin main`，再推 `github main`，
-核对两个远端指向同一提交；单端失败需明确报告，不能称为同步完成。main 跟踪 origin/main。
-`upstream` 是 i2rt-robotics/yam-abc-reproduce。i2rt 保持为固定提交的子模块。
+- 主仓库为yam-abc-reproduce，默认main；i2rt只用固定子模块，已删除的同级i2rt不恢复。Thor模型/训练/转换归condapi；RK3588 IPC负责设备、控制、仲裁和原始记录。
+- 长期交付核心为**设备与采集平台**（初始化、调试、维护、四模式运行）与**数据集平台**。围绕用户完整流程维护，日常操作和结果记录经界面；两个平台须支持局域网跨平台浏览器访问。产品原则与架构归 `docs/dagger_architecture.md`。
+- 完整可靠但不过度防御：在设备/模型/进程/存储边界作必要检查，复用现有机制；不为假想场景增加重复状态机、校验、静默fallback或重试框架。改动验收围绕受影响用户流程，公共数据合同变化覆盖两平台。
+- 用户确认P0身份与接线完成；不要重复要求本体S/N。当前进度查checkpoint，映射/配置查owner；运动前按实际需要核验现场，不能把P0或mock当真机运行通过。
 
-**自动提交（用户2026-09-14确认）**：每次完成一轮代码更新，执行适用检查与 `git diff --check` 后，自动提交本次修改及配套配置、文档和记忆，无需再次询问。只纳入本次任务的修改，不混入其他 agent 尚未完成的工作；提交后按上述顺序同步 Gitea 与 GitHub，并核对两端 SHA。
+## 自动提交与托管
 
-## 记忆入口与所有权
+每轮代码更新完成、执行适用检查和 `git diff --check` 后，自动提交本任务代码及配套配置/文档/记忆，无需再次询问；不混入其他agent未完成修改。
+内网优先，提交后先 `git push -u origin main`，再 `git push github main`，核对同一SHA；失败保留本地提交并报告未同步端，不force push。
+origin=`ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`；github=`git@github.com:robot1lyj/YAM_ABC_Infra.git`；main跟踪origin/main，upstream保留i2rt-robotics/yam-abc-reproduce。
 
-- 从 `docs/cache/context_index.md` 选择当前任务相关的规范文档，不全量加载历史。
-- 2026-09-14 开工架构基线与 P0–P8 agent 工作包由 `docs/dagger_architecture.md` 持有；RK3588 就是已登记的底层 IPC，Thor 属 condapi。实施先读该基线，再按工作包取对应 owner；物理映射、模型身份与现场验收不能用设计值补齐。
-- 硬件事实与待确认项由 `docs/workstation.md` 管理；环境由 `docs/environment.md` 管理。
-- `docs/cache/kernel.md` 只投影上述事实；进度由 `docs/cache/checkpoint.md` 管理。
-- 验收证据保存在 `docs/evidence/`，经验记录保存在 `docs/cache/records/`。
-- 使用用户指定的 `/home/wuyan-lyj/condapi/skills/mlops-memory/SKILL.md` 最新版技能；仓库可选工具 `scripts/memory_gate.py` 同步其检索与证据检查实现。
-  完整资料长期保存，无文档行数上限；每次先确定任务和缺失事实，读取相关摘要与规范章节，
-  必要时展开原文，信息足以支持下一步就停止检索，不预加载全部历史。
-  无默认累计读取额度，不因计数达到固定阈值中止任务、要求压缩或新开对话。
-  工作摘要保留目标、用户约束、适用事实、来源证据、未解问题和下一步；有上下文压力时
-  将已完成工作整理为可恢复检查点，不删除有用信息。写摘要不代表宿主已执行压缩。
-  按 `docs/memory.md` 操作；ledger 仅记录声明预载和检索包，存于 `docs/cache/runtime/`，不提交。
-- 先按问题查现有工具、检查方法与历史尝试，再决定复用或修改；检索命中不构成执行授权。
-  可复用工具记录入口、环境/配置、输入输出、适用条件、验证方法与验收边界。
-  失败尝试保留原因假设、实际干预/结果、混杂因素和重试条件；不把假设写成已证实原因。
-  配置预期与实测分开记录，缺失信息标未知；现场条件使用前复查。新增字段按需使用，
-  优先当前主线和高价值经验，不要求补齐全部旧记录。规范、记录和问题索引按来源关联。
-- 记录命令、实际结果、代码/配置哈希和未确认项，不记录私有推理、凭证或完整环境变量。
-- 硬件连接、进程、网络状态必须现场复查；历史通过不等于当前可用。
+## 分层记忆
 
-## 环境与验证
+- 使用 `/home/wuyan-lyj/condapi/skills/mlops-memory/SKILL.md`，规则owner为 `docs/memory.md`。先明确任务与缺口，再从 `docs/cache/context_index.md` 选择相关owner；续作才读checkpoint。已在上下文的内容不重读，不默认展开所有链接/历史。
+- 热文件预算：本文件≤6KiB，kernel≤3KiB/8主题，一级index≤4KiB，checkpoint≤3KiB；默认路径合计≤13KiB，带续作≤16KiB，按完整UTF-8字节计。每次写回先更新owner，再替换摘要并计量；超限将细节降至owner/冷资料，不另建热文件规避。具体方法与例外只在memory.md维护。
+- kernel仅存产品原则/稳定约束/路由；checkpoint只存当前目标、最近结果、活跃阻断、下一步。设备序号、安装命令、完整指标、历史尝试放owner/evidence/records/archive，不把每轮成果追加到热入口。
+- 硬件归 `docs/workstation.md`，环境归 `docs/environment.md`，架构归 `docs/dagger_architecture.md`，模型接口归 `docs/condapi_interface.md`；证据在 `docs/evidence/`，经验在 `docs/cache/records/`。细节按问题搜索，所有事实保留来源、单位/版本、适用条件及未知项。
+- 完整规范/长期证据不设行数上限；无默认累计检索额度，不因读取计数停止任务或要求新开对话。账本仅是可选诊断，置于docs/cache/runtime/且不提交；摘要写入不代表宿主已压缩上下文。
+- 复用工具或重试先查现有方法/失败原因和重试条件；历史记录不是执行授权。不刷新旧哈希冒充复验，不记录凭据/私有推理/完整环境变量；配置、用户确认、模拟、实测分别记录。优化建议在对话提出，不另建建议文档。
 
-- 使用 uv 和 Python 3.12。复现：`uv sync --locked --extra camera --extra gui --extra deploy`。
-- 提交 `pyproject.toml` 和 `uv.lock`；不提交 `.venv/`、数据、模型、运行时 ledger。
-- 镜像使用项目配置。保留 PyTorch 显式索引，不使用 unsafe 索引策略。
-- 新四模式入口 `uv run --no-sync yam-workstation`，配置 `configs/station_hil.yaml`，教程 `docs/hil_quickstart.md`。
-- 运行四模式需追加 `--extra deploy`；模型训练后端仍需按任务选择，不能混装互斥组。
-- 配置/依赖改动后运行对应离线验收；不得把 mock 或导入成功写成真机通过。
+## 环境与实施
 
-## 真机边界
+- uv/Python3.12；复现 `uv sync --locked --extra camera --extra gui --extra deploy`，保留项目镜像和PyTorch显式索引，不用unsafe索引策略或混装互斥训练组。
+- 四模式入口 `uv run --no-sync yam-workstation`，使用configs/station_hil.yaml；上游station_yam.yaml为被动GELLO，不用于该设备。设备与数据平台命令按运行手册，端口/局域网实现状态按架构查。
+- 提交pyproject.toml/uv.lock，不提交.venv、模型、运行数据/runtime ledger。配置/依赖变更做对应离线验收，不把模块可发现或mock成功写成真机通过。
 
-- 产品明确四种模式：遥操作、纯推理、DAgger/HIL、数据采集。HIL 内部切换策略/人工/恢复，
-  不把这些内部状态另做产品模式。方案所有者为 `docs/dagger_architecture.md`。
-- HIL只由键盘/界面介入，先冻结再相对遥操作；手柄①交还模型、②无功能。
-- 采集手柄①开始/结束、②放弃；遥操作/推理手柄无功能。数据为Follower反馈/提交目标和三路相机，原始MP4＋HDF5落盘；LeRobot仅独立离线转换，不进入控制循环。
-- 用户要求优化建议只在对话提出，不建立优化建议文档。
-- 主项目是 yam-abc-reproduce；同级 i2rt 已删除，SDK 子模块仍有效。
-- Thor 模型/微调归 condapi；RK3588 的采集、控制、仲裁与记录归本项目。
-  对接约束见 `docs/condapi_interface.md`，不把 condapi 的旧 LoRA 默认照搬到本项目。
+## 设备与操作边界
 
-- 用户设备：2 台标准 YAM follower、2 台官方电动 YAM leader；不是被动 GELLO。
-- 官方 leader 使用 `yam_lead_left/right` 与 `yam_teaching_handle`。
-- 平行夹爪具体电机型号尚未核验；不能将 linear_4310 当作已确认事实。
-- 不运行 GELLO 清零，不默认写电机零位、刷固件或关闭超时。
-- 构造真实机器人可能施加力矩、自动校准夹爪；不能称为只读操作。
-- 启动 GUI 不等于启动电机；Start Teleop 可立即校准并同步运动。
-- 电机运动前确认现场已固定、清空行程、有人照看；软件停止不能替代硬件急停。
-
-## 操作工作台约定
-
-- 交互 `--web-port` 启动不构造硬件；必须由界面连接，真实连接可能施力矩。CLI无界面仍在启动时构造设备。
-- 四任务模式不变；回准备位/重力补偿是独占维护状态，不能与模型或遥操作同时写电机。
-- 用户明确要求不显示零点标定和底层速度调参；回位用示教准备位，不发送全零关节目标。
-- 软件紧急暂停可解除锁存但仍保持；硬件故障不能由此恢复。
-- 预览最多5Hz，独立进程、有界缓存，允许丢预览帧；不得将浏览器请求/编码放入控制或录制循环。
-
-- 工作台先建/选任务；连接相机与连接机械臂独立。任务固定到机械臂会话，保存后才可切换；任务身份随原始与LeRobot数据归档。
+- 2标准YAM follower＋2官方电动leader＋3 D405；leader类型yam_lead_left/right、手柄yam_teaching_handle，不是GELLO。夹爪电机型号尚待实物核验，不能默认linear_4310。
+- 不例行GELLO清零、写电机零位、刷固件或关闭超时；不显示零点标定/底层速度调参。真实机器人构造可能施力矩、自动校准夹爪；运动前确认固定、行程清空、有人照看。软件停止不能替代硬件急停。
+- 四产品模式：遥操作、纯推理、DAgger/HIL、数据采集；HOLD/人工/恢复为内部状态，维护/调试不另造第五种运行模式。所有目标经单一Runtime仲裁，维护不能与策略/遥操作同时写电机。
+- HIL只用键盘/界面介入，先冻结后相对遥操作；手柄①交还、②无功能。采集①开始/结束、②放弃；遥操作/推理手柄无功能，空格独立暂停。模型契约/时效/单位不因减少防御而省略。
+- --web-port启动不构造硬件，界面连接可能上电；无界面CLI启动会构造设备。软件紧急暂停解除后仍保持；硬件故障不能由此恢复。回准备位使用已示教且与station哈希匹配的姿态，不发送全零目标。
+- 先建/选任务，独立连接相机和四臂；任务固定到机械臂会话、保存后才切换，任务身份随原始/LeRobot归档。记录Follower反馈、提交目标和三相机；MP4＋HDF5原始落盘，LeRobot仅显式离线转换。
+- 预览≤5Hz、独立进程/有界缓存，可丢预览帧；控制或录制循环不放浏览器请求/预览编码。设备与采集平台对记录、暂停和恢复给出明确用户状态；不能把独立进程称为无资源竞争。

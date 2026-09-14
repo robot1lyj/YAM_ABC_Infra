@@ -1,0 +1,83 @@
+{
+  "errors": [],
+  "review_only": [
+    "仅历史审阅：approved-modes-20260908-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：architecture-baseline-20260914.json: dependency changed; revalidation required",
+    "仅历史审阅：capture-layout-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：dataset-portable-20260911.json: dependency changed; revalidation required",
+    "仅历史审阅：dataset-workbench-20260911.json: dependency changed; revalidation required",
+    "仅历史审阅：dataset-workbench-capability-20260911.json: dependency changed; revalidation required",
+    "仅历史审阅：english-task-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：environment-20260907-collection.json: dependency changed; revalidation required",
+    "需现场复查或仅供审阅：environment-20260908-local-observation.json",
+    "仅历史审阅：fullscreen-type-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：hdf5-segments-20260911-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：hil-runtime-20260908-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：offline-conversion-20260911.json: dependency changed; revalidation required",
+    "仅历史审阅：operator-workbench-20260908-offline.json: dependency changed; revalidation required",
+    "需现场复查或仅供审阅：rk3588-ipc-bootstrap-20260914.json",
+    "需现场复查或仅供审阅：rk3588-ipc-cameras-20260914.json",
+    "需现场复查或仅供审阅：rk3588-ipc-can-names-20260914.json",
+    "需现场复查或仅供审阅：rk3588-ipc-can-port-names-20260914.json",
+    "需现场复查或仅供审阅：rk3588-ipc-gitea-wifi-20260914.json",
+    "需现场复查或仅供审阅：rk3588-ipc-gs-usb-20260914.json",
+    "需现场复查或仅供审阅：rk3588-ipc-nvme-20260914.json",
+    "需现场复查或仅供审阅：rk3588-ipc-p1-deploy-20260914.json",
+    "仅历史审阅：system-python-attempt-20260907.json: dependency changed; revalidation required",
+    "仅历史审阅：system-style-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：task-workbench-20260908-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：uv-cli-20260908-offline.json: dependency changed; revalidation required"
+  ],
+  "validated_records": 0,
+  "documents": 23,
+  "file_bytes_after": {
+    "AGENTS.md": 5741,
+    "docs/cache/kernel.md": 2009,
+    "docs/cache/checkpoint.md": 2188,
+    "docs/cache/context_index.md": 3070
+  },
+  "limits": {
+    "AGENTS.md": 6144,
+    "docs/cache/kernel.md": 3072,
+    "docs/cache/checkpoint.md": 3072,
+    "docs/cache/context_index.md": 4096
+  },
+  "default_path_bytes": 10820,
+  "with_checkpoint_bytes": 13008,
+  "checked_at": "2026-09-14T15:10:25+08:00",
+  "diff_check_exit_code": 0,
+  "scope": "only docs and memory; no business code, hardware or LAN port changes",
+  "skill_source": "/home/wuyan-lyj/condapi/skills/mlops-memory",
+  "installed_resolves_to_source": true,
+  "skill_sha256": "d9826bf6e349c2b868833bd5ef176217175f0dd16849d0375906039192aea6a7",
+  "layers_sha256": "a2746a51dd8c27190161cbb8d10aca0ea1c5ea71c52a1bae950208c36615bee0",
+  "retrieval_review": [
+    {
+      "next_task": "设备身份/当前阶段",
+      "route": [
+        "docs/cache/context_index.md",
+        "docs/workstation.md"
+      ],
+      "result": "已登记USB端口/三相机角色仍可定位；P0完成，运行验收仍单独记录"
+    },
+    {
+      "next_task": "LAN跨平台交付",
+      "route": [
+        "docs/cache/context_index.md",
+        "docs/dagger_architecture.md#局域网访问与跨平台交付"
+      ],
+      "result": "端口8766/8767、两产品职责、现有localhost差距与用户路径验收均可定位"
+    },
+    {
+      "next_task": "转换失败重试",
+      "route": [
+        "docs/cache/problem_index.md",
+        "docs/convert.md#可复用工具与重试条件"
+      ],
+      "result": "二级问题路由保留历史方法与证据，不需加载所有冷记录"
+    }
+  ],
+  "modified_markdown_anchors_checked": true,
+  "no_YAM_business_code_modified": true,
+  "shared_skill_commit": "07b353464eae5275bfda64fc30d04277cbb6edc1"
+}

@@ -44,10 +44,21 @@ def _build_yam(
     gripper declaring ``needs_calibration`` re-measures the range on every construction.
     See ``RobotUnitConfig.gripper_limits``.
     """
-    from i2rt.robots.get_robot import get_yam_robot
+    import i2rt.robots.get_robot as get_robot_module
     from i2rt.robots.utils import ArmType, GripperType
 
-    return get_yam_robot(
+    # i2rt <= PR #81 applies a +/-2pi startup correction to every motor,
+    # including multi-turn linear grippers.  A saved open endpoint near -5 rad
+    # then lands in a different coordinate frame and a hold command can press
+    # beyond the physical stop.  Fail before opening CAN unless the exact
+    # upstream PR #82 correction is installed by our deployment script.
+    if not hasattr(get_robot_module, "_apply_arm_motor_wrap_offsets"):
+        raise RuntimeError(
+            "unsafe i2rt linear-gripper wrap handling; run "
+            "scripts/apply_i2rt_safety_patches.sh before connecting hardware"
+        )
+
+    return get_robot_module.get_yam_robot(
         channel=channel,
         arm_type=ArmType.from_string_name(arm_type),
         gripper_type=GripperType.from_string_name(gripper_type),

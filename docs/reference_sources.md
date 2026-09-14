@@ -58,3 +58,23 @@
 - 固定子模块由v1.2.4 `5d47b35`快进到官方未合并PR #81 `4b3d6b5`，解决控制线程尚未
   退出便关闭CAN socket的竞态；其未合并状态是后续升级时必须复核的适用条件。现场结果见
   [P3左臂证据](evidence/20260914-rk3588-p3-left-init.json)。
+
+### i2rt未合并PR风险审计（2026-09-14）
+
+审计范围为当日官方仓库全部12个open PR；不整体合并第三方分支，只提取与固定基线兼容、
+差异最小且可本地验证的提交。
+
+| PR | 判定 | 本项目处理 |
+|---|---|---|
+| [#82](https://github.com/i2rt-robotics/i2rt/pull/82) | 必须：旧启动逻辑会把多圈线性夹爪也做±2π arm wrap修正，反馈与标定端点落入不同坐标系 | vendoring官方`e599e9d`为`0002-exclude-gripper-wrap.patch`，硬件构造前另加fail-closed检查 |
+| [#61](https://github.com/i2rt-robotics/i2rt/pull/61) | 适用RK3588：重力补偿把同一次逆动力学计算重复执行两遍 | vendoring官方`3916586`为`0003-single-inverse-dynamics.patch`；数学输出不变 |
+| [#81](https://github.com/i2rt-robotics/i2rt/pull/81)、[#86](https://github.com/i2rt-robotics/i2rt/pull/86)、[#73](https://github.com/i2rt-robotics/i2rt/pull/73)、[#51](https://github.com/i2rt-robotics/i2rt/pull/51) | 同类CAN socket关闭竞态的不同实现 | 已固定#81并完成反复connect/close验证，不叠加重复补丁 |
+| [#31](https://github.com/i2rt-robotics/i2rt/pull/31) | CAN channel初始化及控制线程重复启动保护 | 当前固定基线已经具备两项保护，不移植该PR中其余初始化改写 |
+| [#79](https://github.com/i2rt-robotics/i2rt/pull/79) | 仅官方`minimum_gello`经portal RPC同步时的信号管道泄漏 | 本平台直接持有本地i2rt对象，不走该portal路径；记录观察，不移植 |
+| [#77](https://github.com/i2rt-robotics/i2rt/pull/77) | ruckig冷安装兼容；唯一消费者为flow base | 当前IPC安装已成功且机械臂采集不使用flow base；下次重建依赖时复核 |
+| [#37](https://github.com/i2rt-robotics/i2rt/pull/37) | 可选Coulomb摩擦前馈 | 当前基线已有YAML参数和实现且默认关闭；未做本机辨识前不启用 |
+| [#75](https://github.com/i2rt-robotics/i2rt/pull/75)、[#53](https://github.com/i2rt-robotics/i2rt/pull/53) | CI与特定LeWM部署文档 | 不改变本平台运行时 |
+
+DM-J4310控制器状态码`C`按[达妙官方文档仓库](https://github.com/dmBots/damiao-document)
+及其J4310手册定义为电机线圈过温。当前日志没有保留原始MOS/rotor温度字节，因此本项目把它
+作为控制器报告的过温故障处理，但不反推具体温升曲线。

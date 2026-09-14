@@ -20,6 +20,7 @@ i2rt 使用 `third_party/i2rt` 固定提交，不依赖工作区同级 i2rt 目�
 git clone --recurse-submodules ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git
 cd YAM
 git remote add github git@github.com:robot1lyj/YAM_ABC_Infra.git
+scripts/apply_i2rt_safety_patches.sh
 sudo apt update
 sudo apt install build-essential python3-dev git curl iproute2 can-utils
 curl -LsSf https://astral.sh/uv/install.sh | sh

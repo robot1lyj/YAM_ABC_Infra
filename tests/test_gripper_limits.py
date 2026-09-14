@@ -9,6 +9,7 @@ import logging
 import sys
 import types
 
+import pytest
 import yaml
 
 from yam_abc_reproduce.config import (
@@ -23,6 +24,16 @@ from yam_abc_reproduce.runtime import _report_gripper_travel, build_arm_units
 
 LEFT_LIMITS = [0.0, 6.4]
 RIGHT_LIMITS = [0.1, 6.2]
+
+
+def test_hardware_build_fails_closed_without_upstream_wrap_fix(monkeypatch):
+    import i2rt.robots.get_robot as get_robot_module
+
+    from yam_abc_reproduce.robot.yam_adapter import _build_yam
+
+    monkeypatch.delattr(get_robot_module, "_apply_arm_motor_wrap_offsets", raising=False)
+    with pytest.raises(RuntimeError, match="linear-gripper wrap handling"):
+        _build_yam("can_never_opened", "yam", "linear_4310", None, [0.0, -5.0])
 
 
 def test_unpinned_by_default_so_i2rt_still_auto_calibrates():

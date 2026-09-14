@@ -78,6 +78,7 @@ uv run --no-sync yam-workstation --mock --demo --duration 4
 ```bash
 git clone --recurse-submodules ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git
 cd YAM
+scripts/apply_i2rt_safety_patches.sh
 uv python install 3.12.14
 uv sync --locked --extra camera --extra gui --extra deploy
 ```
@@ -92,7 +93,7 @@ uv sync --locked --extra camera --extra gui --extra deploy
 
 [硬件事实与初始化顺序](docs/workstation.md)是设备信息的规范入口。主仓库仅使用 `third_party/i2rt` SDK 子模块，不需要同级 `i2rt` 目录。
 
-使用 `--web-port` 打开工作台时尚不构造设备；点击“连接机械臂”后就可能施加力矩、校准夹爪，**不是点击“开始”才上电**。不带界面的CLI仍在启动时连接。退出会结束 SDK 控制并可能撤掉力矩，先支撑机械臂；软件保持不替代硬件急停。不默认清零、不运行 GELLO 校准；“回准备位”使用本机示教保存的四臂姿态，需操作员明确发起。
+使用 `--web-port` 打开工作台时尚不构造设备；点击“连接机械臂”后就可能施加力矩、校准夹爪，**不是点击“开始”才上电**。部署必须先运行 `scripts/apply_i2rt_safety_patches.sh`；缺少线性夹爪多圈编码器安全补丁时程序会在打开CAN前拒绝连接。不带界面的CLI仍在启动时连接。退出会结束 SDK 控制并可能撤掉力矩，先支撑机械臂；软件保持不替代硬件急停。不默认清零、不运行 GELLO 校准；“回准备位”使用本机示教保存的四臂姿态，需操作员明确发起。
 
 ## 运行架构
 

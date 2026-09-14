@@ -1,0 +1,19 @@
+diff --git a/i2rt/robots/motor_chain_robot.py b/i2rt/robots/motor_chain_robot.py
+index 23803e2..0d42179 100644
+--- a/i2rt/robots/motor_chain_robot.py
++++ b/i2rt/robots/motor_chain_robot.py
+@@ -481,11 +481,9 @@ class MotorChainRobot(Robot):
+             if np.max(np.abs(t)) > 25.0:
+                 print([f"{s:.2f}" for s in t])
+                 raise RuntimeError(f"{self}: too large torques")
+-            if self._gripper_index is None:
+-                return self.kdl.compute_inverse_dynamics(q, np.zeros(q.shape), np.zeros(q.shape))
+-            else:
+-                t = self.kdl.compute_inverse_dynamics(q, np.zeros(q.shape), np.zeros(q.shape))
+-                return np.append(t, 0.0)
++            if self._gripper_index is not None:
++                t = np.append(t, 0.0)
++            return t
+ 
+     # ----------------- Server Functions ----------------- #
+ 

@@ -1,0 +1,77 @@
+{
+  "id": "rk3588-ipc-gitea-wifi-20260914",
+  "kind": "observation",
+  "claim": "现场复核IPC当前Wi-Fi配置琶洲模方为自动连接且仍在线；IPC上的Gitea专用Ed25519密钥已成功认证到192.168.110.142:2222，Gitea身份为wuyan_lyj。",
+  "owner": "docs/environment.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-aarch64-rk3588",
+    "environment": "apq-ter30r-a2-ipc",
+    "integration": "wifi-autoconnect-gitea-ssh"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-14T10:25:46+08:00",
+  "recorded_at": "2026-09-14T10:25:46+08:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260914-rk3588-ipc-gitea-wifi.txt",
+      "sha256": "a2db15334ebdde40f5864e7d45e1009fe0b4a83c7ee149119591e000c653fb27"
+    }
+  ],
+  "recheck": "always",
+  "valid_until": null,
+  "depends_on": {},
+  "supersedes": [],
+  "assumptions": [
+    {
+      "name": "当前Wi-Fi自动连接",
+      "expected": "NetworkManager当前Wi-Fi配置connection.autoconnect=yes且wlan0在线",
+      "observed": "琶洲模方为autoconnect=yes，wlan0状态connected",
+      "unit": "not_applicable",
+      "observed_at": "2026-09-14T10:25:46+08:00",
+      "check": "nmcli connection show和nmcli device status",
+      "result": "match",
+      "recheck_when": "重启IPC、修改Wi-Fi配置或更换无线网络后"
+    },
+    {
+      "name": "Gitea SSH密钥登记",
+      "expected": "IPC专用公钥已登记到目标Gitea账号并可用于SSH认证",
+      "observed": "Gitea以wuyan_lyj身份接受id_ed25519_gitea，SSH返回码为0",
+      "unit": "not_applicable",
+      "observed_at": "2026-09-14T10:25:46+08:00",
+      "check": "ssh -T -p 2222 -i /home/linux/.ssh/id_ed25519_gitea git@192.168.110.142",
+      "result": "match",
+      "recheck_when": "Gitea账号、密钥、端口、主机或IPC密钥文件变更后"
+    },
+    {
+      "name": "未来仓库读写",
+      "expected": "IPC可按目标仓库URL执行clone/fetch/push",
+      "observed": null,
+      "unit": "not_applicable",
+      "observed_at": null,
+      "check": "目标仓库和远端URL确定后，在授权仓库执行最小化只读fetch，再按需验证push",
+      "result": "unknown",
+      "recheck_when": "首次配置仓库远端或Gitea权限变更后"
+    }
+  ],
+  "retrieval": {
+    "terms": [
+      "Wi-Fi自动连接",
+      "琶洲模方",
+      "Gitea",
+      "SSH密钥",
+      "wuyan_lyj",
+      "RK3588 IPC"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/environment.md#RK3588 IPC 现场环境（2026-09-14）"
+      },
+      {
+        "relation": "prerequisite",
+        "source": "docs/workstation.md#RK3588 IPC 现场事实（2026-09-14）"
+      }
+    ]
+  }
+}

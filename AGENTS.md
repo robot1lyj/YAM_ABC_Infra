@@ -11,6 +11,7 @@
 ## 记忆入口与所有权
 
 - 从 `docs/cache/context_index.md` 选择当前任务相关的规范文档，不全量加载历史。
+- 2026-09-14 开工架构基线与 P0–P8 agent 工作包由 `docs/dagger_architecture.md` 持有；RK3588 就是已登记的底层 IPC，Thor 属 condapi。实施先读该基线，再按工作包取对应 owner；物理映射、模型身份与现场验收不能用设计值补齐。
 - 硬件事实与待确认项由 `docs/workstation.md` 管理；环境由 `docs/environment.md` 管理。
 - `docs/cache/kernel.md` 只投影上述事实；进度由 `docs/cache/checkpoint.md` 管理。
 - 验收证据保存在 `docs/evidence/`，经验记录保存在 `docs/cache/records/`。

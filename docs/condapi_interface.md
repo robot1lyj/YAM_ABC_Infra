@@ -1,18 +1,15 @@
-# condapi 对接约束（2026-09-08 读取快照）
+# condapi 对接约束（2026-09-14 架构基线 v1）
 
 这是本项目的适配约束，不取代 condapi 的模型/训练事实所有者。
-源仓库 /home/wuyan-lyj/condapi，读取时 HEAD 925d2ed3de37660c94694cc4bff292d721783108。
-源文件哈希及阅读范围见 docs/evidence/20260908-condapi-sources.json。
-本次只读本地文档和代码，没有连接或操作 Thor、RK3588、训练服务器。
+源仓库 `/home/wuyan-lyj/condapi`，本次读取 HEAD `1077699987cd66d5b95ba0402d4163250f8bc0cb`；源文件哈希、检查范围和已有工作区变更见 [本轮核查](evidence/20260914-architecture-audit.json)。2026-09-08 快照 `925d2ed3de37660c94694cc4bff292d721783108` 的 [原证据](evidence/20260908-condapi-sources.json)保留为历史。
+本次只读 condapi 本地文档和代码，没有连接或操作 Thor、RK3588、训练服务器，也没有修改 condapi。系统部署和工作包归 [架构基线](dagger_architecture.md#2026-09-14-架构基线-v1)。
 
 ## 职责及数据边界
 
-- condapi：模型训练/转换/端侧推理。最新 AGENTS/kernel 默认 Pi0.5 全量微调 pi05_yam。
-  deployment mode、05/08 文档部分段落仍写 LoRA；视为旧配置说明，不能覆盖最新默认。
+- condapi：模型训练/转换/端侧推理。AGENTS、kernel、08 当前决策及 checkpoint 交接手册默认 Pi0.5 全量微调 `pi05_yam`。deployment mode、05 旧示例中的 `pi05_yam_lora` 不覆盖当前默认，condapi 实施 agent 需按本次模型核对和更新其操作文档。
 - RK3588：三相机采集、机械臂状态、prompt、控制周期与真机约束。
 - Thor：Pi 系列容器中的已核验 policy，处理模型预处理/归一化/推理/输出变换。
-- 网线直连；首版对接真实 openpi-client WebSocket 语义，不假定当前 YAM-ABC 的
-  state/images/prompt 包装与 condapi 扁平键直接兼容，需要明确 adapter 和联调。
+- 网线直连；首版使用真实 openpi-client WebSocket + msgpack-numpy 语义。当前 YAM `PlainPolicyClient` 已使用以下扁平键，历史 `state/images/prompt` 包装不能替代它；仍须以选定的真实模型服务完成联调。
 
 输入：observation.state 为 14D；图像键为 observation.images.top_rgb、
 observation.images.left_rgb、observation.images.right_rgb；prompt 为字符串。
@@ -22,6 +19,30 @@ observation.images.left_rgb、observation.images.right_rgb；prompt 为字符串
 训练关节 delta、夹爪 absolute；生产 policy 输出经 inverse transform 回到 absolute。
 RK3588 不再次加状态或二次反归一化；服务握手必须明确这层语义。
 物理单位由训练数据和硬件审计绑定；不能仅因两边都14D就认为兼容。
+
+## v1 接口验收合同
+
+下表冻结双方交付内容；**自动 metadata 比较、完整模型来源写入以及影子执行路径尚待实现**，不是现有服务已经发出全部字段的声明。优先在现有握手 metadata 和会话 manifest 上补充，不改成第二种传输协议；具体字段结构由 P4/P6 在双方合同测试中固定。
+
+| 边界 | 约定与验收 |
+|---|---|
+| 身份 | 握手声明 `contract_version=yam-thor-v1`、`model_id`、本次 checkpoint 身份/内容指纹、config/norm/tokenizer 指纹、实际 backend/engine 指纹；引用文件需可定位，不能仅用路径或模型名称代替身份 |
+| 状态 | `observation.state` 为 14D 有限浮点；顺序固定。当前 YAM adapter 设计为关节弧度、夹爪 0闭/1开，但驱动与实物仍需核验；condapi 历史数据单位仍待审计，不能直接宣称一致 |
+| 视觉 | `top_rgb/left_rgb/right_rgb` 为 RGB HWC uint8；top/left/right 的序列号及安装视角由 station 绑定。RK 负责有效配对，Thor 负责训练一致的 resize/padding/normalize；不得漏相机或复用错侧画面 |
+| 任务 | 工作台中文 name/instruction 供操作员使用，英文 task 作为 `prompt`；数据保留 task UUID/版本。服务不能静默改用无关默认 prompt |
+| 动作 | 返回键 `actions`，有限 `(50,14)`，物理空间 absolute target；明确各维单位、关节顺序、方向、夹爪端点与范围。模型端完成 inverse transform，RK 只按已审计硬件映射与限幅执行，不重复 delta/反归一化 |
+| 时间 | metadata 与本地配置匹配 `action_dt`（秒）、`action_horizon=50`、动作第0步的观测/目标对齐语义；v1 暂以第0步对应观测参考时刻，必须用训练样本审计确认。30Hz 控制、H50、10步去噪、0.2s 重规划周期是不同参数 |
+| 会话 | RK 本地保存 session/epoch/request_id/obs_id 与观测、发送、接收、提交时刻。普通协议目前按单连接单在途请求关联，不假定 Thor 已回显这些字段；超时关闭旧连接，重建需重新验证身份并保持，明确开始后才执行 |
+| 时钟 | 跨机 monotonic 不直接相减。RK 测本地往返和观测年龄，Thor 测本地处理时长；两者分别报告，不能把往返减 server timing 后简单称为纯网络时延 |
+| 错误 | 缺字段、版本/单位/norm/时间步不匹配、NaN/Inf、错误形状、过期或错 epoch 结果均不得进入执行；不通过补零、截断真实 token、复用旧 norm 或延长动作有效期掩盖错误 |
+
+元数据不完整时允许无电机冻结回放做诊断，禁止将结果晋级真机推理。正式执行前 P4/P6 应做到自动合同 gate，而非靠操作者记住字段；换 checkpoint、norm、模型预处理、引擎或 station 映射后重新验证。物理单位或时间语义不同必须形成显式、可测试的新映射，重新回放；不能填一份 metadata 就认为差异消失。
+
+## Thor 服务的实际缺口
+
+本地核查发现普通 `scripts/serve_policy.py` 从配置/checkpoint 创建 policy，再交给 `WebsocketPolicyServer`；默认监听 `0.0.0.0`，部署时需限定容器端口暴露的网卡范围。该入口不提供直接选择 W 的 TensorRT engine 参数。现有 W 证据来自 `scripts/thor/benchmark_suite.py` 的离线调用；没有本次 RK→W 网络服务证据。
+
+因此 P4 必须明确交付实际后端：沿用普通已核验 policy 完成协议回放，或在 condapi 将 W sampler 包装为普通 `infer(observation)` policy，保持完整预处理/反归一化/14D 输出，再做同输入的直接调用与 WebSocket 输出对照。不得把 benchmark 命令当常驻服务命令，也不得把不同后端的测量互相替代。新微调 checkpoint 的转换/缓存/engine 独立重建与回放步骤只由 condapi `docs/reference/thor/12_checkpoint_handoff.md` 持有。
 
 ## 推理周期与产物
 
@@ -52,4 +73,6 @@ tokenizer 接口仍200，text80不允许截断有效token；长输入显式使�
 
 ## 采集数据的训练边界
 
-本项目现在自动输出LeRobot v3.0，完整HIL轨迹包含policy/hold/human来源、干预编号和阶段事件。人工纠正训练应读取 `complementary_info.expert_valid` 等标记，不能默认整集均为专家动作。本轮未修改condapi训练加载器，也未验证其对新增筛选字段的使用；模型在线输入输出契约保持原样。
+本项目实时保存 MP4＋HDF5＋JSON 原始集，工作站/服务器显式运行独立转换，目标 LeRobot v3.0；采集控制进程不自动转换。完整 HIL 轨迹包含 policy/hold/human 来源、干预编号和阶段事件。人工纠正训练应使用显式专家导出，或由经过测试的 condapi 加载器读取 `complementary_info.expert_valid` 等标记，不能默认整集均为专家动作。本轮未修改 condapi 训练加载器，也未验证其对新增筛选字段的使用。
+
+交接须包含数据版本与 split、14D 单位/方向/夹爪范围、动作来自最终提交目标而非把反馈冒充目标、实际 fps/action_dt、任务文本与三相机视角、专家筛选方式及转换报告。训练 norm 按同一训练 split 和模型 transform 计算并随 checkpoint 固定；不得复用基础模型 benchmark-only norm。每个 episode 需关联实际 station 与模型会话身份；现有 HIL manifest 的模型来源链尚不完整，P6 补齐后才能称为全链可追溯。

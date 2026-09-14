@@ -1,0 +1,46 @@
+# RK3588 IPC bootstrap evidence
+
+- Observed at: 2026-09-14T10:17:30+08:00
+- Scope: YAM / linux-aarch64-rk3588 / APQ TER30R-A2 field IPC
+- Method: authenticated SSH read-only inspection plus scoped network verification
+
+## Host-to-IPC management
+
+- IPC Wi-Fi address: `192.168.110.140/23` on `wlan0`.
+- IPC wired address: `192.168.250.2/24` on `lan1`.
+- Host wired address: `192.168.250.1/24` on `enp1s0`.
+- Wired ping from host to IPC: 2/2 replies, 0% loss, 0.171–0.271 ms.
+- SSH over forced `enp1s0` to `linux@192.168.250.2`: `WIRED_SSH_OK`.
+- Host-to-IPC management public-key fingerprint: `SHA256:ptdWJ4lgvjFRF60cbqQsJZt7xCZ/IcwxYPx3NWt7cKg`.
+- The corresponding host public key was installed in IPC `/home/linux/.ssh/authorized_keys`; private key contents were not recorded.
+
+## Network isolation
+
+- IPC default route: via `192.168.111.254` on `wlan0`, metric 600.
+- IPC `lan1` has only `192.168.250.0/24`; no gateway or DNS.
+- Host default route remains outside `enp1s0`; the private wired route is only `192.168.250.0/24`.
+- This proves the configured route separation at observation time; it does not certify future NetworkManager or hardware changes.
+
+## IPC runtime
+
+- Device-tree model: `Rockchip RK3588 EVB7 LP4 V10 Board`.
+- OS: Ubuntu 22.04.3 LTS, `arm64`.
+- Kernel: `6.1.118`, `PREEMPT_RT`.
+- CPU: 8 cores, Cortex-A55/A76; observed memory total 15 GiB.
+- Root storage: `mmcblk0p6`, ext4, 116.2 GiB partition; NVMe `nvme0n1`, 953.9 GiB, present but not mounted in the observed mount list.
+- NPU render node: `/dev/dri/renderD129`.
+- CAN interfaces: `bcan0`–`bcan3` present, all observed `STOPPED`/`DOWN`; no bus or robot validation performed.
+- `candump` is installed; Python is 3.10.12; `uv` was not found; no YAM checkout was found under the searched `/home`, `/opt`, and `/srv` depth-3 paths.
+- SSH service and vendor `autorun.service` are active. No service was stopped and no YAM process was started.
+
+## IPC Gitea client key
+
+- Path: `/home/linux/.ssh/id_ed25519_gitea` (mode 600).
+- Public key path: `/home/linux/.ssh/id_ed25519_gitea.pub` (mode 644).
+- Fingerprint: `SHA256:L7VjWh8BHNTOMsrNp0l6St2v/OYQ14WPcIXDOBJNhtA`.
+- The private key was generated on the IPC and was not copied to the host or recorded here.
+
+## Credential handling
+
+- A bootstrap password was supplied interactively by the user and accepted for the authenticated session.
+- Per project memory rules, the password is intentionally not stored in evidence, records, summaries, or environment dumps.

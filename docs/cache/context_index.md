@@ -6,6 +6,7 @@
 | 任务 | 规范所有者 | 何时补充读取 |
 |---|---|---|
 | 项目主题、已接受的取舍 | [项目决策](../decisions.md) | 用户更改范围时 |
+| 硬件到齐开工、RK3588 IPC/Thor分工、agent交接 | [架构基线v1与P0–P8工作包](../dagger_architecture.md#2026-09-14-架构基线-v1) | 再按包读硬件/环境/模型契约；设计不等于已部署 |
 | 安装、uv、镜像、代码托管 | [环境](../environment.md) | 当前机器状态需重新检查 |
 | 设备、CAN、序列号、初始化 | [硬件事实](../workstation.md) | 真机动作前现场核验 |
 | 四模式使用、配置、操作 | [运行手册](../hil_quickstart.md) | 对照实际配置和CLI帮助 |
@@ -32,6 +33,7 @@
 
 | 问题/关键词 | 检查方法及前提 | 历史尝试 / 可复用工具 |
 |---|---|---|
+| IPC开工、USB Hub/USB-CAN序列号、Thor服务、模型单位/action_dt | [设备身份登记P0](../workstation.md#第一步设备身份登记-p0)、[架构工作包](../dagger_architecture.md#后续-agent-工作包与依赖)、[接口合同](../condapi_interface.md#v1-接口验收合同) | [本地核查证据](../evidence/20260914-architecture-audit.json)、[规划记录](records/architecture-baseline-20260914.json)；现场状态需复核 |
 | 数据集检查、坏集、多task合并 | [检查和清洗](../dataset_workbench.md#检查和清洗)、[配置与实测](../dataset_workbench.md#配置预期与实测边界) | [工作台能力记录](records/dataset-workbench-capability-20260911.json)、[入口和验收](../dataset_workbench.md#可复用工具与验证) |
 | 转换失败、partial、恢复、帧率不一致 | [转换工具条件](../convert.md#可复用工具与重试条件)、[异常恢复](../convert.md#异常恢复) | [离线转换验收](../acceptance.md#2026-09-11后续采集与转换完全分离)；具体新失败的原因和结果从conversion_report.json或.partial/failure.json读取，未取得日志时标未知 |
 | Python.h、ruckig、构建失败 | [环境排查与重试](../environment.md#构建失败的检查与重试条件) | [失败尝试记录](records/system-python-attempt-20260907.json)、[首次安装](../environment.md#首次安装) |

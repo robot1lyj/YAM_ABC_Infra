@@ -1,0 +1,21 @@
+# RK3588 IPC Wi-Fi and Gitea follow-up evidence
+
+- Observed at: 2026-09-14T10:25:46+08:00
+- Scope: YAM / linux-aarch64-rk3588 / IPC `linux`
+- Method: SSH over the already verified isolated wired management link
+
+## Wi-Fi autoconnect
+
+- NetworkManager profile: `琶洲模方`.
+- `connection.autoconnect`: `yes`.
+- `connection.autoconnect-retries`: `-1 (default)`.
+- Current state: `wlan0` is `connected` on `琶洲模方`.
+- No Wi-Fi disconnect or restart was performed.
+
+## Gitea key authentication
+
+- Target: `git@192.168.110.142:2222`.
+- Identity used: `/home/linux/.ssh/id_ed25519_gitea`.
+- Fingerprint: `SHA256:L7VjWh8BHNTOMsrNp0l6St2v/OYQ14WPcIXDOBJNhtA`.
+- Result: Gitea authenticated the key as `wuyan_lyj`; SSH exited 0 and returned the expected no-shell-access message.
+- The private key and any password were not recorded.

@@ -1,38 +1,19 @@
 # 工作记忆摘要
 
-- 核心托管约定（用户2026-09-11最终确认）：**内网优先、双端同步**。origin=`ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`；github=`git@github.com:robot1lyj/YAM_ABC_Infra.git`。默认main跟踪origin/main，先`git push -u origin main`，再`git push github main`，核对同一SHA；不能把单端成功称为两端同步。upstream不变。来源：[环境](../environment.md)。
+本页只投影规范所有者；硬件在线、服务、网络和模型版本在使用前复查。旧摘要完整保存在 [2026-09-14核查前归档](../archive/kernel-before-architecture-20260914.md)，其中已被后续决定覆盖的状态不能恢复为当前事实。
 
-- 项目使用 uv / Python 3.12；当前四模式入口为 uv run --no-sync yam-workstation；旧GUI保留上游工具。来源：pyproject.toml、docs/environment.md。
-- 硬件为 2 follower + 2 官方电动 leader，夹爪精确型号未确认。来源：docs/workstation.md。
-- 上游默认 station 是被动 GELLO，不能直接用于该硬件。来源：configs/station_yam.yaml。
-- 真实构造/Start Teleop 可能立即运动；本次环境安装不包含真机验收。来源：docs/workstation.md。
-- pyproject.toml、uv.lock 进 Git；.venv 和运行数据不进 Git。来源：AGENTS.md、.gitignore。
-
-- 产品四模式：遥操作、推理、DAgger/HIL、数据采集；Thor模型、RK3588采集/控制。来源：docs/dagger_architecture.md、docs/condapi_interface.md。
-- 2026-09-11采用新版记忆规则：完整资料保留，按任务摘要/章节读取并按需展开，无默认累计读取额度；保留约束、证据和未完成事项。来源：AGENTS.md、docs/memory.md。
-
-- 用户2026-09-08确认三路均为D405；不支持多相机外部硬同步，采用软件时间对齐。来源docs/workstation.md、docs/synchronization_design.md。
-
-- 第一版已接通四模式/官方leader接管/非RTC异步/连续录制和专家导出；控制线程＋录制/预览独立进程、接收时间配对、宽松可配置阈值。来源docs/hil_quickstart.md。未真机验收。
-
-- 采集模式由Leader遥操作，手动开关多段录制；HIL键盘i冻结介入、手柄①交还，②无功能；采集①开始/结束、②放弃；遥操作/推理手柄无功能。来源：docs/collect.md。
-- 中文规范通过路由检索，历史英文手册位于docs/archive；指纹/断链检查用scripts/check_project_memory.py，不能替代语义和现场验证。来源：docs/memory.md。
-
-- 操作工作台：--web-port启动未连接，界面连接后保持；四模式与维护状态分开。软件紧急暂停→解除后保持→明确开始/回准备位/重力补偿。示教准备位绑定station哈希，mock/real分开。来源：docs/hil_quickstart.md。
-- 三路预览最多5Hz、独立低优先级进程与单槽共享内存；控制/录制不编码预览。允许丢预览，不能声称真实RK无资源竞争。来源：docs/hil_quickstart.md、docs/acceptance.md。
-
-- 任务归属：白色悟演智能工作台先建/选任务，再独立连接相机和四臂。任务固定到整个机械臂会话，数据按UUID隔离；断开机械臂后可保留相机预览。来源：docs/collect.md。
-
-- 采集界面优先三路视觉，任务栏紧凑，录制控制集中，急停大尺寸固定在连接旁；详情/日志按需展开。来源：docs/collect.md。
-
-- 工作台任务：name/instruction供采集员中文查看，英文task用于模型prompt、原始task和LeRobot任务文本；完整任务身份存collection_task。旧任务需编辑补填，历史数据不改写。来源：docs/collect.md。
-
-- 新采集格式MP4＋HDF5＋JSON分段清单，默认60秒物理段不拆逻辑集；工作台逐集保存，转换只由独立一键脚本显式运行，目标LeRobot v3.0。旧JSONL可读；恢复须审核。来源：docs/convert.md。
-
-- 独立数据集工作台默认8767：YAM原始集索引、审核分类、集合/回收站、三路预览、检查、多task LeRobot v3.0后台导出；桌面一屏布局。来源：[数据集工作台](../dataset_workbench.md)。不支持LeRobot成品导入，不自动触发采集转换。
-
-- 工程经验按问题关联工具入口/配置/验证与历史尝试；配置预期和实测分别记录，未知不填实测，重试先核对条件。当前主线入口：[问题路由](context_index.md#问题与行动路由)，规则来源：[记忆维护](../memory.md#工程经验与问题检索)。
-
-- 2026-09-11用户报告当前数据约100 GB（未实测）；性能改造方案已确认记录、暂不实施。优先目录索引/增量扫描/按需预览，后续版本发布与LeRobot聚合分片；SQLite保留，Lance待服务器实验。规范：[数据集工作台](../dataset_workbench.md)“已确认待实施”章节。
-
-- 后续用户已授权并实施双格式/轻量目录/按需预览/迁移TAR；100GB容量为用户陈述，100小时为目标，未做全量真实验收。详情与剩余路线以[数据集工作台](../dataset_workbench.md)当前说明为准，覆盖原“暂不实施”。
+- **架构基线 v1（2026-09-14）**：用户确认硬件到齐，要求规划与记忆先固定、其他agent实施。RK3588就是已登记的IPC，负责四臂/三相机、观测、控制、仲裁和原始记录；Thor由condapi提供模型服务。开发机/训练服务器负责管理与离线数据/训练。工作包P0–P8与依赖归 [架构](../dagger_architecture.md#2026-09-14-架构基线-v1)，未实现项不能读成现场通过。
+- **硬件**：2标准YAM follower、2官方电动leader、3台D405。不是被动GELLO；夹爪精确型号、相机序列号/视角、四臂方向/物理CAN映射仍待核验。用户确认四臂各自USB-CAN接口经USB Hub接IPC，第一步P0识别4臂＋3相机身份；Hub型号/适配器身份待核，板载bcan0～bcan3仅是已枚举资源，不默认用于机械臂。来源：[硬件事实](../workstation.md)。
+- **IPC现场快照**：2026-09-14 Ubuntu22.04.3、6.1.118 PREEMPT_RT、arm64；lan1=.250.2与开发机.250.1的无网关调试链路SSH已验证，Wi-Fi上网保留。Gitea专用密钥认证成功，不再待登记；目标仓库部署仍待验证。系统Python3.10.12，未发现uv/YAM checkout；NVMe已枚举未挂载。地址全值、指纹与证据归 [硬件](../workstation.md)、[环境](../environment.md)。
+- **网络与盘**：生产RK↔Thor独立网线，Thor 192.168.250.3只是预留计划，当前lan1接开发机；改变接线后必须重新核验。原始数据拟写IPC NVMe，挂载和绝对save_root待落地；不自动格式化、不回落eMMC。来源：[架构](../dagger_architecture.md)。
+- **代码和环境**：主项目yam-abc-reproduce，i2rt固定子模块，同级旧i2rt已删除；uv/Python3.12，入口uv run --no-sync yam-workstation。四模式用configs/station_hil.yaml，旧station_yam.yaml是GELLO示例；提交pyproject.toml/uv.lock，不提交.venv/数据/模型/runtime ledger。来源：AGENTS.md、[环境](../environment.md)。
+- **托管**：内网优先、双端同步。origin=ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git；github=git@github.com:robot1lyj/YAM_ABC_Infra.git；main跟踪origin/main，提交后先内网再GitHub，核对同一SHA，单端成功不称同步完成。来源：[环境](../environment.md)。
+- **控制**：teleop/inference/hil/collect四产品模式不变；HOLD/POLICY/HUMAN/TAKEOVER/RESUME/FAULT是内部状态。单一Runtime写四臂；回准备位/重力补偿/点动为独占维护状态。跨进程设备锁尚待补齐。来源：[架构](../dagger_architecture.md)。
+- **接管与按钮**：HIL键盘i冻结、下一周期相对遥操作，手柄①交还、②无功能；采集①开始/结束录制、②放弃，不停止遥操作；遥操作/推理手柄无功能，空格独立暂停。HIL完整阶段同一episode，来源与干预标记保留。来源：[采集](../collect.md)。
+- **运行边界**：--web-port启动未连接；连接真实设备可能施力矩/校准夹爪。软件暂停解除后仍保持、旧策略无效；回位用示教准备位并绑定station哈希，mock/real分开。不例行清零/写零位，不显示零点标定与底层速度调参；运动前核验现场，软件停止不替代硬件急停。来源：AGENTS.md、[运行手册](../hil_quickstart.md)。
+- **时序与性能**：非RTC、单在途异步重规划；RK本地epoch/观测时效裁剪，跨机单调时钟不相减。30Hz、action_dt=1/30s等是当前初始配置，需与数据匹配和真机定标。三D405软件时间配对不等于曝光同步；CAN同tick提交不等于同时执行。来源：[同步设计](../synchronization_design.md)。
+- **模型合同**：扁平三路RGB HWC uint8、14D state、英文prompt；actions=(50,14) absolute，[左6关节/左夹爪/右6关节/右夹爪]。condapi拥有Pi0.5全量pi05_yam、norm/训练/转换/Thor；W为既有非量化BF16/FP32候选。基础模型离线约104ms不能替代本次checkpoint、网络服务或任务效果；自动身份/单位/action_dt比较及完整来源链待补。来源：[接口及本轮condapi快照](../condapi_interface.md)。
+- **任务/界面**：白色悟演智能工作台先建/选任务，相机与四臂独立连接；任务固定到机械臂会话，UUID隔离。中文name/instruction供操作员、英文task供模型与LeRobot；历史数据不改写。三路视觉优先、急停固定，详情按需展开。来源：[采集](../collect.md)。
+- **原始数据**：MP4＋HDF5＋JSON清单；默认60秒物理段不拆逻辑集，逐集保存。控制线程有界提交，录制/预览独立进程；预览≤5Hz且可丢帧，不允许静默丢训练记录。独立进程不等于RK无资源竞争。来源：[转换](../convert.md)、[验收](../acceptance.md)。
+- **离线数据**：采集不自动转换；工作站/服务器显式运行独立脚本，目标LeRobot v3.0。8767数据集工作台支持YAM原始/LeRobot v3视频导入、检查、审核/集合、按需预览、TAR迁移；转换只接收YAM原始。SQLite/游标/增量扫描/后台spawn已实现；聚合分片、训练版本发布、Lance/分布式仍未实现。用户约100GB为陈述，100小时为目标，未作全量实测。来源：[数据集工作台](../dataset_workbench.md)。
+- **验收与记忆**：已有开发机mock/离线读取证据，无真实RK一小时四臂/三D405/Thor闭环通过结论。完整资料按owner保存，按任务检索、无默认累计读取额度；新工具/失败尝试按问题路由检索。指纹/断链检查不判断语义或现场状态；原历史记录失效不靠刷新哈希重新晋级。来源：[验收](../acceptance.md)、[记忆规则](../memory.md)、[问题路由](context_index.md#问题与行动路由)。

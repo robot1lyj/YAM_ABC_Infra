@@ -1,0 +1,36 @@
+{
+  "id": "hub-inventory-steering-20260914",
+  "recorded_at": "2026-09-14T10:45:53+08:00",
+  "source": "当前用户后续说明与hub类型问答（非硬件实测）",
+  "confirmed_requirements": {
+    "arms": {
+      "follower": 2,
+      "leader": 2,
+      "leader_type": "官方电动YAM"
+    },
+    "connection": "每臂USB-CAN接口 → USB Hub → RK3588 IPC",
+    "first_work_package": "P0：识别机械臂本体/USB-CAN接口序列号及相机序列号，建立角色与物理拓扑映射"
+  },
+  "prior_requirement_retained": {
+    "cameras": 3,
+    "camera_type": "RealSense D405",
+    "roles": [
+      "top",
+      "left",
+      "right"
+    ]
+  },
+  "unknowns": [
+    "USB Hub型号/供电/上联和下联物理口",
+    "USB-CAN适配器真实序列号/稳定路径/驱动",
+    "四臂本体序列号或资产标签",
+    "相机真实序列号与安装视角",
+    "相机是否与机械臂共用Hub"
+  ],
+  "overrides": "先前架构起草时的板载bcan优先核验方案不作为默认接臂路径；板载bcan保留为历史枚举事实。P0优先于完整环境部署及运动联调。",
+  "not_claimed": [
+    "设备已全部实际接入",
+    "已读取真实序列号",
+    "CAN通讯或运动已通过"
+  ]
+}

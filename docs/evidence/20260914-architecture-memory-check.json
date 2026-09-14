@@ -1,0 +1,40 @@
+{
+  "errors": [],
+  "review_only": [
+    "仅历史审阅：approved-modes-20260908-offline.json: dependency changed; revalidation required",
+    "需现场复查或仅供审阅：architecture-baseline-20260914.json",
+    "仅历史审阅：capture-layout-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：dataset-workbench-20260911.json: dependency changed; revalidation required",
+    "仅历史审阅：dataset-workbench-capability-20260911.json: dependency changed; revalidation required",
+    "仅历史审阅：english-task-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：environment-20260907-collection.json: dependency changed; revalidation required",
+    "需现场复查或仅供审阅：environment-20260908-local-observation.json",
+    "仅历史审阅：fullscreen-type-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：hdf5-segments-20260911-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：hil-runtime-20260908-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：offline-conversion-20260911.json: dependency changed; revalidation required",
+    "仅历史审阅：operator-workbench-20260908-offline.json: dependency changed; revalidation required",
+    "需现场复查或仅供审阅：rk3588-ipc-bootstrap-20260914.json",
+    "需现场复查或仅供审阅：rk3588-ipc-gitea-wifi-20260914.json",
+    "仅历史审阅：system-python-attempt-20260907.json: dependency changed; revalidation required",
+    "仅历史审阅：system-style-20260909-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：task-workbench-20260908-offline.json: dependency changed; revalidation required",
+    "仅历史审阅：uv-cli-20260908-offline.json: dependency changed; revalidation required"
+  ],
+  "validated_records": 1,
+  "documents": 29,
+  "diff_check": {
+    "exit_code": 0,
+    "output": ""
+  },
+  "scope_checks": {
+    "only_YAM_docs_and_AGENTS_modified": true,
+    "condapi_preexisting_dirty_path_unchanged": true,
+    "identity_table_has_4_arms_and_3_cameras": true,
+    "planning_record_is_candidate": true,
+    "planning_dependency_hashes_match": true,
+    "hardware_serial_numbers_measured": false
+  },
+  "additional_cache_and_archive_links_checked": true,
+  "archive_link_repair": "归档迁移后两个context_index相对链接已修正，再检查通过；正文历史事实保留。"
+}

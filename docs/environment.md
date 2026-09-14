@@ -91,6 +91,18 @@ uv sync 会移除本次未选择的 extras/groups。
 
 主依赖新增h5py（uv.lock锁定3.16.0），继续使用项目.venv及现有镜像；`uv sync --locked --extra camera --extra gui --extra deploy`。录制/转换进程使用当前Python，不需要Torch。离线官方读取验收另用临时CPU环境，版本与结果见[验收](acceptance.md)。录制进程隔离依赖Linux父进程退出信号，适用于目标RK3588/Linux与开发机Linux。转换已独立，服务器使用scripts/convert_lerobot.py及其uv锁，只安装数据处理依赖。
 
+## RK3588 IPC 现场环境（2026-09-14）
+
+现场 IPC 已通过网线管理链路接入：IPC `lan1=192.168.250.2/24`，本机 `enp1s0=192.168.250.1/24`，两端均不设置网关或 DNS；IPC 的 Wi-Fi `wlan0=192.168.110.140/23` 继续承担默认路由。网线 SSH 已强制绑定 `enp1s0` 验证成功，IPC 访问互联网仍经 `wlan0`。
+
+实测目标环境为 Ubuntu 22.04.3 LTS、6.1.118 `PREEMPT_RT`、`arm64`、Python 3.10.12；未找到 `uv`，也未在有限搜索范围内发现 YAM checkout。项目当前规范要求 Python 3.12/uv，因此 IPC 尚未达到直接运行当前 YAM 工作站入口的部署条件。`bcan0`～`bcan3` 已枚举但均为停止状态，Thor 地址、模型服务可达性、板载或 USB-CAN 角色和相机映射仍待现场配置与验收。
+
+详细证据：[20260914-rk3588-ipc-bootstrap.txt](evidence/20260914-rk3588-ipc-bootstrap.txt)。
+
+Wi-Fi 配置 `琶洲模方` 已现场复核为 `connection.autoconnect=yes`，`wlan0` 当前在线；IPC 的 Gitea 专用密钥已成功认证到 `git@192.168.110.142:2222`，Gitea 身份为 `wuyan_lyj`。详细证据见 [20260914-rk3588-ipc-gitea-wifi.txt](evidence/20260914-rk3588-ipc-gitea-wifi.txt)。
+
+正式部署按 [架构基线 P1](dagger_architecture.md#后续-agent-工作包与依赖)执行：认证成功不等于目标 YAM 仓库/子模块已 clone；优先复用项目锁文件核验 ARM64 的相机、编码、HDF5 和 i2rt 二进制依赖，不能只做模块可发现性检查。NVMe 挂载和绝对 `save_root` 尚未确定，先盘点已有内容，不直接格式化；保留 eMMC 系统盘与已登记管理网络。配置/代码可以自启动为未连接界面，不随开机自动构造机器人、开始推理或恢复上一轮运动。
+
 ## 构建失败的检查与重试条件
 
 2026-09-07系统Python构建失败的 [诊断摘录](evidence/20260907-system-python-build-failure.txt) 记录退出1、缺失patchlevel.h/Development.Module，独立检查Python.h不存在；它不是完整构建日志。

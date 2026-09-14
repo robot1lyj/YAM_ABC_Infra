@@ -1,0 +1,41 @@
+{
+  "id": "architecture-baseline-20260914",
+  "kind": "procedure",
+  "claim": "架构v1实施基线：2 follower＋2官方电动leader的USB-CAN接口经USB Hub接RK3588 IPC；P0先登记四臂与三D405身份，再推进部署/采集/Thor接口/HIL验收。RK负责控制采集记录，condapi/Thor负责模型。自动合同gate、完整模型来源链、跨进程独占及真机联调均待实施/验收。",
+  "owner": "docs/dagger_architecture.md",
+  "scope": {
+    "project": "YAM",
+    "integration": "rk3588-thor-condapi",
+    "contract": "yam-thor-v1",
+    "phase": "architecture-design-only"
+  },
+  "status": "candidate",
+  "observed_at": "2026-09-14T10:45:53+08:00",
+  "recorded_at": "2026-09-14T10:45:53+08:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260914-architecture-audit.json",
+      "sha256": "fcb67ec67dbeb8dbe6f0cade23f6a76556b9352d83d248d9673265796e5cfce5"
+    },
+    {
+      "path": "docs/evidence/20260914-hub-inventory-steering.json",
+      "sha256": "73645c82a0bdc099256dcba7150262506f433b09a2f1d6cfd96912c9b4c779f0"
+    }
+  ],
+  "recheck": "on_change",
+  "valid_until": null,
+  "depends_on": {
+    "AGENTS.md": "a7cd8267e5592c21b6889a3d385f193c3590bb35ec77acfcfb1b14f26d1cda5d",
+    "docs/dagger_architecture.md": "ab640ee79981bcdfb640e5f445000450d15971c5da3b741c058a4d9688f947b8",
+    "docs/condapi_interface.md": "9d960f3ea012a9afeb1c62dccc9057e4f3359deef7efbec5c37e3a579804e2a0",
+    "docs/workstation.md": "fb78ed57fec55b1c91fafdd9861d7a4022e7df02f2167534cc400b08e393e2ed",
+    "docs/environment.md": "96c56b2b71b5a7fb49d94c67a588a3c4087f74a1c8486df21e388d5bb5e9ee44",
+    "docs/decisions.md": "c269fa17647dd8071c4fe9daf0a60ee265f178e1f4e01164cb8cb483a24f3ce8",
+    "docs/memory.md": "d41d47060300d34252a74967a6141b85077141b0992479b2cf4a7ef739f74074",
+    "docs/cache/context_index.md": "53a0eb3e10f37544831c3c8e9efe1d66f666fa4fb2c952f28462f138af0b9f24",
+    "configs/station_hil.yaml": "e426704b0b3fdbdd157448409999e4c94ce1990ac57bc4f2751479c83c40f778",
+    "yam_abc_reproduce/hil/policy.py": "089b7c79ec18779a5228e60bf9d7301f4638da7d2d24119116d9a38b22017b1c",
+    "scripts/probe_thor_policy.py": "7fea96b09a3829aa02f87f63b70bc931ff3730d299bcea799a788c71835440a0"
+  },
+  "supersedes": []
+}

@@ -1,0 +1,107 @@
+{
+  "id": "rk3588-ipc-bootstrap-20260914",
+  "kind": "observation",
+  "claim": "2026-09-14现场验证一台YAM底层RK3588 IPC：Ubuntu 22.04.3、6.1.118 PREEMPT_RT、arm64；本机与IPC通过无网关私网lan1/enp1s0实现免密SSH，IPC Wi-Fi默认上网保持；Gitea客户端密钥已生成。",
+  "owner": "docs/workstation.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-aarch64-rk3588",
+    "environment": "apq-ter30r-a2-ipc",
+    "network": "isolated-lan1"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-14T10:17:30+08:00",
+  "recorded_at": "2026-09-14T10:19:23+08:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260914-rk3588-ipc-bootstrap.txt",
+      "sha256": "1f182dfadb5602eb6fb0aac8628564362d3ea3b1633fe686f60443f50cee6c07"
+    }
+  ],
+  "recheck": "always",
+  "valid_until": null,
+  "depends_on": {},
+  "supersedes": [],
+  "assumptions": [
+    {
+      "name": "IPC系统与内核",
+      "expected": "Ubuntu 22.04系列、6.1内核、arm64",
+      "observed": "Ubuntu 22.04.3 LTS、6.1.118 PREEMPT_RT、arm64",
+      "unit": "not_applicable",
+      "observed_at": "2026-09-14T10:17:30+08:00",
+      "check": "读取 /etc/os-release、uname -r、dpkg --print-architecture",
+      "result": "match",
+      "recheck_when": "重刷系统、升级内核或更换IPC后"
+    },
+    {
+      "name": "隔离网口用于Thor",
+      "expected": "lan1使用独立私网、无网关/无DNS，不改变Wi-Fi默认上网",
+      "observed": "IPC lan1=192.168.250.2/24；默认路由仍经wlan0；本机enp1s0=192.168.250.1/24，网线SSH验证成功",
+      "unit": "not_applicable",
+      "observed_at": "2026-09-14T10:17:30+08:00",
+      "check": "ip addr、ip route、强制绑定enp1s0的ping/ssh",
+      "result": "match",
+      "recheck_when": "更换网线、NetworkManager配置、Thor地址或网络拓扑后"
+    },
+    {
+      "name": "YAM运行时准备度",
+      "expected": "Python 3.12和uv可用，项目代码已部署",
+      "observed": "Python 3.10.12；未找到uv；有限搜索范围内未发现YAM checkout",
+      "unit": "not_applicable",
+      "observed_at": "2026-09-14T10:17:30+08:00",
+      "check": "python3 --version、command -v uv、有限深度find",
+      "result": "mismatch",
+      "recheck_when": "开始部署YAM前和安装依赖后"
+    },
+    {
+      "name": "CAN硬件准备度",
+      "expected": "至少一条目标CAN链路已接线、配置并通过现场验收",
+      "observed": "bcan0-bcan3存在，但均STOPPED/DOWN；未接总线、未操作机械臂",
+      "unit": "not_applicable",
+      "observed_at": "2026-09-14T10:17:30+08:00",
+      "check": "ip -details link show dev bcan0..bcan3",
+      "result": "mismatch",
+      "recheck_when": "CAN接线、收发器、电机或站位配置变更后"
+    },
+    {
+      "name": "Thor模型服务",
+      "expected": "Thor在独立网口可达并提供约定的ws服务",
+      "observed": null,
+      "unit": "not_applicable",
+      "observed_at": null,
+      "check": "Thor侧地址配置完成后，从IPC以约定URL和模型契约探测",
+      "result": "unknown",
+      "recheck_when": "首次推理前、Thor地址/模型/端口变更后"
+    }
+  ],
+  "retrieval": {
+    "terms": [
+      "RK3588 IPC",
+      "TER30R-A2",
+      "lan1",
+      "Thor",
+      "SSH",
+      "Gitea",
+      "CAN",
+      "arm64"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/workstation.md#RK3588 IPC 现场事实（2026-09-14）"
+      },
+      {
+        "relation": "prerequisite",
+        "source": "docs/environment.md#RK3588 IPC 现场环境（2026-09-14）"
+      },
+      {
+        "relation": "check",
+        "source": "docs/condapi_interface.md"
+      },
+      {
+        "relation": "repair",
+        "source": "docs/deploy.md"
+      }
+    ]
+  }
+}

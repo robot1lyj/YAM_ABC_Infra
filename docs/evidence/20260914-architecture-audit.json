@@ -1,0 +1,201 @@
+{
+  "id": "architecture-audit-20260914",
+  "phase": "local-architecture-and-memory-audit",
+  "observed_at": "2026-09-14T10:37:52+08:00",
+  "user_scope": "硬件已到齐；规划师核查架构和记忆，固定设计供其他agent执行；不编写业务代码。",
+  "baseline": "yam-system-v1-20260914",
+  "sources": {
+    "YAM": {
+      "root": "/home/wuyan-lyj/YAM/yam-abc-reproduce",
+      "head": "accbfebd6cf1e5f35403ffb23f01368c844283ae",
+      "files": [
+        {
+          "path": "AGENTS.md",
+          "sha256": "8bbce2b4d71d806dabe53766d3b13ae8c7046949dbbc99ae33572764ba9b8236"
+        },
+        {
+          "path": "configs/station_hil.yaml",
+          "sha256": "e426704b0b3fdbdd157448409999e4c94ce1990ac57bc4f2751479c83c40f778"
+        },
+        {
+          "path": "yam_abc_reproduce/hil/policy.py",
+          "sha256": "089b7c79ec18779a5228e60bf9d7301f4638da7d2d24119116d9a38b22017b1c"
+        },
+        {
+          "path": "yam_abc_reproduce/hil/run.py",
+          "sha256": "7732c2c3374390834d600c0d6a1fc2c84d319043f98d9a68d1835c8f0a4dfb1d"
+        },
+        {
+          "path": "yam_abc_reproduce/hil/core.py",
+          "sha256": "e8b623458b5fc997c2abe859beeaf8e5e84ef87c5b317ca1be1a58dc90930bac"
+        },
+        {
+          "path": "yam_abc_reproduce/hil/recording.py",
+          "sha256": "af780f74c70be315849f7e359f91bd8459ad171c8c19054c5d7993293f226b6b"
+        },
+        {
+          "path": "yam_abc_reproduce/robot/yam_adapter.py",
+          "sha256": "5b082d6fc0bba8a31c48fa3ea4fed65a6f24813d32ee008e31048cfd551a6113"
+        },
+        {
+          "path": "scripts/probe_thor_policy.py",
+          "sha256": "7fea96b09a3829aa02f87f63b70bc931ff3730d299bcea799a788c71835440a0"
+        },
+        {
+          "path": "docs/evidence/20260914-rk3588-ipc-bootstrap.txt",
+          "sha256": "1f182dfadb5602eb6fb0aac8628564362d3ea3b1633fe686f60443f50cee6c07"
+        },
+        {
+          "path": "docs/evidence/20260914-rk3588-ipc-gitea-wifi.txt",
+          "sha256": "a2db15334ebdde40f5864e7d45e1009fe0b4a83c7ee149119591e000c653fb27"
+        }
+      ]
+    },
+    "condapi": {
+      "root": "/home/wuyan-lyj/condapi",
+      "head": "1077699987cd66d5b95ba0402d4163250f8bc0cb",
+      "files": [
+        {
+          "path": "AGENTS.md",
+          "sha256": "30ea00814adc9a371f48e6b044d1ab2c0287ab526e23f346fae0e7deb1c03234"
+        },
+        {
+          "path": "docs/cache/kernel.md",
+          "sha256": "2e4cb9862b6b591c8f396e7cda9ad3d0c39c423103ce2a20029ed0ebcee2ca1f"
+        },
+        {
+          "path": "docs/cache/context_index.md",
+          "sha256": "c21e5e5e495b7601df81b7391ec413981c6018808bb6db8e9254de551e0d6421"
+        },
+        {
+          "path": "docs/cache/modes/03_deployment.md",
+          "sha256": "e82ebfdf6cced5c43eff919cc2869442f76bb759a9b3b2b8a4b66c78ff1f7029"
+        },
+        {
+          "path": "docs/08_thor_edge_deployment.md",
+          "sha256": "46a7bf2dcb6ec531a7e4c62e25d3b971c381e467539e0591c3c9839c253b09be"
+        },
+        {
+          "path": "docs/04_data_contracts.md",
+          "sha256": "a41dffcc446f685ca569ad948c2286b7d00802da20ac4850c074af97ecd9c8a1"
+        },
+        {
+          "path": "docs/05_inference_and_rollout.md",
+          "sha256": "007d5c75a7f3e984d46b4b272a76e2796f6eece33a8a2b4d2ec4982b65538b20"
+        },
+        {
+          "path": "docs/reference/thor/11_pi05_candidate_test_plan.md",
+          "sha256": "77aeb67ca902b5b52c6fc85f3870c5be5832c75670304f361fd3eb848ad3b4d2"
+        },
+        {
+          "path": "docs/reference/thor/12_checkpoint_handoff.md",
+          "sha256": "48ded77adf714cac7468e031a17cd655a9aaa1f8a633a5cf19900e1399ed0d44"
+        },
+        {
+          "path": "scripts/serve_policy.py",
+          "sha256": "52ecabb685fb723b500b9304b0a304e2345daa5dfce26a419072f23b543a9cb6"
+        },
+        {
+          "path": "src/openpi/serving/websocket_policy_server.py",
+          "sha256": "f538bcfc8a5554923f8703af2d19ec159254e895dd40a3d79a2de9abc14ad494"
+        },
+        {
+          "path": "scripts/thor/benchmark_suite.py",
+          "sha256": "912dc893f1431c700f59626e7306a4978740fcb9257ad88b0db7ff49a42bc3de"
+        }
+      ],
+      "dirty_paths_observed": [
+        "scripts/training_dashboard.service"
+      ],
+      "inspection": "只读指定本地owner章节、服务入口和WebSocket实现；未连接Thor，不证明当前进程/地址/权重就绪。benchmark_suite只定向核查后端/身份校验入口。"
+    }
+  },
+  "pre_existing_YAM_changes": [
+    "docs/cache/checkpoint.md",
+    "docs/cache/kernel.md",
+    "docs/environment.md",
+    "docs/workstation.md",
+    "docs/cache/records/rk3588-ipc-bootstrap-20260914.json",
+    "docs/cache/records/rk3588-ipc-gitea-wifi-20260914.json",
+    "docs/evidence/20260914-rk3588-ipc-bootstrap.txt",
+    "docs/evidence/20260914-rk3588-ipc-gitea-wifi.txt"
+  ],
+  "findings": [
+    {
+      "topic": "两节点职责",
+      "result": "与用户和两仓库owner一致：RK3588 IPC负责YAM控制/采集/记录，Thor负责condapi模型推理；开发机/训练服务器离线参与。",
+      "classification": "design-baseline"
+    },
+    {
+      "topic": "Gitea检查点冲突",
+      "result": "旧checkpoint同时写待登记与认证成功；现场gitea-wifi证据支持认证成功，但未证明目标仓库clone/fetch。",
+      "classification": "memory-correction"
+    },
+    {
+      "topic": "CAN接入假设",
+      "result": "workstation旧待办只写四个USB-CAN，现场已枚举bcan0-bcan3；冻结每臂独立通道，板载兼容性和角色映射待验。",
+      "classification": "unverified-physical-mapping"
+    },
+    {
+      "topic": "采集与转换",
+      "result": "decisions表和condapi_interface仍写自动LeRobot，与当前原始MP4/HDF5/JSON加显式离线转换冲突；修正当前入口。",
+      "classification": "memory-correction"
+    },
+    {
+      "topic": "模型/训练合同",
+      "result": "condapi当前全量pi05_yam；旧mode/05示例有LoRA残留。14D形状一致不证明单位、夹爪方向、action_dt或norm一致。",
+      "classification": "integration-gate"
+    },
+    {
+      "topic": "实际服务入口",
+      "result": "YAM PlainPolicyClient已使用msgpack-numpy/WebSocket单在途语义，probe只核形状/finite。condapi serve_policy按checkpoint创建policy，无选择W TensorRT engine的CLI参数；W离线证据不证明该服务已经承载W。",
+      "classification": "code-inspection"
+    },
+    {
+      "topic": "模型就绪",
+      "result": "用户报告Thor已准备；condapi有基础模型W历史离线结果。本次未取得指定微调checkpoint的服务或RK联调实测。",
+      "classification": "historical-evidence-not-current-runtime"
+    },
+    {
+      "topic": "存储与拓扑",
+      "result": "IPC当前lan1接开发机，Thor .3为计划；NVMe枚举但未挂载。现有相对save_root不得当已部署生产盘。",
+      "classification": "deployment-gap"
+    },
+    {
+      "topic": "模型身份及独占",
+      "result": "合同自动比较/完整来源链/跨进程设备锁未完成；纳入工作包，不标成已实现。",
+      "classification": "planned-implementation"
+    },
+    {
+      "topic": "历史数据集摘要",
+      "result": "kernel/checkpoint早期不支持LeRobot成品的说明被后续双格式实现覆盖；归档旧摘要并按当前数据集owner投影。",
+      "classification": "memory-correction"
+    }
+  ],
+  "validation_before": {
+    "command": "python3 scripts/check_project_memory.py",
+    "exit_code": 0,
+    "errors": [],
+    "validated_records": 1,
+    "review_only_records": 18,
+    "note": "原有历史/动态记录继续需审阅或复查，不刷新旧哈希使其通过。"
+  },
+  "not_performed": [
+    "业务代码/配置实现",
+    "远端SSH/部署",
+    "相机或电机构造/运动",
+    "GPU训练/推理",
+    "真实双机网络及性能验收",
+    "condapi写入"
+  ],
+  "unknowns": [
+    "CAN物理映射与夹爪型号",
+    "D405序列号/视角/USB拓扑",
+    "NVMe实际挂载及保存目录",
+    "Thor直连网卡/IP/服务部署身份",
+    "本次checkpoint/norm/engine",
+    "数据/硬件单位和动作时间对齐",
+    "真机资源余量和任务效果"
+  ],
+  "claim_boundary": "本报告核实本地文件所支持的现状与冲突；架构是实施基线，候选设计与现场通过分别管理。"
+}

@@ -200,10 +200,12 @@ def test_partial_motor_failure_attempts_station_hold():
     assert errors and called == ["left", "right"]
 
 
-def test_hardware_template_is_rejected_before_opening_devices():
+def test_verified_hardware_config_passes_and_placeholder_is_still_rejected():
     from yam_abc_reproduce.config import build_station_config
 
     cfg = build_station_config("configs/station_hil.yaml")
+    validate_station(cfg, mock=False)
+    cfg.robot.robots[0].gripper = "REPLACE_WITH_LINEAR_MOTOR_TYPE"
     with pytest.raises(ValueError, match="gripper"):
         validate_station(cfg, mock=False)
 

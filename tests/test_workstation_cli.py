@@ -27,9 +27,11 @@ def test_mock_preflight(monkeypatch, tmp_path, capsys, mode):
     assert report["hardware_checked"] is False
 
 
-def test_real_placeholder_rejected_without_devices(monkeypatch, tmp_path):
-    with pytest.raises(ValueError, match="gripper"):
-        invoke(monkeypatch, tmp_path, "--mode", "collect")
+def test_real_preflight_uses_verified_config_without_devices(monkeypatch, tmp_path, capsys):
+    invoke(monkeypatch, tmp_path, "--mode", "collect")
+    report = json.loads(capsys.readouterr().out)
+    assert report["mode"] == "collect"
+    assert report["hardware_checked"] is False
 
 
 def test_missing_optional_dependency(monkeypatch, tmp_path, capsys):

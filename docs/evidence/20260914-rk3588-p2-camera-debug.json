@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-14",
+  "scope": "RK3588 IPC P2 camera bring-up and non-moving device preflight",
+  "ipc": {
+    "address_used": "192.168.110.140",
+    "repo_path": "/data/YAM",
+    "initial_repo_commit": "b47e472be47d",
+    "python": "3.12.14",
+    "os_glibc": "2.35",
+    "camera_usb_speed_before_left_port_change_mbit_s": {"top": 5000, "left": 480, "right": 5000},
+    "camera_usb_speed_after_left_port_change_mbit_s": {"top": 5000, "left": 5000, "right": 5000},
+    "can_state_after_checks": {
+      "can_lead_l": "DOWN",
+      "can_lead_r": "DOWN",
+      "can_left": "DOWN",
+      "can_right": "DOWN"
+    }
+  },
+  "binding_repair": {
+    "failure": "pyrealsense2 2.58.3.10794 wheel required GLIBC_2.38",
+    "source_tag": "v2.58.3",
+    "source_commit": "dfd6aa91250f5c31521d72d627865417989bb4e7",
+    "build": "Release, Python bindings, static librealsense, V4L2 backend, GCC 11.4",
+    "built_module_max_glibc": "2.34",
+    "installed_into_project_venv": true,
+    "original_wheel_module_backed_up_in_ignored_build_directory": true,
+    "post_install_enumeration": ["260522275397", "260522271298", "260422271123"]
+  },
+  "stream_observations": {
+    "top_first_attempt": "profile started but no first frame within 2 seconds; kernel recorded UVC -71",
+    "top_recovery": "one RealSense hardware_reset; subsequent 5 second standalone stream returned 136 frames with no frame-number gap",
+    "project_worker_test_before_left_port_change": {
+      "requested_stream": "RGB8 640x480 at 30 Hz",
+      "nominal_observation_seconds": 15,
+      "note": "sequential worker start/stop makes total exposure slightly longer than the nominal sleep",
+      "top": {"frames": 487, "frame_number_gaps": 8, "max_device_interval_ms": 166.711669921875, "bad_shape": 0},
+      "left": {"frames": 483, "frame_number_gaps": 3, "max_device_interval_ms": 135.451904296875, "bad_shape": 0},
+      "right": {"frames": 488, "frame_number_gaps": 0, "max_device_interval_ms": 33.348388671875, "bad_shape": 0}
+    },
+    "project_worker_test_after_left_port_change": {
+      "window_seconds": 30,
+      "requested_stream": "RGB8 640x480 at 30 Hz",
+      "top": {"frames": 900, "frame_number_gaps": 0, "observed_fps": 29.992897556081477, "max_device_interval_ms": 33.342041015625, "bad_shape": 0},
+      "left": {"frames": 900, "frame_number_gaps": 0, "observed_fps": 29.992863994707754, "max_device_interval_ms": 33.343994140625, "bad_shape": 0},
+      "right": {"frames": 899, "frame_number_gaps": 0, "observed_fps": 29.99450961423533, "max_device_interval_ms": 33.3486328125, "bad_shape": 0}
+    },
+    "arrival_pairing_after_left_port_change": {
+      "window_seconds": 30,
+      "ticks": 898,
+      "valid": 897,
+      "invalid_startup": 1,
+      "warning_over_40_ms": 0,
+      "arrival_skew_ms": {"p50": 15.594546999636805, "p95": 15.684319399588276, "p99": 15.83405859855702, "max": 16.53923800040502},
+      "scope": "software host-arrival pairing, not exposure synchronization"
+    },
+    "visual_check_after_5_second_warmup": {
+      "result": "top overhead and left/right wrist roles visible; green bins have consistent RGB color",
+      "initial_half_second": "frames were nearly dark before auto exposure settled",
+      "frame_sha256": {
+        "top": "99bc067585c0c8359f0d02b7887b49d8e995bcc38352d24047fee1c88cb96b6f",
+        "left": "32a15361759ed8f3478f39b9ce38f0212f7eaa21c94fb4b42229e3c711c40d90",
+        "right": "4c6c15f6dc1a278477f3fe34a7d8775844b9d052d08a6e675f327c4ccd3c5e02"
+      }
+    },
+    "recording_attempt_from_stdin": {
+      "result": "aborted",
+      "cause": "multiprocessing spawn cannot re-import /data/YAM/<stdin>",
+      "correction": "added scripts/probe_camera_recording.py with a real guarded file entrypoint"
+    },
+    "rk3588_recording_adaptation": {
+      "platform": "RK3588 EVB7, Ubuntu 22.04, vendor Linux 6.1.118 PREEMPT_RT, 4 Cortex-A76 plus 4 Cortex-A55",
+      "hardware_nodes_observed": ["/dev/mpp_service", "/dev/rga", "/dev/dri/renderD128", "/dev/dri/renderD129"],
+      "current_codec_probe": {
+        "h264_v4l2m2m": false,
+        "h264_omx": false,
+        "libx264": true,
+        "h264_rkmpp_listed": false
+      },
+      "serial_x264_one_thread_failure": {
+        "session_capacity": 64,
+        "committed_steps": 183,
+        "outcome": "aborted",
+        "error": "episode queue full"
+      },
+      "serial_x264_auto_threads_failure": {
+        "session_capacity": 32,
+        "committed_steps": 259,
+        "outcome": "aborted",
+        "error": "episode queue full"
+      },
+      "static_frame_benchmark_fps": {
+        "serial_one_thread_per_stream": 26.91,
+        "serial_two_threads_per_stream": 32.9,
+        "serial_auto_threads": 36.23,
+        "parallel_one_thread_per_stream": 66.86,
+        "parallel_two_threads_per_stream": 68.54
+      },
+      "software_fallback": "one recording child process; three independent libx264 streams encoded concurrently; one x264 thread per stream; bounded queues unchanged",
+      "real_10_second_result": {
+        "output": "/data/YAM/data/debug/p2-20260914/real-camera-session-usb3-v5",
+        "submitted": 299,
+        "hdf5_rows": 299,
+        "video_frames_each": 299,
+        "session_queue_peak": 10,
+        "session_capacity": 32,
+        "outcome": "success"
+      },
+      "real_30_second_result": {
+        "output": "/data/YAM/data/debug/p2-20260914/real-camera-session-usb3-v6-30s",
+        "submitted": 897,
+        "invalid_startup_snapshots": 1,
+        "hdf5_rows": 897,
+        "video_frames_each": 897,
+        "session_queue_peak": 10,
+        "session_capacity": 32,
+        "outcome": "success"
+      },
+      "hardware_codec_deployment": {
+        "mpp_commit": "c1ce7e1a612644e6684481afe8045d2bfa680aba",
+        "ffmpeg_rockchip_commit": "d90e3a1c18d7929383cf88c1b3da2e2d1c966cbf",
+        "runtime_prefix": "/opt/yam-rkmpp",
+        "ffmpeg_sha256": "c8dff97626370634d77272a60df887c707462b60d6270ed36220c69a781d0d38",
+        "librockchip_mpp_sha256": "e55a1547d7ad670b4f4f1ddd56d70aac339dd54b0e48dee4b3f0a884510b0cc5",
+        "udev_rule": "/etc/udev/rules.d/92-yam-rkmpp.rules",
+        "udev_rule_sha256": "b269b4d6fbe153c0f0880612606e42755c93d8506a57321ad7e71e32292b948b",
+        "device_group": "video",
+        "native_mpp_rgb_640x480_benchmark_fps": 488.52,
+        "selection": "auto performs a real one-frame encode; forced h264_rkmpp is fail-closed; libx264 remains the verified fallback",
+        "manifest_backend": "h264_rkmpp",
+        "real_60_second_result": {
+          "output": "/data/YAM/data/debug/p2-20260914/real-camera-session-rkmpp-v8-60s",
+          "submitted": 1795,
+          "invalid_startup_snapshots": 1,
+          "hdf5_rows": 1795,
+          "video_frames_each": 1795,
+          "session_queue_peak": 9,
+          "session_capacity": 32,
+          "outcome": "success",
+          "ffmpeg_cpu_percent_each_single_core_basis": "5.4-5.7",
+          "ffmpeg_rss_mib_each": "9.6-9.9",
+          "thermal_zone_range_c": "58.2-60.1"
+        },
+        "twenty_second_end_to_end_cpu_comparison": {
+          "frames_each_path": 598,
+          "hardware_user_seconds": 22.54,
+          "hardware_system_seconds": 4.18,
+          "software_user_seconds": 41.93,
+          "software_system_seconds": 1.45,
+          "total_cpu_time_reduction_percent": 38.4,
+          "scope": "camera startup, recording, finalization and PyAV readback are included; wall time is not a pure encoder benchmark"
+        },
+        "five_second_segment_result": {
+          "output": "/data/YAM/data/debug/p2-20260914/real-camera-session-rkmpp-v9-segments",
+          "segment_steps": [150, 150, 59],
+          "each_camera_segment_frames": [150, 150, 59],
+          "total_hdf5_rows": 359,
+          "outcome": "success"
+        },
+        "decoded_visual_check": {
+          "result": "top/left/right roles and RGB colors remain correct at the 30 second point",
+          "frame_sha256": {
+            "top": "0f52e724c290f4499cf33986b8874bd322696b6757f33d905bc2450831db8730",
+            "left": "26d99f4ba0588ba59455830965270f4b210e475d93ea4ef8c40f04a93a96d53b",
+            "right": "ac26dc188440d9ab2cc1d4423a7a97f5e63dd53b8f4124645e5f33123d6becd7"
+          }
+        },
+        "known_log_note": "MPP reports unavailable optional client IDs 4/12/18 during startup; H.264 client encoding and all readback checks succeed"
+      }
+    }
+  },
+  "doctor_after_repair": {
+    "pass": ["config", "four expected CAN interfaces", "three D405 serials", "ffmpeg", "RKMPP runtime and device access", "CAN sudoers", "CAN udev"],
+    "expected_skips_or_warnings": ["no NVIDIA GPU on robot-only IPC", "training/model backends not installed on IPC"]
+  },
+  "configuration": {
+    "follower_grippers": "user confirmed both are standard grippers; mapped to i2rt linear_4310",
+    "camera_serials_written_to_station_hil": true
+  },
+  "software_validation": {
+    "pytest": "263 passed, 2 skipped, 17 subtests passed",
+    "ruff_changed_files": "passed",
+    "git_diff_check": "passed",
+    "project_memory_errors": 0,
+    "mock_camera_recording": "29 rows and 29 frames per camera, outcome success"
+  },
+  "acceptance": "P2 passed for the architecture-defined real RGB short-recording gate",
+  "remaining": [
+    "P3 controlled CAN communication and low-amplitude motion after physical safety confirmation",
+    "P5/P8 multi-hour RKMPP recording, interruption, temperature, resource and low-disk recovery validation"
+  ]
+}

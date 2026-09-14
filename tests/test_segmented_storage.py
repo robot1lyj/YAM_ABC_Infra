@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 
 import av
@@ -10,6 +11,7 @@ from yam_abc_reproduce.hil.lerobot_export import export_session
 from yam_abc_reproduce.hil.recording import RecordingSession
 from yam_abc_reproduce.hil.recovery import recover
 from yam_abc_reproduce.hil.storage import ROLES, Samples, SegmentWriter, h5_rows, read_rows
+from yam_abc_reproduce.hil.video import PyAvVideo
 
 
 def row(i):
@@ -48,6 +50,24 @@ def make_episode(path, n=7):
         writer.append(row(i), images(i))
     writer.close("success")
     return path
+
+
+def test_three_camera_encodes_run_in_parallel(monkeypatch, tmp_path):
+    monkeypatch.setenv("YAM_ABC_HIL_VIDEO_ENCODER", "libx264")
+    original = PyAvVideo.append
+    barrier = threading.Barrier(len(ROLES))
+
+    def synchronized(self, image):
+        barrier.wait(timeout=2)
+        return original(self, image)
+
+    monkeypatch.setattr(PyAvVideo, "append", synchronized)
+    path = tmp_path / "parallel"
+    path.mkdir()
+    writer = SegmentWriter(path, 30, {}, min_free_bytes=0)
+    writer.append(row(0), images(0))
+    writer.close("success")
+    assert writer.counts == {role: 1 for role in ROLES}
 
 
 def test_segment_boundaries_preserve_one_episode_and_exact_decoded_pixels(tmp_path):

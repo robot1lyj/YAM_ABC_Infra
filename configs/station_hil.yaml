@@ -1,5 +1,5 @@
 # Main YAM station: two official motorized leaders, two parallel-gripper followers.
-# Replace motor types and serials with the physical labels before hardware use.
+# Two standard DM4310 linear follower grippers and the verified D405 roster.
 # Runs unchanged with --mock; no GELLO zeroing or automatic arm homing.
 robot:
   type: yam
@@ -8,15 +8,15 @@ robot:
   leader_gripper_type: yam_teaching_handle
   bilateral_kp: 0.0
   robots:
-    - {type: yam_left, gripper: REPLACE_WITH_LINEAR_MOTOR_TYPE, channel: can_left}
-    - {type: yam_right, gripper: REPLACE_WITH_LINEAR_MOTOR_TYPE, channel: can_right}
+    - {type: yam_left, gripper: linear_4310, channel: can_left}
+    - {type: yam_right, gripper: linear_4310, channel: can_right}
   controllers:
     - {type: yam_lead_left, controls: yam_left, channel: can_lead_l}
     - {type: yam_lead_right, controls: yam_right, channel: can_lead_r}
 cameras:
-  - {name: top, role: top, type: realsense, serial: REPLACE_TOP_D405, width: 640, height: 480, fps: 30}
-  - {name: left, role: left, type: realsense, serial: REPLACE_LEFT_D405, width: 640, height: 480, fps: 30}
-  - {name: right, role: right, type: realsense, serial: REPLACE_RIGHT_D405, width: 640, height: 480, fps: 30}
+  - {name: top, role: top, type: realsense, serial: "260522275397", width: 640, height: 480, fps: 30}
+  - {name: left, role: left, type: realsense, serial: "260522271298", width: 640, height: 480, fps: 30}
+  - {name: right, role: right, type: realsense, serial: "260422271123", width: 640, height: 480, fps: 30}
 control_hz: 30.0
 save_root: data/episodes
 task_name: pick and place

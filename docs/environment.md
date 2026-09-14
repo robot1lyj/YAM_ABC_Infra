@@ -119,6 +119,32 @@ dry-run 无待变更，核心依赖导入和 mock CLI 检查通过。随后已�
 已写入 `configs/cameras.yaml`；相机流接入 YAM 主运行环境前仍需采用与 3.12/GLIBC 2.35
 兼容的绑定方案并在硬件接入后复验。
 
+2026-09-14 P2 已按 RealSense 官方 Ubuntu Python binding 流程，在 IPC 用 tag `v2.58.3`
+（commit `dfd6aa91250f5c31521d72d627865417989bb4e7`）、系统 GCC 11.4 和项目 Python 3.12.14
+本地构建静态 binding。产物最高需要 GLIBC 2.34，已替换 `.venv` 中同版本但要求 GLIBC
+2.38 的模块；原 wheel 模块备份在忽略的构建目录。正式项目环境现可枚举并同时采集三台
+D405。重建 `.venv` 后须重新安装该本机构建产物，不能直接沿用当前上游 ARM64 wheel；
+设备位于中国境内时优先从国内镜像获取固定 tag，或由开发机校验 commit 后经局域网传入。
+构建、ABI 和短流结果见 [P2 相机调试证据](evidence/20260914-rk3588-p2-camera-debug.json)。
+
+### RK3588 视频编码适配
+
+当前板卡为RK3588 EVB7、Ubuntu 22.04、BSP 6.1 PREEMPT_RT，8核（4×A76＋4×A55）。
+系统FFmpeg/PyAV没有`h264_rkmpp`，枚举到的`h264_v4l2m2m`和`h264_omx`经实际开帧探针
+不可用。现已按固定commit构建Rockchip MPP和最小FFmpeg-Rockchip运行时，安装到
+`/opt/yam-rkmpp`；`/etc/udev/rules.d/92-yam-rkmpp.rules`仅向`video`组开放MPP、RGA和
+DMA heap节点，用户`linux`已加入`video/render`组。构建依赖新增Ubuntu `libdrm-dev`。
+可复用`scripts/build_rkmpp_ffmpeg.sh`；中国境内可用`YAM_MPP_REPO`和
+`YAM_FFMPEG_ROCKCHIP_REPO`指向镜像，最终commit仍会核验。
+
+录制器默认`auto`：每集开始先做真实一帧硬编探针，通过后用三个独立`h264_rkmpp`进程，
+否则回到三路并行、每路单线程libx264；`YAM_ABC_HIL_VIDEO_ENCODER`可显式固定
+`h264_rkmpp`或`libx264`，显式硬编失败会报错而不静默替换。后端写入episode manifest。
+真实60秒三路640×480@30硬编完整回读1795帧，队列峰值9/32；三个FFmpeg进程各约
+5.4–5.7%单核CPU和10MiB RSS，温区约58–60°C。20秒端到端对照的user+sys CPU时间从
+libx264的43.38秒降至MPP的26.72秒（约38%）；5秒切段得到150/150/59帧且逐路一致。
+完整对照见[P2相机调试证据](evidence/20260914-rk3588-p2-camera-debug.json)。
+
 ## RK3588 IPC NVMe 与 YAM 路径（2026-09-14）
 
 现场确认 NVMe 型号为 `TIMAR S97M8-PY 1TB SSD`、序列号 `6HJ7011000234`；整盘原先没有可识别分区或文件系统，经用户明确授权后初始化为 GPT 单分区。当前 `nvme0n1p1` 使用 ext4，标签 `yam-data`，UUID 为 `501fb615-1346-455d-9d50-61c1d113faf5`，挂载点为 `/data`，约 938 GiB 可用。

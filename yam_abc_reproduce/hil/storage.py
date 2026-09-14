@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import uuid
+from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 
 import h5py
@@ -252,10 +253,14 @@ class SegmentWriter:
         self.limit = max(1, int(fps * segment_seconds))
         self.min_free_bytes = min_free_bytes
         self.segments, self.videos, self.counts = [], {}, {}
+        self.video_backend = None
         self.samples = None
         self.written = self.local = 0
         self.error = None
         self.episode_id = uuid.uuid4().hex
+        # Camera streams are independent. One worker per stream avoids serial software
+        # encoding and prevents pipe writes from serializing the RKMPP subprocesses.
+        self.encoder_pool = ThreadPoolExecutor(max_workers=len(ROLES), thread_name_prefix="video")
         self.checkpoint("recording")
 
     def checkpoint(self, outcome):
@@ -276,8 +281,6 @@ class SegmentWriter:
         )
 
     def append(self, row, images):
-        import av
-
         if self.samples is None:
             if shutil.disk_usage(self.path).free < self.min_free_bytes:
                 raise OSError("insufficient free disk space for recording")
@@ -288,31 +291,39 @@ class SegmentWriter:
         if self.local % int(max(1, self.fps)) == 0:
             if shutil.disk_usage(self.path).free < self.min_free_bytes:
                 raise OSError("recording stopped: low disk space")
+        if images and self.video_backend is None:
+            from .video import select_backend
+
+            self.video_backend = select_backend(next(iter(images.values())), int(self.fps))
+            self.metadata["video_encoder"] = self.video_backend
+            self.checkpoint("recording")
         indices = {}
         for role, im in images.items():
             if role not in ROLES or im.dtype != np.uint8 or im.ndim != 3 or im.shape[2] != 3:
                 raise ValueError("expected named RGB8 camera frames")
             if role not in self.videos:
-                container = av.open(
-                    str(self.current / f"{role}.mp4"),
-                    "w",
-                    options={"movflags": "frag_keyframe+empty_moov+default_base_moof"},
+                from .video import open_video
+
+                self.videos[role] = open_video(
+                    self.video_backend,
+                    self.current / f"{role}.mp4",
+                    im.shape[1],
+                    im.shape[0],
+                    int(self.fps),
                 )
-                stream = container.add_stream(
-                    "libx264",
-                    rate=int(self.fps),
-                    options={"preset": "ultrafast", "crf": "20", "tune": "zerolatency"},
-                )
-                stream.width, stream.height = im.shape[1], im.shape[0]
-                stream.pix_fmt, stream.thread_count, stream.gop_size = "yuv420p", 1, int(self.fps)
-                self.videos[role] = container, stream
                 self.counts[role] = 0
-            container, stream = self.videos[role]
-            if im.shape != (stream.height, stream.width, 3):
+            video = self.videos[role]
+            if im.shape != (video.height, video.width, 3):
                 raise ValueError("camera resolution changed during recording")
-            for packet in stream.encode(av.VideoFrame.from_ndarray(im, format="rgb24")):
-                container.mux(packet)
             indices[role] = self.counts[role]
+
+        futures = []
+        for role, im in images.items():
+            futures.append(self.encoder_pool.submit(self.videos[role].append, im))
+        wait(futures)
+        for future in futures:
+            future.result()
+        for role in images:
             self.counts[role] += 1
         self.samples.append(dict(row, video_indices=indices))
         self.local += 1
@@ -324,16 +335,18 @@ class SegmentWriter:
         if self.samples is None:
             return
         samples, self.samples = self.samples, None
+        close_error = None
         try:
             samples.close()
         finally:
-            for container, stream in self.videos.values():
+            for video in self.videos.values():
                 try:
-                    for packet in stream.encode():
-                        container.mux(packet)
-                finally:
-                    container.close()
+                    video.close()
+                except Exception as exc:  # noqa: BLE001
+                    close_error = close_error or exc
             self.videos = {}
+        if close_error:
+            raise close_error
         files = {}
         for path in self.current.iterdir():
             if path.suffix in (".h5", ".mp4"):
@@ -354,7 +367,10 @@ class SegmentWriter:
         self.checkpoint("recording")
 
     def close(self, outcome, metadata=None):
-        if metadata:
-            self.metadata.update(metadata)
-        self.finish_segment()
-        self.checkpoint(outcome)
+        try:
+            if metadata:
+                self.metadata.update(metadata)
+            self.finish_segment()
+            self.checkpoint(outcome)
+        finally:
+            self.encoder_pool.shutdown(wait=True)

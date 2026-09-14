@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import re
 import select
 import shutil
@@ -183,9 +184,15 @@ def check_cameras(repo_root: Path, cameras_config: str | None) -> list[Finding]:
         return [Finding("cameras", SKIP, "no realsense serials configured")]
     try:
         import pyrealsense2 as rs  # type: ignore
-    except ImportError:
-        return [Finding("cameras", SKIP, "pyrealsense2 not installed",
-                        "uv sync --extra camera")]
+    except ModuleNotFoundError as exc:
+        if exc.name == "pyrealsense2":
+            return [Finding("cameras", SKIP, "pyrealsense2 not installed",
+                            "uv sync --extra camera")]
+        return [Finding("cameras", FAIL, f"pyrealsense2 dependency cannot load: {exc}",
+                        "install a binding compatible with this Python, architecture, and OS")]
+    except ImportError as exc:
+        return [Finding("cameras", FAIL, f"pyrealsense2 cannot load: {exc}",
+                        "install a binding compatible with this Python, architecture, and OS")]
     present = {d.get_info(rs.camera_info.serial_number) for d in rs.context().query_devices()}
     out = []
     for serial, name in expected.items():
@@ -217,6 +224,31 @@ def check_gpu() -> list[Finding]:
     return [Finding("gpu", st, f"{free}/{total} MiB free, util {util}%", fix)]
 
 
+def check_recording_encoder() -> Finding:
+    if platform.machine() not in {"aarch64", "arm64"}:
+        return Finding("sys.video_encoder", SKIP, "RKMPP is only expected on the RK ARM host")
+    binary = Path("/opt/yam-rkmpp/bin/ffmpeg")
+    if not binary.is_file() or not os.access(binary, os.X_OK):
+        return Finding(
+            "sys.video_encoder",
+            WARN,
+            "RKMPP runtime missing; bounded parallel libx264 fallback will be used",
+            "run scripts/build_rkmpp_ffmpeg.sh on the RK3588 host",
+        )
+    if not os.access("/dev/mpp_service", os.R_OK | os.W_OK):
+        return Finding(
+            "sys.video_encoder",
+            FAIL,
+            "RKMPP runtime installed but /dev/mpp_service is not accessible",
+            "install scripts/92-yam-rkmpp.rules and add the service user to video",
+        )
+    return Finding(
+        "sys.video_encoder",
+        PASS,
+        "RKMPP runtime and device access present (one-frame probe runs when an episode starts)",
+    )
+
+
 def check_system(repo_root: Path, expected_ch: dict[str, str]) -> list[Finding]:
     out = []
     # Recording and Review go through PyAV now, so a missing system ffmpeg no longer blanks
@@ -225,6 +257,7 @@ def check_system(repo_root: Path, expected_ch: dict[str, str]) -> list[Finding]:
     out.append(Finding("sys.ffmpeg", PASS, "found") if shutil.which("ffmpeg") else
                Finding("sys.ffmpeg", WARN, "not found — the ABC training-cache build needs it",
                        "sudo apt install ffmpeg"))
+    out.append(check_recording_encoder())
     # /etc/sudoers.d is often 0750 root:root — stat may be denied for normal users.
     # sudo -n is the authoritative, permission-free probe: can we bring a CAN
     # interface up without a password prompt?

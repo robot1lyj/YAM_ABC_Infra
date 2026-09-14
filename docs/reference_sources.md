@@ -38,3 +38,11 @@
 接口以 [condapi 对接规范](condapi_interface.md)为本项目所有者。源项目快照的最新规范采用 Pi0.5 全量微调 `pi05_yam`；旧 LoRA 段落不能覆盖它。
 
 历史 Thor 性能只属于对应后端、样本和测试条件，不是本工作站闭环测量，也不保证未来微调模型效果。
+
+## RK3588 相机与编码（2026-09-14 快照）
+
+- Intel RealSense `librealsense` tag `v2.58.3`（`dfd6aa91250f5c31521d72d627865417989bb4e7`）：用于在IPC按官方Python binding构建方式生成与GLIBC 2.35兼容的模块。
+- Rockchip官方`mpp` develop（`c1ce7e1a612644e6684481afe8045d2bfa680aba`）：确认MPP层支持RK3588、Linux 6.1及rkvenc编码器，且依赖对应内核设备驱动。
+- `nyanmisaka/ffmpeg-rockchip` master（`d90e3a1c18d7929383cf88c1b3da2e2d1c966cbf`）：非Rockchip官方FFmpeg分支；以最小功能构建安装到RK3588的`/opt/yam-rkmpp`，提供`h264_rkmpp`录制子进程。软件回退不依赖它。
+
+名称枚举不作为可用证据；当前IPC硬编能力以实际开帧探针为准，见[P2证据](evidence/20260914-rk3588-p2-camera-debug.json)。

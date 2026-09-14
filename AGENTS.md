@@ -8,6 +8,8 @@
 核对两个远端指向同一提交；单端失败需明确报告，不能称为同步完成。main 跟踪 origin/main。
 `upstream` 是 i2rt-robotics/yam-abc-reproduce。i2rt 保持为固定提交的子模块。
 
+**自动提交（用户2026-09-14确认）**：每次完成一轮代码更新，执行适用检查与 `git diff --check` 后，自动提交本次修改及配套配置、文档和记忆，无需再次询问。只纳入本次任务的修改，不混入其他 agent 尚未完成的工作；提交后按上述顺序同步 Gitea 与 GitHub，并核对两端 SHA。
+
 ## 记忆入口与所有权
 
 - 从 `docs/cache/context_index.md` 选择当前任务相关的规范文档，不全量加载历史。

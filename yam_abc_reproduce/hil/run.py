@@ -19,7 +19,13 @@ from pathlib import Path
 import numpy as np
 
 from ..camera.worker import CameraWorker
-from ..config import build_station_config, load_yaml
+from ..config import (
+    build_station_config,
+    controller_channel_for,
+    load_yaml,
+    robot_channel_for,
+)
+from ..robot.can_bus import check_can_up, reset_can_buses, stop_can_buses
 from ..runtime import build_arm_units, build_cameras_from_config
 from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
@@ -39,6 +45,30 @@ class MockPolicy:
         actions = np.tile(obs["observation.state"], (50, 1))
         actions[:, [0, 7]] += 0.04 * np.sin(np.arange(50)[:, None] / 15)
         return {"actions": actions}
+
+
+def station_can_channels(cfg) -> list[str]:
+    """CAN interfaces owned by a full four-arm workstation session."""
+    robots = cfg.robot.robots or [cfg.robot.active_robot()]
+    channels = [robot_channel_for(robot) for robot in robots]
+    channels += [controller_channel_for(cfg.robot.controller_for(robot)) for robot in robots]
+    return list(dict.fromkeys(channels))
+
+
+def prepare_station_can(cfg) -> str:
+    """Bring station CAN up and verify every interface before i2rt opens it."""
+    ok, output = reset_can_buses()
+    if not ok:
+        raise RuntimeError(f"CAN setup failed before arm connection: {output}")
+    needed = station_can_channels(cfg)
+    down = check_can_up(needed)
+    if down:
+        raise RuntimeError(
+            "CAN interface(s) not up after reset: "
+            + ", ".join(down)
+            + ". Check the USB-CAN adapters and passwordless CAN sudo rule."
+        )
+    return output
 
 
 class LocalEdgePolicy:
@@ -680,6 +710,8 @@ def main(argv=None, *, service=None):
         else:
             workers = list(service.camera_slots)
         if not args.mock:
+            can_output = prepare_station_can(cfg)
+            print(f"CAN ready: {can_output}", flush=True)
             print(
                 "Opening four YAM arms: motors may energize and grippers may calibrate. Keep leader buttons released.",
                 flush=True,
@@ -753,6 +785,13 @@ def main(argv=None, *, service=None):
             policy_worker.close()
         if recorder._thread.is_alive():
             recorder.close("aborted")
+        if not args.mock:
+            can_errors = stop_can_buses(station_can_channels(cfg))
+            if can_errors:
+                message = "CAN shutdown failed: " + "; ".join(can_errors)
+                recorder.metadata.setdefault("close_errors", []).append(message)
+                if service is not None:
+                    service.cleanup_error = message
 
     if service is not None:
         service.saved()

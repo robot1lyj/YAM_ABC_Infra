@@ -61,3 +61,28 @@ def reset_can_buses(timeout_s: float = 30.0) -> tuple[bool, str]:
     if r.returncode == 0:
         return True, out
     return False, (r.stderr or out or f"exit code {r.returncode}").strip()
+
+
+def stop_can_buses(channels: list[str], timeout_s: float = 10.0) -> list[str]:
+    """Put only the station-owned CAN interfaces DOWN; return failures.
+
+    This is used after the robot stack has released its sockets.  It deliberately
+    avoids the board's unrelated ``bcan*`` devices and never masks a shutdown error.
+    """
+    errors: list[str] = []
+    for channel in dict.fromkeys(channels):
+        try:
+            result = subprocess.run(
+                ["sudo", "-n", "ip", "link", "set", channel, "down"],
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                stdin=subprocess.DEVNULL,
+            )
+        except (subprocess.SubprocessError, OSError) as exc:
+            errors.append(f"{channel}: {exc}")
+            continue
+        if result.returncode:
+            detail = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
+            errors.append(f"{channel}: {detail}")
+    return errors

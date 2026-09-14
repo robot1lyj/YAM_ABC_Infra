@@ -39,6 +39,29 @@ def test_blank_channel_is_treated_as_unset():
     assert robot_channel_for(RobotUnitConfig("yam_left", channel="  ")) == "can_left"
 
 
+def test_hil_prepares_all_configured_can_before_opening_i2rt(monkeypatch):
+    from yam_abc_reproduce.hil import run
+
+    cfg = _one_arm_station()
+    calls = []
+    monkeypatch.setattr(run, "reset_can_buses", lambda: (True, "reset ok"))
+    monkeypatch.setattr(run, "check_can_up", lambda channels: calls.append(channels) or [])
+
+    assert run.prepare_station_can(cfg) == "reset ok"
+    assert calls == [["can2", "can3"]]
+
+
+def test_hil_refuses_to_open_i2rt_when_can_did_not_come_up(monkeypatch):
+    from yam_abc_reproduce.hil import run
+
+    cfg = _one_arm_station()
+    monkeypatch.setattr(run, "reset_can_buses", lambda: (True, "reset ok"))
+    monkeypatch.setattr(run, "check_can_up", lambda channels: [channels[0]])
+
+    with pytest.raises(RuntimeError, match="can2"):
+        run.prepare_station_can(cfg)
+
+
 def test_station_yaml_parses_per_device_channels(tmp_path):
     path = tmp_path / "station.yaml"
     path.write_text(

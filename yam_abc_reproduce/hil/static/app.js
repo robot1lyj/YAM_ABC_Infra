@@ -484,13 +484,19 @@ function renderInitialization(context) {
         : "连接 top / left / right 并确认画面新鲜",
   );
   const limits = state.gripper_limits || [];
+  const followers = state.initialization?.inventory?.followers || [];
+  const gripperRangesPinned =
+    followers.length > 0 &&
+    followers.every((item) => Array.isArray(item.gripper_limits) && item.gripper_limits.length === 2);
   text(
     "init-arm-status",
     armDone
       ? `四臂反馈正常 · 夹爪行程 ${limits.map((x) => x?.map((v) => Number(v).toFixed(3)).join(" → ") || "—").join(" / ")}`
       : state.connection === "connecting"
         ? "正在顺序连接设备；未固定行程的夹爪会先完成自动标定"
-        : "夹爪先闭合并清空行程；连接后保持当前位置",
+        : gripperRangesPinned
+          ? "夹爪范围已保存；连接时不扫行程，四臂保持当前位置"
+          : "夹爪先闭合并清空行程；连接后保持当前位置",
   );
   text(
     "init-complete-status",
@@ -644,12 +650,19 @@ $("init-preflight").onclick = async () => {
   }
 };
 $("init-cameras").onclick = () => action("/cameras/connect");
-$("init-arms").onclick = () =>
+$("init-arms").onclick = () => {
+  const followers = state.initialization?.inventory?.followers || [];
+  const gripperRangesPinned =
+    followers.length > 0 &&
+    followers.every((item) => Array.isArray(item.gripper_limits) && item.gripper_limits.length === 2);
   confirmAction(
     "开始四臂初始化？",
-    "请确认两只 Follower 夹爪已手动闭合、夹爪行程无障碍，四台机械臂已固定，手柄按钮全部释放且有人照看。连接可能施加力矩并执行夹爪标定，但不会自动回零或启动遥操作。",
+    gripperRangesPinned
+      ? "请确认四台机械臂已固定、手柄按钮全部释放且有人照看。当前本站两只 Follower 已保存夹爪范围，连接会施加力矩并保持当前位置，但不会扫夹爪行程、自动回零或启动遥操作。"
+      : "请确认两只 Follower 夹爪已手动闭合、夹爪行程无障碍，四台机械臂已固定、手柄按钮全部释放且有人照看。本站尚未保存夹爪范围，连接会执行夹爪标定，但不会自动回零或启动遥操作。",
     () => action("/connect", { ready: true, initialize: true }),
   );
+};
 $("init-gravity").onclick = () => {
   if (state.maintenance === "gravity") return action("/event/hold");
   confirmAction(

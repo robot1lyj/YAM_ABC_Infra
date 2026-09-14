@@ -62,6 +62,13 @@
     "can_errors": {"rx_errors": 0, "tx_errors": 0, "dropped": 0, "bus_error": 0, "bus_off": 0},
     "shutdown": "zero-torque command, patched bounded thread join, then explicit motor-off replies for IDs 1-7"
   },
+  "leader_handle_passive_readout": {
+    "method": "100 passive encoder reads per handle at 100 Hz; leader arm motors were not enabled and encoder zero was not written.",
+    "left": {"channel": "can_lead_l", "position_rad_min": 0.006574, "position_rad_max": 0.01534, "button_idle_states": [[0, 0]]},
+    "right": {"channel": "can_lead_r", "position_rad_min": 0.006574, "position_rad_max": 0.013148, "button_idle_states": [[0, 0]]},
+    "interpretation": "Both released-handle readings are close to the official near-zero expectation and the idle button bits were stable; no routine encoder re-zero is indicated.",
+    "remaining": "Press transitions and active leader gravity-compensation still require supervised checks."
+  },
   "recording_regression_fix": {
     "observation": "A full-suite run intermittently saw RecordingSession.episodes update before the atomic session.json checkpoint became visible.",
     "change": "Write the candidate episode list to session.json before publishing the in-memory completion signal.",
@@ -78,7 +85,7 @@
     "not_yet_passed": [
       "On-site tactile/visual confirmation that the left follower floats and holds as expected.",
       "Right follower official initialization and gripper calibration.",
-      "Leader teaching-handle readout and button idle polarity.",
+      "Leader button press transitions and active gravity-compensation.",
       "Single-pair and dual-pair low-amplitude synchronization, direction, pause and emergency-stop behavior.",
       "A taught ready/home pose; no all-zero home command has been issued."
     ]

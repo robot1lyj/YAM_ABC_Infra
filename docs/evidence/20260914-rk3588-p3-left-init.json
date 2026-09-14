@@ -62,6 +62,31 @@
     "can_errors": {"rx_errors": 0, "tx_errors": 0, "dropped": 0, "bus_error": 0, "bus_off": 0},
     "shutdown": "zero-torque command, patched bounded thread join, then explicit motor-off replies for IDs 1-7"
   },
+  "official_right_follower_initialization": {
+    "channel": "can_right",
+    "bitrate_bit_s": 1000000,
+    "arm_type": "yam",
+    "gripper_type": "linear_4310",
+    "zero_gravity_mode": true,
+    "gripper_auto_calibration": true,
+    "gripper_limits_raw_rad_closed_open": [0.07038, -5.03948],
+    "gripper_span_rad": 5.10986,
+    "observation_seconds_after_calibration": 10,
+    "joint_start_rad": [-0.0021, 0.00362, 0.00057, -0.09785, -0.01354, -0.09709],
+    "joint_end_rad": [-0.0021, 0.00629, 0.00515, -0.07572, -0.01316, -0.09709],
+    "max_drift_rad": [0.0, 0.00267, 0.00458, 0.02213, 0.00038, 0.0],
+    "can_frames": {"tx": 18079, "rx": 18079},
+    "can_errors": {"rx_errors": 0, "tx_errors": 0, "dropped": 0, "bus_error": 0, "bus_off": 0},
+    "shutdown": "zero-torque command, patched bounded thread join, then explicit motor-off replies for IDs 1-7"
+  },
+  "dual_follower_supervised_float_test": {
+    "configuration": "Both standard YAM followers used their measured linear_4310 limits, so startup skipped repeated gripper calibration; no home or synchronization target was sent.",
+    "physical_payload": "Both followers carried their installed wrist cameras.",
+    "operator_observation": "Both arms could be pushed gently and basically remained where released; no material issue was observed.",
+    "result": "pass for supervised qualitative zero-gravity behavior with the current wrist-camera payload",
+    "shutdown_recovery": "The first post-close explicit motor-off helper had a shell-quoting NameError. Both robot objects had already completed zero-torque close; a separate immediate recovery then received OFF replies from motor IDs 1-7 on both followers.",
+    "final_state": "Both follower interfaces and both leader interfaces DOWN."
+  },
   "leader_handle_passive_readout": {
     "method": "100 passive encoder reads per handle at 100 Hz; leader arm motors were not enabled and encoder zero was not written.",
     "left": {"channel": "can_lead_l", "position_rad_min": 0.006574, "position_rad_max": 0.01534, "button_idle_states": [[0, 0]]},
@@ -80,11 +105,11 @@
       "Left follower initializes with the correct standard YAM and linear_4310 model.",
       "Left linear gripper auto-calibration returns a non-collapsed range.",
       "Left follower numerical drift and CAN transport remain bounded for the measured 10-second window.",
+      "Right follower initializes and calibrates with bounded 10-second numerical drift and no CAN errors.",
+      "Both followers qualitatively float and hold under supervised manual testing with wrist cameras installed.",
       "Patched shutdown completes without the observed CAN-socket race and all seven left-follower motors acknowledge OFF."
     ],
     "not_yet_passed": [
-      "On-site tactile/visual confirmation that the left follower floats and holds as expected.",
-      "Right follower official initialization and gripper calibration.",
       "Leader button press transitions and active gravity-compensation.",
       "Single-pair and dual-pair low-amplitude synchronization, direction, pause and emergency-stop behavior.",
       "A taught ready/home pose; no all-zero home command has been issued."

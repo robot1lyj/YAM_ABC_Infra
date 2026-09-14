@@ -1,0 +1,24 @@
+# RK3588 IPC D405 USB 3.2 follow-up evidence
+
+- Observed: 2026-09-14 15:54:33 +08:00, via passwordless SSH as `linux@192.168.110.140`.
+- This follow-up supersedes the earlier camera link-speed snapshot; the earlier USB2 observation is retained as historical evidence.
+- RealSense API enumerated three `RealSense D405` devices with no probe error:
+
+```text
+260422271123 | 3.2 | right
+260522271298 | 3.2 | left
+260522275397 | 3.2 | top
+```
+
+- `lsusb -t` reported 5000M for all three camera branches: right on bus 10 port 1, top on bus 8 port 1, and left on bus 6 port 4. The left camera is now on the USB 3.x controller path `/sys/devices/platform/fe190000.pcie/pci0004:40/0004:40:00.0/0004:41:00.0/usb6/6-4`.
+- Current convenience links resolve as follows:
+
+```text
+/dev/yam-camera-right -> /dev/video12
+/dev/yam-camera-top -> /dev/video6
+/dev/yam-camera-left -> /dev/video0
+```
+
+- `/etc/udev/rules.d/91-yam-cameras.rules` SHA256: `7557c613728a1339e99c563225fe9b58fd009bfcba20f1550756d3d8c499e622`. The current UVC parent serials are right=`255323070072`, top=`255323077320`, and left=`255323076962`; all three rules match these stable serials, not `videoN` or a transient camera enumeration number.
+- `/data/YAM/configs/cameras.yaml` SHA256: `5530a7791335ff9b5d7e51116ae334581bc35f908df4546cd018afbcba4257a2`; RealSense role mapping remains `right=260422271123`, `top=260522275397`, `left=260522271298`.
+- No camera stream, CAN interface, motor, robot, or Thor process was started by this check.

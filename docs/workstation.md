@@ -30,7 +30,7 @@ follower 配标准平行夹爪。leader 不是被动 GELLO。
 | 左 leader / yam_lead_left | 官方电动YAM；本体S/N不要求；yam_teaching_handle | `5-2.1`；适配器审计S/N `207F34A658455017` | USB Hub `5-2.1`；稳定名 `can_lead_l` | USB口已核验；本体S/N不适用 |
 | 右 leader / yam_lead_right | 官方电动YAM；本体S/N不要求；yam_teaching_handle | `5-2.2`；适配器审计S/N `205534A258455017` | USB Hub `5-2.2`；稳定名 `can_lead_r` | USB口已核验；本体S/N不适用 |
 | 顶部相机 / top | D405；`260522275397` | 相机自身 RealSense S/N | USB3；`/dev/yam-camera-top`（当前 `/dev/video6`） | 已核验 |
-| 左相机 / left | D405；`260522271298` | 相机自身 RealSense S/N | USB2；`/dev/yam-camera-left`（当前 `/dev/video0`） | 已核验 |
+| 左相机 / left | D405；`260522271298` | 相机自身 RealSense S/N | USB3；`/dev/yam-camera-left`（当前 `/dev/video0`） | 已核验 |
 | 右相机 / right | D405；`260422271123` | 相机自身 RealSense S/N | USB3；`/dev/yam-camera-right`（当前 `/dev/video12`） | 已核验 |
 
 登记顺序：
@@ -60,9 +60,9 @@ USB-CAN、D405 或 `/dev/video*`。因此四臂本体、适配器、Hub 下联�
 |---|---|---|---|
 | right | `260422271123` | `usb10/10-1/.../video12` | `/dev/yam-camera-right` |
 | top | `260522275397` | `usb8/8-1/.../video6` | `/dev/yam-camera-top` |
-| left | `260522271298` | `usb3/3-1/.../video0` | `/dev/yam-camera-left` |
+| left | `260522271298` | `usb6/6-4/.../video0` | `/dev/yam-camera-left` |
 
-IPC 已应用 `/etc/udev/rules.d/91-yam-cameras.rules`，当前三个稳定入口已触发并解析到 `video12`、`video6`、`video0`。right/top 的 UVC 层提供内部序列号；left 的 USB2 UVC 层没有暴露该序列号，因此规则对 left 使用其已核验的固定 USB 路径。YAM 应继续用 `cameras.yaml` 中的 RealSense S/N 选择设备，不把 `/dev/videoN` 当永久身份。此步骤只创建 udev 符号入口并更新配置，未启动相机流、CAN 或电机。
+IPC 已应用 `/etc/udev/rules.d/91-yam-cameras.rules`，当前三个稳定入口已触发并解析到 `video12`、`video6`、`video0`。本次复核三台相机均为 USB 3.2/5000M，三台 UVC 父设备均提供稳定内部序列号，规则按 UVC 序列号建立便利入口，不依赖 `videoN` 或当前物理路径。YAM 应继续用 `cameras.yaml` 中的 RealSense S/N 选择设备，不把 `/dev/videoN` 当永久身份。此步骤只创建/更新 udev 符号入口并更新配置，未启动相机流、CAN 或电机。
 
 ## 待核验
 

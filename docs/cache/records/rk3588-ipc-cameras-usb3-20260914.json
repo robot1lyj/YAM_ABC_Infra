@@ -1,0 +1,57 @@
+{
+  "id": "rk3588-ipc-cameras-usb3-20260914",
+  "kind": "observation",
+  "claim": "After the user moved the left D405, all three RK3588 IPC cameras enumerate through USB 3.2/5000M. RealSense role serials remain right=260422271123, top=260522275397, left=260522271298; udev convenience links resolve and match stable UVC parent serials.",
+  "owner": "docs/workstation.md",
+  "scope": {
+    "project": "YAM",
+    "platform": "linux-aarch64-rk3588",
+    "phase": "P0 D405 link-speed follow-up",
+    "environment": "linux@192.168.110.140"
+  },
+  "status": "verified",
+  "observed_at": "2026-09-14T15:54:33+08:00",
+  "recorded_at": "2026-09-14T15:55:23+08:00",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260914-rk3588-ipc-cameras-usb3.txt",
+      "sha256": "61d34630f3aef5550600e48afbd67f8252122906da6bce66bbb09ddccc7334f8"
+    }
+  ],
+  "recheck": "always",
+  "valid_until": null,
+  "supersedes": [
+    "rk3588-ipc-cameras-20260914"
+  ],
+  "retrieval": {
+    "terms": [
+      "D405",
+      "RealSense",
+      "USB 3.2",
+      "5000M",
+      "camera",
+      "cameras.yaml",
+      "260422271123",
+      "260522275397",
+      "260522271298",
+      "yam-camera-right",
+      "yam-camera-top",
+      "yam-camera-left",
+      "udev"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/workstation.md"
+      },
+      {
+        "relation": "check",
+        "source": "docs/environment.md"
+      },
+      {
+        "relation": "prerequisite",
+        "source": "configs/cameras.yaml"
+      }
+    ]
+  }
+}

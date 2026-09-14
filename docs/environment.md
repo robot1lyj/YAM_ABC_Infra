@@ -135,7 +135,7 @@ dry-run 无待变更，核心依赖导入和 mock CLI 检查通过。随后已�
 
 ## RK3588 IPC D405 相机身份与稳定入口（2026-09-14）
 
-三台 D405 已按用户确认的物理标签与 RealSense API 拔插复核完成角色登记：`right=260422271123`、`top=260522275397`、`left=260522271298`。`/data/YAM/configs/cameras.yaml` 已使用这些 RealSense S/N。IPC 已应用 `/etc/udev/rules.d/91-yam-cameras.rules`，当前稳定入口为 `/dev/yam-camera-right`→`video12`、`/dev/yam-camera-top`→`video6`、`/dev/yam-camera-left`→`video0`；入口只作为 UVC 便利路径，应用层仍按 RealSense S/N 选择设备。right/top 的 UVC 父设备暴露内部序列号，left 的 USB2 UVC 层未暴露该字段，因此 left 规则使用已核验的固定 USB 路径。此步骤未启动相机采集或任何电机/CAN动作。
+三台 D405 已按用户确认的物理标签与 RealSense API 拔插复核完成角色登记：`right=260422271123`、`top=260522275397`、`left=260522271298`。`/data/YAM/configs/cameras.yaml` 已使用这些 RealSense S/N。IPC 已应用 `/etc/udev/rules.d/91-yam-cameras.rules`，当前稳定入口为 `/dev/yam-camera-right`→`video12`、`/dev/yam-camera-top`→`video6`、`/dev/yam-camera-left`→`video0`；入口只作为 UVC 便利路径，应用层仍按 RealSense S/N 选择设备。2026-09-14 15:54 复核时三台相机均为 USB 3.2/5000M，三台 UVC 父设备均暴露稳定内部序列号，规则不依赖 `videoN` 或当前物理路径。此步骤未启动相机采集或任何电机/CAN动作。
 
 ## 构建失败的检查与重试条件
 

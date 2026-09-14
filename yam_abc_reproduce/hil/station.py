@@ -1,6 +1,7 @@
 """Four-arm IO adapter, with all motor writes owned by the runtime tick."""
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
@@ -14,6 +15,17 @@ class StationIO:
             raise ValueError("exactly left and right YAM followers required")
         self.units = [by_name["left"], by_name["right"]]
         self.mock = mock
+        # Every real arm has its own CAN interface and i2rt state lock. Waiting for
+        # those four independent snapshots serially adds their lock-contention times
+        # together and made a nominal 30 Hz tick take 36-77 ms on RK3588. Reads are
+        # side-effect free, so issue them together; writes remain below in one ordered
+        # control-owner thread.
+        self._read_pool = (
+            None
+            if mock
+            else ThreadPoolExecutor(max_workers=4, thread_name_prefix="station-read")
+        )
+        self.read_timings_s = {}
         self.leader_gain, self.leader_speed = leader_gain, leader_speed
         self._mock_leaders = np.concatenate([u.robot.get_joint_pos() for u in self.units])
         self._manual = True
@@ -30,18 +42,48 @@ class StationIO:
             raise ValueError("invalid SDK joint limits")
 
     def read(self):
-        q = vector(np.concatenate([u.robot.get_joint_pos() for u in self.units]))
         if self.mock:
+            q = vector(np.concatenate([u.robot.get_joint_pos() for u in self.units]))
             if self._manual:
                 self._mock_t += 1
                 self._mock_leaders[[0, 7]] += 0.001 * np.cos(self._mock_t / 30)
             return q, self._mock_leaders.copy(), [[False, False], [False, False]], [0.0] * 4
-        leaders, buttons, ages = [], [], []
-        for u in self.units:
-            leader, keys, age = u.agent.hil_read()
-            leaders.append(leader)
-            buttons.append([bool(key) for key in keys[:2]])
-            ages.extend([u.robot.feedback_age(), age])
+
+        def read_follower(unit):
+            started = time.monotonic()
+            pos = unit.robot.get_joint_pos()
+            age = unit.robot.feedback_age()
+            return pos, age, time.monotonic() - started
+
+        def read_leader(unit):
+            started = time.monotonic()
+            pos, keys, age = unit.agent.hil_read()
+            return pos, keys, age, time.monotonic() - started
+
+        started = time.monotonic()
+        follower_futures = [self._read_pool.submit(read_follower, unit) for unit in self.units]
+        leader_futures = [self._read_pool.submit(read_leader, unit) for unit in self.units]
+        followers = [future.result() for future in follower_futures]
+        leaders_read = [future.result() for future in leader_futures]
+        self.read_timings_s = {
+            **{
+                f"{unit.name}_follower": result[2]
+                for unit, result in zip(self.units, followers, strict=True)
+            },
+            **{
+                f"{unit.name}_leader": result[3]
+                for unit, result in zip(self.units, leaders_read, strict=True)
+            },
+            "parallel_total": time.monotonic() - started,
+        }
+        q = vector(np.concatenate([result[0] for result in followers]))
+        leaders = [result[0] for result in leaders_read]
+        buttons = [[bool(key) for key in result[1][:2]] for result in leaders_read]
+        ages = [age for pair in zip(
+            [result[1] for result in followers],
+            [result[2] for result in leaders_read],
+            strict=True,
+        ) for age in pair]
         return q, vector(np.concatenate(leaders)), buttons, ages
 
     def apply(
@@ -101,6 +143,9 @@ class StationIO:
         return errors
 
     def close(self):
+        if self._read_pool is not None:
+            self._read_pool.shutdown(wait=True, cancel_futures=True)
+            self._read_pool = None
         self.hold()
         errors = []
         for u in self.units:

@@ -482,6 +482,10 @@ class Runtime:
                     record_submit=submitted_done - apply_done,
                     control_work=submitted_done - now,
                     tick_interval=dt,
+                    **{
+                        f"io_{name}": seconds
+                        for name, seconds in getattr(self.io, "read_timings_s", {}).items()
+                    },
                 )
                 if getattr(self.recorder, "recording", False):
                     if self._record_started is None:

@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -198,6 +199,61 @@ def test_partial_motor_failure_attempts_station_hold():
     io.units[1].robot.command_joint_pos = lambda _: called.append("right")
     errors = io.hold()
     assert errors and called == ["left", "right"]
+
+
+def test_real_station_reads_four_independent_devices_in_parallel():
+    """Each real device has its own CAN bus/state lock, so read latency is the
+    slowest snapshot rather than the sum of all four waits. Motor writes remain
+    ordered in StationIO.apply()."""
+    delay = 0.04
+    units = []
+    for index, name in enumerate(("left", "right")):
+        follower = np.full(7, index + 1.0)
+        leader = np.full(7, index + 3.0)
+        follower[-1] = 0.2 + 0.2 * index
+        leader[-1] = 0.3 + 0.3 * index
+
+        def follower_read(value=follower):
+            time.sleep(delay)
+            return value.copy()
+
+        def leader_read(value=leader, age=0.003 + index, side=index):
+            time.sleep(delay)
+            return value.copy(), [side == 0, side == 1], age
+
+        robot = SimpleNamespace(
+            joint_limits=lambda: np.tile([-3.0, 3.0], (6, 1)),
+            get_joint_pos=follower_read,
+            feedback_age=lambda age=0.001 + index: age,
+            command_joint_pos=lambda _target: None,
+        )
+        agent = SimpleNamespace(hil_read=leader_read)
+        units.append(SimpleNamespace(name=name, robot=robot, agent=agent))
+
+    io = StationIO(units)
+    try:
+        started = time.monotonic()
+        q, leaders, buttons, ages = io.read()
+        elapsed = time.monotonic() - started
+    finally:
+        io.close()
+
+    # Serial execution takes at least 4 * delay. Leave ample CI scheduling margin
+    # while still proving the four sleeps overlap.
+    assert elapsed < delay * 3
+    np.testing.assert_array_equal(q, np.r_[np.r_[np.ones(6), 0.2], np.r_[np.full(6, 2.0), 0.4]])
+    np.testing.assert_array_equal(
+        leaders, np.r_[np.r_[np.full(6, 3.0), 0.3], np.r_[np.full(6, 4.0), 0.6]]
+    )
+    assert buttons == [[True, False], [False, True]]
+    assert ages == [0.001, 0.003, 1.001, 1.003]
+    assert set(io.read_timings_s) == {
+        "left_follower",
+        "right_follower",
+        "left_leader",
+        "right_leader",
+        "parallel_total",
+    }
 
 
 def test_verified_hardware_config_passes_and_placeholder_is_still_rejected():

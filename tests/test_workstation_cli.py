@@ -47,3 +47,18 @@ def test_invalid_port(monkeypatch, tmp_path, port):
     with pytest.raises(SystemExit) as exc:
         invoke(monkeypatch, tmp_path, "--mock", "--web-port", port)
     assert exc.value.code == 2
+
+
+def test_wildcard_web_host_requires_explicit_host_allowlist(monkeypatch, tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        invoke(
+            monkeypatch,
+            tmp_path,
+            "--mock",
+            "--web-port",
+            "8766",
+            "--web-host",
+            "0.0.0.0",
+        )
+    assert exc.value.code == 2
+    assert "web-allowed-host" in capsys.readouterr().err

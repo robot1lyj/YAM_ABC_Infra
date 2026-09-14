@@ -114,6 +114,27 @@ def test_api_same_origin_controls_and_validation():
         )
 
 
+def test_dashboard_accepts_explicit_ipc_lan_host_without_relaxing_origin():
+    events = []
+    runtime = SimpleNamespace(
+        status={"connection": "disconnected"},
+        event=events.append,
+        args=SimpleNamespace(web_host="192.168.110.140", web_allowed_host=[]),
+    )
+    with TestClient(create_app(runtime), base_url="http://192.168.110.140:8766") as client:
+        headers = {"X-YAM-Control": "1", "Origin": "http://192.168.110.140:8766"}
+        assert client.get("/status").status_code == 200
+        assert client.post("/event/start", headers=headers).status_code == 200
+        assert (
+            client.post(
+                "/event/start",
+                headers={**headers, "Origin": "http://192.168.110.141:8766"},
+            ).status_code
+            == 403
+        )
+    assert events == ["start"]
+
+
 def test_browser_service_initialization_never_constructs_devices(tmp_path, monkeypatch):
     from yam_abc_reproduce.hil import run
     from yam_abc_reproduce.hil.workbench import Workbench

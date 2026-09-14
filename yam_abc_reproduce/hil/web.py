@@ -46,8 +46,14 @@ class InitializationComplete(BaseModel):
 
 def create_app(runtime):
     app = FastAPI(title="悟演智能采集工作台")
+    owner_args = getattr(runtime, "args", None)
+    listen_host = getattr(owner_args, "web_host", "127.0.0.1")
+    allowed_hosts = ["127.0.0.1", "localhost", "[::1]", "testserver"]
+    if listen_host not in ("0.0.0.0", "::"):
+        allowed_hosts.append(listen_host)
+    allowed_hosts.extend(getattr(owner_args, "web_allowed_host", []) or [])
     app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "[::1]", "testserver"]
+        TrustedHostMiddleware, allowed_hosts=list(dict.fromkeys(allowed_hosts))
     )
     app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 

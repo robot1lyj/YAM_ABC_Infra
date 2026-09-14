@@ -577,6 +577,17 @@ def main(argv=None, *, service=None):
     p.add_argument("--demo", action="store_true", help="mock only: automated takeover/resume")
     p.add_argument("--baseline", action="store_true", help="ordinary non-prefetch baseline")
     p.add_argument("--web-port", type=int, help="optional local dashboard port")
+    p.add_argument(
+        "--web-host",
+        default="127.0.0.1",
+        help="dashboard listen address; use the IPC LAN address for direct workstation access",
+    )
+    p.add_argument(
+        "--web-allowed-host",
+        action="append",
+        default=[],
+        help="additional HTTP Host name accepted by the dashboard (repeatable)",
+    )
     args = p.parse_args(argv)
     if not np.isfinite(args.segment_seconds) or args.segment_seconds <= 0:
         p.error("segment-seconds must be finite and positive")
@@ -584,6 +595,10 @@ def main(argv=None, *, service=None):
         p.error("min-free-gb must be finite and nonnegative")
     if args.web_port is not None and not 1 <= args.web_port <= 65535:
         p.error("web-port must be between 1 and 65535")
+    if args.web_host != "127.0.0.1" and args.web_port is None:
+        p.error("web-host requires web-port")
+    if args.web_host == "0.0.0.0" and not args.web_allowed_host:
+        p.error("0.0.0.0 requires at least one explicit --web-allowed-host")
     if args.web_port and not args.check and not args.demo and service is None:
         from .workbench import serve
 

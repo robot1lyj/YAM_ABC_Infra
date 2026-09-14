@@ -1,0 +1,17 @@
+[Unit]
+Description=Wuyan YAM device and acquisition workstation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/YAM
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/data/YAM/.venv/bin/yam-workstation --station /data/YAM/configs/station_hil.yaml --mode collect --web-port 8766 --web-host 192.168.110.140
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=75
+
+[Install]
+WantedBy=default.target

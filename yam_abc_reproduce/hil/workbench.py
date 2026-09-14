@@ -702,7 +702,7 @@ def serve(args):
     workbench = Workbench(args)
     try:
         uvicorn.run(
-            create_app(workbench), host="127.0.0.1", port=args.web_port, log_level="warning"
+            create_app(workbench), host=args.web_host, port=args.web_port, log_level="warning"
         )
     finally:
         workbench.close()

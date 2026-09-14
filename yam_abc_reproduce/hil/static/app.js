@@ -109,6 +109,12 @@ function render() {
     !online ||
     transitional ||
     (!state.selected_task?.task && state.connection !== "connected");
+  $("connect").title =
+    state.connection === "connected"
+      ? "断开机械臂并保存当前会话"
+      : !state.selected_task?.task
+        ? "正式采集连接需要先创建或选择任务；新设备测试请进入“设备与调试”，使用初始化向导第 3 步。"
+        : "连接当前任务的四台机械臂；连接后先保持";
   renderTask(transitional || state.connection === "connected");
   const cameraBusy = ["connecting", "disconnecting"].includes(
     state.camera_connection,

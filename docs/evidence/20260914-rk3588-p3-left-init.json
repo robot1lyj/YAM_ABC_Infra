@@ -123,8 +123,9 @@
       "listen": "192.168.110.140:8766 only",
       "service": "yam-workstation.service user unit, enabled and active",
       "browser_observation": "A separate LAN client rendered the real-device workstation with devices disconnected.",
+      "live_ui_camera_validation": "The LAN client clicked Devices -> read-only preflight -> connect cameras. The wizard reached 2/5, all three streams rendered live, each reported 30 fps with observed frame ages about 10-30 ms, and device health showed 3/3 online.",
       "security": "Same-origin POST token and explicit Host allowlist retained; wildcard bind requires an explicit allowed host.",
-      "postcondition": "No camera or arm connection was requested; all four CAN interfaces remained DOWN."
+      "postcondition": "Cameras remain connected for continued page-based testing; no arm connection was requested and all four CAN interfaces remained DOWN."
     },
     "verification": "267 tests passed, 2 skipped, 17 subtests passed; Ruff, JavaScript syntax, JSON and project-memory checks passed."
   },

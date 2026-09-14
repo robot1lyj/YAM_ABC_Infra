@@ -186,6 +186,29 @@ def test_official_leader_switches_gains_and_clears_active_commands(monkeypatch):
     assert len(device.calls) == before
 
 
+def test_i2rt_hil_snapshot_copies_one_published_state_without_lock():
+    from yam_abc_reproduce.robot import yam_adapter as adapter
+
+    class LockThatMustNotBeEntered:
+        def __enter__(self):
+            raise AssertionError("HIL snapshot waited on i2rt state lock")
+
+    state = SimpleNamespace(pos=np.arange(7, dtype=float), timestamp=time.time())
+    device = SimpleNamespace(
+        _server_thread=SimpleNamespace(is_alive=lambda: True),
+        _state_lock=LockThatMustNotBeEntered(),
+        _joint_state=state,
+    )
+    robot = adapter.YamRobot.__new__(adapter.YamRobot)
+    robot._robot, robot._n = device, 6
+    robot._g_closed, robot._g_open = 6.0, 7.0
+
+    pos, age = robot.hil_read()
+    state.pos[:] = -1  # returned snapshot must not alias the next producer update
+    np.testing.assert_array_equal(pos, np.r_[np.arange(6, dtype=float), 0.0])
+    assert 0 <= age < 0.1
+
+
 def test_partial_motor_failure_attempts_station_hold():
     cfg = StationConfig()
     io = StationIO(build_arm_units(cfg, mock=True), mock=True)

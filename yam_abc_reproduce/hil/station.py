@@ -51,8 +51,12 @@ class StationIO:
 
         def read_follower(unit):
             started = time.monotonic()
-            pos = unit.robot.get_joint_pos()
-            age = unit.robot.feedback_age()
+            read = getattr(unit.robot, "hil_read", None)
+            if callable(read):
+                pos, age = read()
+            else:
+                pos = unit.robot.get_joint_pos()
+                age = unit.robot.feedback_age()
             return pos, age, time.monotonic() - started
 
         def read_leader(unit):

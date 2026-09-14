@@ -69,16 +69,32 @@ def _build_yam(
     )
 
 
-def _feedback_age(robot) -> float:
-    # Pinned i2rt timestamps SDK state updates, not individual CAN receipt times.
-    if not robot._server_thread.is_alive():
-        raise RuntimeError("i2rt control thread stopped")
-    with robot._state_lock:
-        stamp = float(robot._joint_state.timestamp)
-    age = time.time() - stamp
+def _age_from_stamp(stamp: float) -> float:
+    age = time.time() - float(stamp)
     if not np.isfinite(age) or age < -0.05:
         raise RuntimeError("invalid motor feedback clock")
     return max(0.0, age)
+
+
+def _joint_snapshot(robot) -> tuple[np.ndarray, float]:
+    """Copy one complete published i2rt state without waiting on its CAN lock.
+
+    i2rt builds a new ``JointStates`` object, then replaces ``_joint_state`` in
+    one Python reference assignment; it does not mutate that published object's
+    arrays afterwards. A local reference is therefore coherent while the server
+    prepares its next state. Timestamp freshness still detects a stopped producer.
+    """
+    if not robot._server_thread.is_alive():
+        raise RuntimeError("i2rt control thread stopped")
+    state = robot._joint_state
+    if state is None:
+        raise RuntimeError("i2rt motor feedback unavailable")
+    return np.array(state.pos, dtype=np.float64, copy=True), _age_from_stamp(state.timestamp)
+
+
+def _feedback_age(robot) -> float:
+    # Pinned i2rt timestamps SDK state updates, not individual CAN receipt times.
+    return _joint_snapshot(robot)[1]
 
 
 class YamRobot(RobotInterface):
@@ -115,6 +131,13 @@ class YamRobot(RobotInterface):
         arm = q[: self._n]
         grip = _normalize(q[self._n], self._g_closed, self._g_open)
         return np.concatenate([arm, [grip]])
+
+    def hil_read(self) -> tuple[np.ndarray, float]:
+        """Low-latency coherent position/age snapshot for the station tick."""
+        q, age = _joint_snapshot(self._robot)
+        arm = q[: self._n]
+        grip = _normalize(q[self._n], self._g_closed, self._g_open)
+        return np.concatenate([arm, [grip]]), age
 
     def command_joint_pos(self, pos: np.ndarray) -> None:
         pos = np.asarray(pos, dtype=np.float64).reshape(-1)
@@ -221,13 +244,19 @@ class YamLeaderArm:
         kp = self._native_kp * bilateral_kp if bilateral_kp > 0 else np.zeros(self._n)
         self._robot.update_kp_kd(kp=kp, kd=np.zeros(self._n))
 
-    def get_state(self) -> tuple[np.ndarray, float, list[bool]]:
+    def get_state_with_age(self) -> tuple[np.ndarray, float, list[bool], float]:
         """One same-bus read -> (arm_joints, gripper_norm, [top, second] buttons).
 
         Mirrors i2rt minimum_gello's ``YAMLeaderRobot.get_info``: the teaching-handle
         trigger is ``1 - position`` and ``io_inputs`` are the two button bits."""
-        arm = np.asarray(self._robot.get_joint_pos(), dtype=np.float64).reshape(-1)[: self._n]
-        enc = self._robot.motor_chain.get_same_bus_device_states()[0]
+        joint_pos, age = _joint_snapshot(self._robot)
+        arm = joint_pos[: self._n]
+        # The DM thread similarly publishes a new encoder-info list by replacing
+        # one reference. Copy scalar fields without waiting behind its next CAN read.
+        encoders = self._robot.motor_chain.same_bus_device_states
+        if not encoders:
+            raise RuntimeError("leader teaching-handle feedback unavailable")
+        enc = encoders[0]
         gripper = float(np.clip(1.0 - enc.position, 0.0, 1.0))
         # Teaching-handle button polarity varies between units (some idle high,
         # some idle low). Learn the idle level from the first read (assumes no
@@ -240,6 +269,10 @@ class YamLeaderArm:
         ):
             self._btn_idle = raw
         buttons = [r != i for r, i in zip(raw, self._btn_idle)]
+        return arm, gripper, buttons, age
+
+    def get_state(self) -> tuple[np.ndarray, float, list[bool]]:
+        arm, gripper, buttons, _age = self.get_state_with_age()
         return arm, gripper, buttons
 
     def feedback_age(self) -> float:
@@ -315,8 +348,15 @@ class YamTeleop(TeleopAgent):
         return buttons, gripper
 
     def hil_read(self):
-        arm, grip, buttons = self._read_leader()
-        return np.concatenate([arm, [grip]]), buttons, self._leader.feedback_age()
+        leader = self._require_leader()
+        read = getattr(leader, "get_state_with_age", None)
+        if callable(read):
+            arm, grip, buttons, age = read()
+            self._cached = (arm, grip)
+        else:
+            arm, grip, buttons = self._read_leader()
+            age = leader.feedback_age()
+        return np.concatenate([arm, [grip]]), buttons, age
 
     def hil_leader_command(self, joints, *, manual, gain_scale=0.2):
         leader = self._require_leader()

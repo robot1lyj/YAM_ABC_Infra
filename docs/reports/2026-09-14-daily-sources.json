@@ -1,0 +1,188 @@
+{
+  "report_date": "2026-09-14",
+  "cutoff": "2026-09-14 18:49:12 +0800",
+  "method": "只读核对本地Git提交、已有现场证据与当时工作区；本次未启动设备、相机、模型或复跑业务测试。",
+  "heads_at_cutoff": {
+    "YAM": "29bab841255cdc637685402cdb024fa5357a623f",
+    "condapi": "d9f9d4ef325f758bf7aa874b274df72ed90d54e5"
+  },
+  "worktree_status_at_cutoff": {
+    "YAM": "M README.md\n M docs/acceptance.md\n M docs/cache/checkpoint.md\n M docs/environment.md\n M docs/evidence/20260914-rk3588-p3-left-init.json\n M tests/test_gripper_limits.py\n M yam_abc_reproduce/robot/yam_adapter.py\n?? patches/\n?? scripts/apply_i2rt_safety_patches.sh",
+    "condapi": "M scripts/training_dashboard.service"
+  },
+  "tracked_worktree_diff_sha256": "80c5e9464663dbc49eabd8647f00f884c4c9c4a9602cbee9fa276c7d1cbaa894",
+  "files": [
+    {
+      "repository": "YAM",
+      "path": "docs/acceptance.md",
+      "sha256": "f07cd6be90bdd82277b4898b819e56cdeec5a01ccf9798318cc850db11fb5935"
+    },
+    {
+      "repository": "YAM",
+      "path": "docs/cache/checkpoint.md",
+      "sha256": "a0a16da348fe7f393982686b72dbd9632951e36c026e52e24be9cb9c9fca473c"
+    },
+    {
+      "repository": "YAM",
+      "path": "docs/evidence/20260914-rk3588-p2-camera-debug.json",
+      "sha256": "a99fe0707fbd3e1e36ef64f5cb796e36c5244749d5a6d536f0731e91e722afb9"
+    },
+    {
+      "repository": "YAM",
+      "path": "docs/evidence/20260914-rk3588-p3-left-init.json",
+      "sha256": "43a98eb5903cc9f124414e4b34feb99d62530aa675a3a03b23b69a40e19fa2df"
+    },
+    {
+      "repository": "YAM",
+      "path": "docs/evidence/20260914-rk3588-ipc-can-port-names.txt",
+      "sha256": "a93c4707c95361b8e4d3b2b85c10f298763f9a3bc84c12ccf6320d7715cd5592"
+    },
+    {
+      "repository": "YAM",
+      "path": "docs/evidence/20260914-rk3588-ipc-cameras.txt",
+      "sha256": "83c9ddc3f6128c471d021ed363b99a10ab293943e0cc45da911daa5a39e6f642"
+    },
+    {
+      "repository": "YAM",
+      "path": "docs/evidence/20260914-rk3588-ipc-nvme.txt",
+      "sha256": "77a075f30980c5c38dd653dd95f4a55c50f6b73ecdef4f9101c91f6e79267f57"
+    },
+    {
+      "repository": "YAM",
+      "path": "docs/evidence/20260914-product-memory-check.json",
+      "sha256": "d734831226dfbc3d6bb71ca2dce34de38afadb78e020124f1ad5ca03b7b1a8e7"
+    },
+    {
+      "repository": "condapi",
+      "path": "docs/05_inference_and_rollout.md",
+      "sha256": "1bffa7f8ef8685250c69e170e72b52789ba2f06e2556c034bc348f9777aa18fa"
+    },
+    {
+      "repository": "condapi",
+      "path": "docs/07_change_log.md",
+      "sha256": "e660ee4cdf6364bf190e6fd12ba2b8c9d1cb588131d7e268744c5f79651ad715"
+    },
+    {
+      "repository": "condapi",
+      "path": "docs/11_training_dashboard.md",
+      "sha256": "6c89ed80234b8d6e669b73e1d86d1b9f8a2d07b051e407fb6e220d3ab315bc27"
+    }
+  ],
+  "facts_snapshot": {
+    "P0": "用户确认完成；固定USB-CAN下联口及三D405角色映射已登记",
+    "P1": "IPC运行环境部署，NVMe /data及/data/YAM迁移有现场证据",
+    "P2_acceptance": "P2 passed for the architecture-defined real RGB short-recording gate",
+    "P2_30second_stream": {
+      "window_seconds": 30,
+      "requested_stream": "RGB8 640x480 at 30 Hz",
+      "top": {
+        "frames": 900,
+        "frame_number_gaps": 0,
+        "observed_fps": 29.992897556081477,
+        "max_device_interval_ms": 33.342041015625,
+        "bad_shape": 0
+      },
+      "left": {
+        "frames": 900,
+        "frame_number_gaps": 0,
+        "observed_fps": 29.992863994707754,
+        "max_device_interval_ms": 33.343994140625,
+        "bad_shape": 0
+      },
+      "right": {
+        "frames": 899,
+        "frame_number_gaps": 0,
+        "observed_fps": 29.99450961423533,
+        "max_device_interval_ms": 33.3486328125,
+        "bad_shape": 0
+      }
+    },
+    "P2_pairing": {
+      "window_seconds": 30,
+      "ticks": 898,
+      "valid": 897,
+      "invalid_startup": 1,
+      "warning_over_40_ms": 0,
+      "arrival_skew_ms": {
+        "p50": 15.594546999636805,
+        "p95": 15.684319399588276,
+        "p99": 15.83405859855702,
+        "max": 16.53923800040502
+      },
+      "scope": "software host-arrival pairing, not exposure synchronization"
+    },
+    "P2_hardware_recording": {
+      "output": "/data/YAM/data/debug/p2-20260914/real-camera-session-rkmpp-v8-60s",
+      "submitted": 1795,
+      "invalid_startup_snapshots": 1,
+      "hdf5_rows": 1795,
+      "video_frames_each": 1795,
+      "session_queue_peak": 9,
+      "session_capacity": 32,
+      "outcome": "success",
+      "ffmpeg_cpu_percent_each_single_core_basis": "5.4-5.7",
+      "ffmpeg_rss_mib_each": "9.6-9.9",
+      "thermal_zone_range_c": "58.2-60.1"
+    },
+    "P2_cpu_comparison": {
+      "frames_each_path": 598,
+      "hardware_user_seconds": 22.54,
+      "hardware_system_seconds": 4.18,
+      "software_user_seconds": 41.93,
+      "software_system_seconds": 1.45,
+      "total_cpu_time_reduction_percent": 38.4,
+      "scope": "camera startup, recording, finalization and PyAV readback are included; wall time is not a pure encoder benchmark"
+    },
+    "P3_acceptance": {
+      "passed": [
+        "Four independent CAN mappings communicate with arm motor IDs 1-6 at 1 Mbit/s.",
+        "Left follower initializes with the correct standard YAM and linear_4310 model.",
+        "Left linear gripper auto-calibration returns a non-collapsed range.",
+        "Left follower numerical drift and CAN transport remain bounded for the measured 10-second window.",
+        "Right follower initializes and calibrates with bounded 10-second numerical drift and no CAN errors.",
+        "Both followers qualitatively float and hold under supervised manual testing with wrist cameras installed.",
+        "Both official leaders qualitatively float under supervised manual testing with yam_teaching_handle configured.",
+        "Patched shutdown completes without the observed CAN-socket race and all seven left-follower motors acknowledge OFF."
+      ],
+      "not_yet_passed": [
+        "Leader button press transitions.",
+        "Single-pair and dual-pair low-amplitude synchronization, direction, pause and emergency-stop behavior.",
+        "A taught ready/home pose; no all-zero home command has been issued."
+      ]
+    },
+    "P3_latest_failure": "At 18:31:30, about 21 seconds after the page reported the four-arm connection, right follower motor 7 returned DM error 0xC. The i2rt control thread stopped and the page disabled maintenance controls. The operator then requested page disconnect; all four robot objects reported zero-torque close and all four station CAN interfaces returned DOWN.",
+    "P3_diagnosis_reported_not_retested": "The pinned i2rt PR #81 tree still contained the bug documented by upstream draft PR #82 commit e599e9d: startup +/-2pi encoder correction iterated over all seven motors. The right linear gripper's saved open endpoint is -5.03948 rad, so starting while open can spuriously change motor 7's offset by -2pi while retaining the old endpoints. A subsequent normalized hold target can therefore map about 1.17 rad beyond the physical open endpoint and sustain force at the stop.",
+    "P3_remediation_work_in_progress": "Vendor the exact e599e9d correction as patches/i2rt/0002-exclude-gripper-wrap.patch, apply it during deployment, and fail closed in yam_adapter before opening hardware when the corrected helper is absent. Do not reactivate the right follower until it has cooled and the mechanism is checked for binding.",
+    "P3_latest_reported_tests_uncommitted": "270 tests passed, 2 skipped, 17 subtests passed; the upstream wrap regression passed against a temporary PR #81 tree with the vendored patch applied; Ruff and git diff checks passed.",
+    "LAN": {
+      "commit": "912105feda5c2ec8b511363d5a660e92272f50f7",
+      "url": "http://192.168.110.140:8766",
+      "listen": "192.168.110.140:8766 only",
+      "service": "yam-workstation.service user unit, enabled and active",
+      "browser_observation": "A separate LAN client rendered the real-device workstation with devices disconnected.",
+      "live_ui_camera_validation": "The LAN client clicked Devices -> read-only preflight -> connect cameras. The wizard reached 2/5, all three streams rendered live, each reported 30 fps with observed frame ages about 10-30 ms, and device health showed 3/3 online.",
+      "security": "Same-origin POST token and explicit Host allowlist retained; wildcard bind requires an explicit allowed host.",
+      "postcondition": "Cameras remain connected for continued page-based testing; no arm connection was requested and all four CAN interfaces remained DOWN."
+    },
+    "Thor_network": {
+      "link_negotiation": "2500Mb/s full duplex",
+      "ping_each_direction": 10,
+      "packet_loss_each_direction": "0%",
+      "mean_ms": {
+        "Thor_to_RK": 0.245,
+        "RK_to_Thor": 0.235
+      },
+      "scope": "网络层基线；不是实测吞吐或policy RPC/闭环验收"
+    },
+    "memory_bytes_after_consolidation": {
+      "kernel": 2009,
+      "checkpoint": 2188
+    },
+    "memory_scope": "15点左右整理时的文件统计，非晚间动态checkpoint大小；长期预算各3072字节"
+  },
+  "commit_history_today": {
+    "YAM": "29bab84 2026-09-14T18:32:28+08:00 docs: record live page arm initialization\n4f40c3e 2026-09-14T18:29:55+08:00 fix: prepare CAN before workstation arm connect\nf5cdab1 2026-09-14T18:23:21+08:00 fix: explain disabled arm connection\neabb043 2026-09-14T18:22:09+08:00 docs: record page-driven camera validation\nde02d55 2026-09-14T18:19:56+08:00 docs: record live IPC workstation service\n912105f 2026-09-14T18:18:01+08:00 feat: serve acquisition platform on IPC LAN\n186f7aa 2026-09-14T18:14:51+08:00 docs: record initialization platform preflight\nd40b838 2026-09-14T18:13:17+08:00 feat: add guided device initialization\nbebdba8 2026-09-14T17:51:20+08:00 docs: accept dual follower gravity test\nfd970a1 2026-09-14T17:43:17+08:00 docs: record YAM leader handle preflight\n7560c81 2026-09-14T17:41:03+08:00 fix: validate safe YAM follower startup\ndee6e3a 2026-09-14T17:14:54+08:00 feat: bring up RK3588 camera recording\na91176b 2026-09-14T15:58:40+08:00 记录IPC相机USB3复核结果\nf73a45f 2026-09-14T15:12:29+08:00 确立设备与采集平台交付边界及冷热记忆预算\nb47e472 2026-09-14T14:53:41+08:00 固化IPC USB设备命名与相机身份\n409e745 2026-09-14T14:30:09+08:00 明确每次代码更新后自动提交并双端同步\n63c19c1 2026-09-14T13:58:23+08:00 Add read-only arm and camera USB identity wizard\n0f23fa7 2026-09-14T11:36:05+08:00 Document RK3588 IPC deployment and P0 inventory\nde80532 2026-09-14T10:48:45+08:00 固定RK3588与Thor架构及USB设备身份登记顺序",
+    "condapi": "d9f9d4e 2026-09-14T16:21:39+08:00 修正训练看板总体剩余时间\ne8e7040 2026-09-14T15:36:23+08:00 记录3588直连网络基线\n07b3534 2026-09-14T15:12:11+08:00 为记忆技能加入冷热分层与热入口容量治理"
+  },
+  "boundary": "未提交修复与已提交产品能力分开；以下报告是截至该时间的快照，不声称当日最终收尾状态。"
+}

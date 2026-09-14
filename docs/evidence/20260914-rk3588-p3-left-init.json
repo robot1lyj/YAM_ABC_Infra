@@ -127,7 +127,17 @@
       "security": "Same-origin POST token and explicit Host allowlist retained; wildcard bind requires an explicit allowed host.",
       "postcondition": "Cameras remain connected for continued page-based testing; no arm connection was requested and all four CAN interfaces remained DOWN."
     },
-    "verification": "267 tests passed, 2 skipped, 17 subtests passed; Ruff, JavaScript syntax, JSON and project-memory checks passed."
+    "live_arm_initialization": {
+      "commit": "4f40c3edebdd13d18f3208a224ca82d9deddaf0a",
+      "first_attempt": "The LAN page failed closed before constructing the left pair because can_left was still DOWN; no arm connection was established and the cameras stayed online.",
+      "fix": "The production HIL path now resets station CAN to 1 Mbit/s, verifies every configured channel before opening i2rt, and returns only the owned station channels DOWN after releasing devices.",
+      "retry": "The operator-authorized LAN-page retry connected two followers and two official leaders in collect/hold without selecting a collection task or starting teleoperation.",
+      "gripper_behavior": "Both follower startups logged enable_gripper_calibration=False with the pinned limits [0.62123, -5.04368] and [0.07038, -5.03948]; no endpoint sweep or home command ran.",
+      "live_health": "Four sdk_state_age_s values remained about 0.4-2.2 ms in the observed samples; three cameras remained healthy around 30 fps; both leader button pairs were released.",
+      "can": "can_left, can_right, can_lead_l and can_lead_r were UP/ERROR-ACTIVE at 1 Mbit/s with zero RX/TX errors, drops, bus errors and bus-off while the session remained active.",
+      "performance_caveat": "Initial hold samples showed frequent 30 Hz deadline misses and io_read p95 above one tick; quantify and optimize this before claiming long-duration control performance."
+    },
+    "verification": "269 tests passed, 2 skipped, 17 subtests passed; focused Ruff checks and git diff checks passed."
   },
   "acceptance": {
     "passed": [

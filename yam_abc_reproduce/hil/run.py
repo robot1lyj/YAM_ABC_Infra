@@ -180,7 +180,7 @@ class Runtime:
         if event not in allowed:
             raise ValueError("unknown event")
         if event in ("record", "discard") and not self.recording_allowed:
-            raise ValueError("daily teleoperation check does not record data")
+            raise ValueError("standalone teleoperation does not record data")
         if self.maintenance.latched and event not in ("stop", "hold", "quit", "reset_stop"):
             raise ValueError("紧急暂停已锁存，请先检查现场并解除锁存")
         if event in ("home", "capture_home", "gravity"):

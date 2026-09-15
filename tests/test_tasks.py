@@ -100,7 +100,7 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
         service.close()
 
 
-def test_taskless_daily_check_can_teleoperate_but_never_record(tmp_path):
+def test_taskless_teleop_can_run_but_never_record(tmp_path):
     service = Workbench(
         SimpleNamespace(
             mode="hil",
@@ -125,10 +125,10 @@ def test_taskless_daily_check_can_teleoperate_but_never_record(tmp_path):
     try:
         service.connect()
         wait(lambda: service.runtime is not None and service.status.get("tick", 0) > 2)
-        assert service.validating
+        assert service.taskless_teleop
         assert service.status["mode"] == "teleop"
-        assert service.output.parent.name == "daily-teleop-check"
-        assert "validation_sessions" in service.output.parts
+        assert service.output.parent.name == "standalone-teleop"
+        assert "teleop_sessions" in service.output.parts
         assert service.camera_state == "disconnected"
 
         service.event("start")
@@ -144,7 +144,7 @@ def test_taskless_daily_check_can_teleoperate_but_never_record(tmp_path):
         wait(lambda: not service.thread.is_alive(), 30)
         session = json.loads((output / "session.json").read_text())
         assert session["episodes"] == []
-        assert session["collection_task"]["id"] == "daily-teleop-check"
+        assert session["collection_task"]["id"] == "standalone-teleop"
     finally:
         service.close()
 

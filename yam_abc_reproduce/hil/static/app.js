@@ -121,7 +121,7 @@ function render() {
       ? "断开机械臂并保存当前会话"
       : state.selected_task?.task
         ? "连接当前任务的四台机械臂；连接后先保持"
-        : "无需采集任务，直接连接四臂进行每日遥操作晨检";
+        : "无需采集任务，直接连接四臂进行遥操作";
   renderTask(transitional || state.connection === "connected");
   const cameraBusy = ["connecting", "disconnecting"].includes(
     state.camera_connection,
@@ -160,14 +160,14 @@ function render() {
     "heading",
     page === "workspace"
       ? teleopView
-        ? "每日遥操作晨检"
+        ? "遥操作"
         : "采集工作台"
       : "设备与调试",
   );
   text("mode-name", names[mode]);
   $("takeover").parentElement.hidden = mode !== "hil";
   $("task-instruction").title =
-    state.selected_task?.instruction || "每日遥操作晨检无需任务；录制前再选择任务";
+    state.selected_task?.instruction || "遥操作无需任务；录制前再选择采集任务";
   text(
     "phase",
     latched
@@ -216,7 +216,7 @@ function render() {
   text(
     "handle-hint",
     teleopView
-      ? "每日晨检不录制　\nLeader 按钮仅做输入状态检查"
+      ? "遥操作不录制　\nLeader 按钮仅做输入状态检查"
       : mode === "collect"
       ? "手柄① 开始 / 结束录制　\n手柄② 放弃当前集"
       : mode === "hil"
@@ -405,18 +405,24 @@ function render() {
     $("logs").append(row);
   }
   $("device-cards").replaceChildren();
+  let onlineArms = 0;
   for (const [name, i] of devices) {
     const card = document.createElement("article");
     card.className = "device-card";
     const title = document.createElement("h3"),
-      meta = document.createElement("span");
-    title.textContent = name;
+      meta = document.createElement("span"),
+      dot = document.createElement("i"),
+      ok = connected && Number.isFinite(ages[i]) && ages[i] < 0.25;
+    if (ok) onlineArms += 1;
+    dot.className = "led" + (ok ? " ok" : "");
+    title.append(dot, document.createTextNode(name));
     meta.textContent = connected
       ? `反馈 ${ages[i] == null ? "—" : Math.round(ages[i] * 1000)} ms · ${name.includes("Leader") ? "官方 YAM Leader" : "标准平行夹爪"}`
       : "设备未连接";
     card.append(title, meta);
     $("device-cards").append(card);
   }
+  text("arm-online-count", connected ? `${onlineArms} / 4 在线` : "等待连接");
   const q = state.follower_state || [],
     offset = arm === "left" ? 0 : 7;
   document.querySelectorAll("[data-joint-value]").forEach((el) => {
@@ -497,6 +503,7 @@ function renderInitialization(context) {
       !done[i] && done.slice(0, i).every(Boolean),
     );
   });
+  $("init-step-preflight").classList.toggle("error", !!preflight && !preflight.ok);
   text("init-progress", `${done.filter(Boolean).length} / 5`);
   text(
     "init-preflight-status",
@@ -504,7 +511,7 @@ function renderInitialization(context) {
       ? preflight.ok
         ? `预检通过 · ${preflight.can?.length || 0} 路 CAN · ${preflight.camera_serials?.length || 0} 台相机`
         : `发现问题：${(preflight.errors || []).join("；")}`
-      : "检查 4 路 CAN、夹爪型号和 3 台相机序列号",
+      : "检查 CAN 与相机",
   );
   text(
     "init-camera-status",
@@ -512,7 +519,7 @@ function renderInitialization(context) {
       ? "三路画面均在线且帧龄正常"
       : state.camera_connection === "connecting"
         ? "正在连接并等待新鲜画面"
-        : "连接 top / left / right 并确认画面新鲜",
+        : "等待三路画面",
   );
   const limits = state.gripper_limits || [];
   const followers = state.initialization?.inventory?.followers || [];
@@ -526,14 +533,14 @@ function renderInitialization(context) {
       : state.connection === "connecting"
         ? "正在顺序连接设备；未固定行程的夹爪会先完成自动标定"
         : gripperRangesPinned
-          ? "夹爪范围已保存；连接时不扫行程，四臂保持当前位置"
-          : "夹爪先闭合并清空行程；连接后保持当前位置",
+          ? "夹爪范围已保存"
+          : "连接前确认夹爪行程",
   );
   text(
     "init-complete-status",
     accepted
       ? `上次验收：${accepted.accepted_at || "已保存"}`
-      : "保存配置指纹、设备清单和夹爪行程测量",
+      : "等待验收",
   );
 
   $("init-preflight").disabled = !online || context.transitional;
@@ -600,7 +607,7 @@ function switchPage(next) {
   text(
     "subtitle",
     next === "workspace"
-      ? "无需任务即可进行每日遥操作晨检；选择任务后才开放数据录制。"
+      ? "无需任务即可遥操作；选择采集任务后才开放数据录制。"
       : "查看四臂状态，示教准备位，完成采集前的设备调试。",
   );
 }
@@ -734,7 +741,7 @@ $("connect").onclick = () => {
       "connect-task-summary",
       state.selected_task
         ? "当前采集任务：" + state.selected_task.name
-        : "当前用途：每日遥操作晨检 · 不录制数据",
+        : "当前模式：遥操作 · 不录制数据",
     );
     $("real-warning").hidden = !!state.mock;
     $("connect-dialog").showModal();
@@ -815,25 +822,25 @@ poll();
 function renderTask(locked) {
   const task = state.selected_task;
   text("task-library-count", `${(state.tasks || []).length} 个任务`);
-  text("task-badge", task ? "当前任务" : "每日晨检");
+  text("task-badge", task ? "当前任务" : "未选任务");
   text("task-category", "任务 / DATASET TASK");
-  text("task-name", task?.name || "无需任务，直接验证机械臂");
+  text("task-name", task?.name || "无需任务，直接遥操作");
   text(
     "task-instruction",
-    task?.instruction || "连接后可进行双臂遥操作晨检；需要录制数据时再选择采集任务。",
+    task?.instruction || "连接机械臂即可双臂遥操作；需要录制数据时再选择采集任务。",
   );
   text(
     "task-identity",
     task
       ? `任务 ID · ${task.id.slice(0, 8)}`
-      : "晨检会话禁止录制，不会混入训练数据",
+      : "遥操作不录制，不会混入训练数据",
   );
   text(
     "task-session-tip",
     locked
       ? task
         ? "任务已锁定 · 断开机械臂并完成保存后可切换"
-        : "每日晨检会话 · 断开后可选择采集任务"
+        : "遥操作会话 · 断开后可选择采集任务"
       : "同一任务的每次采集会话独立保存",
   );
   $("create-task").disabled = !online || locked;
@@ -852,7 +859,7 @@ function renderTask(locked) {
   text(
     "workflow-tip",
     !task
-      ? "可直接连接机械臂晨检 · 录制前请选择任务"
+      ? "可直接连接机械臂遥操作 · 录制前请选择任务"
       : !task.task
         ? "请在任务详情中编辑并补填英文 task"
         : !camerasConnected()

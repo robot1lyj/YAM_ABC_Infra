@@ -29,9 +29,9 @@ hil:
   max_state_age: 0.25
   leader_gain: 0.2
   leader_speed: 0.5
-  # Manual leader tracking: 3 rad/s removes the old 0.6 rad/s catch-up lag while
-  # retaining a per-tick sanity bound. Policy and maintenance motion stay at 0.6 rad/s.
-  max_manual_joint_speed: 3.0
+  # Manual tracking has no application-level slew limit, matching official GELLO.
+  # Policy and automatic maintenance paths retain this 5 rad/s per-tick bound.
+  max_joint_speed: 5.0
   handover_error: 0.2
   mirror_error: 0.5
   replan_period: 0.2

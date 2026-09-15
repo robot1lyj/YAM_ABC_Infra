@@ -78,8 +78,8 @@ class Arbiter:
         mode: Mode,
         *,
         execute_steps: int = 10,
-        max_joint_speed: float = 0.6,
-        max_manual_joint_speed: float = 3.0,
+        max_joint_speed: float = 5.0,
+        max_manual_joint_speed: float | None = None,
         max_gripper_speed: float = 1.0,
         max_request_age: float = 0.5,
         max_action_age: float = 1.0,
@@ -92,7 +92,6 @@ class Arbiter:
     ):
         values = (
             max_joint_speed,
-            max_manual_joint_speed,
             max_gripper_speed,
             max_request_age,
             max_action_age,
@@ -106,6 +105,10 @@ class Arbiter:
             not isinstance(execute_steps, int)
             or not 1 <= execute_steps <= 50
             or not all(np.isfinite(v) and v > 0 for v in values)
+            or (
+                max_manual_joint_speed is not None
+                and (not np.isfinite(max_manual_joint_speed) or max_manual_joint_speed <= 0)
+            )
         ):
             raise ValueError("invalid limits")
         self.streaming = streaming
@@ -301,9 +304,11 @@ class Arbiter:
                 source = "policy"
                 self.phase = Phase.POLICY
         # Bound commanded tracking error per nominal tick; this is not a measured velocity guarantee.
-        joint_speed = (
-            self.max_manual_joint_speed if self.phase == Phase.HUMAN else self.max_joint_speed
-        )
+        joint_speed = self.max_joint_speed
+        if self.phase == Phase.HUMAN and self.max_manual_joint_speed is None:
+            joint_speed = np.inf
+        elif self.phase == Phase.HUMAN:
+            joint_speed = self.max_manual_joint_speed
         limit = np.full(14, joint_speed * dt)
         limit[[6, 13]] = self.max_gripper_speed * dt
         action = np.clip(selected, q - limit, q + limit)

@@ -57,14 +57,14 @@ def test_soft_pickup_and_joint_mismatch():
     assert d.action[6] == pytest.approx(0.73)
 
 
-def test_manual_and_policy_motion_have_separate_speed_limits():
+def test_manual_is_unclipped_while_policy_keeps_configured_speed_limit():
     q = pose()
     h = q.copy()
-    a = Arbiter(Mode.COLLECT, max_joint_speed=0.6, max_manual_joint_speed=3.0)
+    a = Arbiter(Mode.COLLECT, max_joint_speed=5.0, max_manual_joint_speed=None)
     a.start(q, h)
     h[0] = 1.0
     manual = a.step(q, h, now=0.03, dt=0.03)
-    assert manual.action[0] == pytest.approx(0.09)
+    assert manual.action[0] == pytest.approx(1.0)
 
     a.change_mode(Mode.INFERENCE, q)
     a.start(q)
@@ -73,7 +73,7 @@ def test_manual_and_policy_motion_have_separate_speed_limits():
     actions[:, 0] = 1.0
     assert a.accept(token, actions, 0.05)
     policy = a.step(q, q, now=0.06, dt=0.03, leader_ready=True)
-    assert policy.action[0] == pytest.approx(0.018)
+    assert policy.action[0] == pytest.approx(0.15)
 
 
 def test_normal_chunks_do_not_prefetch():
@@ -87,7 +87,7 @@ def test_normal_chunks_do_not_prefetch():
     assert a.request(2, 0.02) is None
     for t in (0.03, 0.06):
         d = a.step(q, q, now=t, dt=0.03, leader_ready=True)
-        assert d.action[0] == pytest.approx(0.018)
+        assert d.action[0] == pytest.approx(0.15)
     assert a.request(3, 0.07) is not None
 
 

@@ -245,3 +245,11 @@ def test_failed_episode_is_listed_as_aborted(tmp_path, monkeypatch):
     manifest = json.loads((rec.path / "session.json").read_text())
     assert "encoder failure" in manifest["error"]
     assert manifest["episodes"][0]["outcome"] == "aborted"
+
+
+def test_default_session_queue_covers_encoder_spawn_burst(tmp_path):
+    rec = RecordingSession(tmp_path / "startup", fps=30)
+    try:
+        assert rec.queue.maxsize == 150
+    finally:
+        rec.close("aborted")

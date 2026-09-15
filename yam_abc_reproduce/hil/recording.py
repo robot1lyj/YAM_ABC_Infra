@@ -147,7 +147,7 @@ class RecordingSession:
         *,
         mode="hil",
         fps=30,
-        capacity=32,
+        capacity=None,
         metadata=None,
         segment_seconds=60,
         min_free_bytes=512 * 1024**2,
@@ -160,6 +160,12 @@ class RecordingSession:
         self.segment_seconds = segment_seconds
         self.fps = fps
         self.video_backend = video_backend
+        # A spawned encoder on RK3588 may spend several seconds importing native
+        # libraries before it can consume its first frame. Keep five seconds of
+        # startup burst capacity; once warm, the queue drains at camera rate. A
+        # full queue after this grace period still faults rather than hiding a
+        # sustained storage failure or growing memory without bound.
+        capacity = max(32, int(np.ceil(fps * 5))) if capacity is None else capacity
         self.queue = queue.Queue(maxsize=capacity)
         self.error = None
         self.queue_peak = 0

@@ -162,13 +162,11 @@ class Arbiter:
     def _human(self, state, leader):
         q, h = vector(state), vector(leader)
         self._transition(Phase.HUMAN, q)
-        # Start manual control as a clutch: the follower must not jump to an
-        # unrelated absolute leader pose when an operator begins a new episode.
-        # Subsequent leader *motion* is mirrored one-for-one from this baseline.
-        # Grippers keep their existing soft-pickup behavior below instead of
-        # inheriting an angular offset from the teaching-handle trigger.
-        self._offset = q - h
-        self._offset[[6, 13]] = 0
+        # Ordinary teleoperation is the native YAM identity map: starting manual
+        # control commands each follower directly to its matching leader pose.
+        # HIL takeover uses its separate clutch path below so intervention never
+        # introduces an abrupt policy-to-human jump.
+        self._offset = np.zeros(14)
         self._pickup = [False, False]
         self._previous_grip = h[[6, 13]].copy()
 

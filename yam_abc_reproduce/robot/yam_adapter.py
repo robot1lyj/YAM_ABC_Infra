@@ -42,6 +42,8 @@ def _build_yam(
     gripper_type: str,
     ee_mass: float | None,
     gripper_limits: list[float] | None = None,
+    *,
+    use_coulomb_friction: bool = False,
 ):
     """Construct an i2rt YAM robot, converting our string config to i2rt enums.
 
@@ -78,6 +80,7 @@ def _build_yam(
         gripper_limits_override=(
             None if gripper_limits is None else np.asarray(gripper_limits, dtype=float)
         ),
+        use_coulomb_friction=use_coulomb_friction,
     )
 
 
@@ -258,7 +261,16 @@ class YamLeaderArm:
         ee_mass: float | None = None,
         bilateral_kp: float = 0.0,
     ):
-        self._robot = _build_yam(channel, arm_type, gripper_type, ee_mass)
+        # Official teaching handles already contribute their 0.258 kg inertial
+        # model. Add the SDK's calibrated per-joint Coulomb feed-forward so the
+        # motorized leader does not feel noticeably sticky in gravity-comp mode.
+        self._robot = _build_yam(
+            channel,
+            arm_type,
+            gripper_type,
+            ee_mass,
+            use_coulomb_friction=True,
+        )
         self._n = num_arm_joints
         # Remember the arm's native kp so bilateral scaling is relative to it.
         self._native_kp = np.asarray(getattr(self._robot, "_kp", np.zeros(self._n)), dtype=float)

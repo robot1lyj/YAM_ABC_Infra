@@ -34,7 +34,7 @@ def test_takeover_invalidates_inflight_and_requires_new_response():
     assert a.step(q, q, now=0.05, dt=0.03, leader_ready=True).source == "policy"
 
 
-def test_soft_pickup_and_joint_mismatch():
+def test_soft_pickup_and_absolute_identity_mapping():
     q = pose(0.7)
     h = pose(0.1)
     q[[0, 7]] = [0.45, -0.6]
@@ -43,13 +43,13 @@ def test_soft_pickup_and_joint_mismatch():
     a.start(q, h)
     d = a.step(q, h, now=0, dt=0.03)
     assert d.phase == Phase.HUMAN
-    np.testing.assert_allclose(d.action[[0, 7]], q[[0, 7]])
+    np.testing.assert_allclose(d.action[[0, 7]], h[[0, 7]])
     assert d.action[6] == 0.7
 
-    # Large absolute mismatch is safe: only relative leader motion is applied.
+    # Subsequent motion remains an absolute one-to-one leader mapping.
     h[[0, 7]] += [0.01, -0.02]
     d = a.step(q, h, now=0.015, dt=0.03)
-    np.testing.assert_allclose(d.action[[0, 7]], q[[0, 7]] + [0.01, -0.02])
+    np.testing.assert_allclose(d.action[[0, 7]], h[[0, 7]])
 
     h[[6, 13]] = 0.8
     d = a.step(q, h, now=0.03, dt=0.03)

@@ -253,3 +253,29 @@ def test_default_session_queue_covers_encoder_spawn_burst(tmp_path):
         assert rec.queue.maxsize == 150
     finally:
         rec.close("aborted")
+
+
+def test_workstation_closes_arm_units_once(monkeypatch, tmp_path):
+    from yam_abc_reproduce.hil import run
+    from yam_abc_reproduce.hil.station import StationIO
+
+    original_close = StationIO.close
+    calls = []
+
+    def close_once(self):
+        calls.append(True)
+        return original_close(self)
+
+    monkeypatch.setattr(StationIO, "close", close_once)
+    run.main(
+        [
+            "--mock",
+            "--mode",
+            "collect",
+            "--duration",
+            "0.1",
+            "--output",
+            str(tmp_path / "close_once"),
+        ]
+    )
+    assert len(calls) == 1

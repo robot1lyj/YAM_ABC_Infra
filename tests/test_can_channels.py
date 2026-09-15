@@ -44,42 +44,43 @@ def test_hil_prepares_all_configured_can_before_opening_i2rt(monkeypatch):
 
     cfg = _one_arm_station()
     calls = []
-    monkeypatch.setattr(run, "reset_can_buses", lambda: (True, "reset ok"))
-    monkeypatch.setattr(run, "check_can_up", lambda channels: calls.append(channels) or [])
+    monkeypatch.setattr(run, "bring_up_can_buses", lambda channels: calls.append(channels) or [])
+    checks = iter([["can2", "can3"], []])
+    monkeypatch.setattr(run, "check_can_up", lambda channels: next(checks))
 
-    assert run.prepare_station_can(cfg) == "reset ok"
+    assert run.prepare_station_can(cfg) == "CAN ready without reset: can2, can3"
     assert calls == [["can2", "can3"]]
+
+
+def test_hil_does_not_bounce_can_that_is_already_up(monkeypatch):
+    from yam_abc_reproduce.hil import run
+
+    monkeypatch.setattr(run, "check_can_up", lambda _channels: [])
+    monkeypatch.setattr(
+        run, "bring_up_can_buses", lambda _channels: pytest.fail("healthy CAN was bounced")
+    )
+    assert run.prepare_station_can(_one_arm_station()).startswith("CAN ready without reset")
 
 
 def test_hil_refuses_to_open_i2rt_when_can_did_not_come_up(monkeypatch):
     from yam_abc_reproduce.hil import run
 
     cfg = _one_arm_station()
-    monkeypatch.setattr(run, "reset_can_buses", lambda: (True, "reset ok"))
+    monkeypatch.setattr(run, "bring_up_can_buses", lambda _channels: [])
     monkeypatch.setattr(run, "check_can_up", lambda channels: [channels[0]])
 
     with pytest.raises(RuntimeError, match="can2"):
         run.prepare_station_can(cfg)
 
 
-def test_hil_retries_one_post_power_cycle_can_transition(monkeypatch):
+def test_hil_surfaces_can_bring_up_error_without_repeated_reset(monkeypatch):
     from yam_abc_reproduce.hil import run
 
     cfg = _one_arm_station()
-    resets = []
-    checks = iter([["can2"], []])
-
-    def reset():
-        resets.append(True)
-        return True, f"reset {len(resets)}"
-
-    monkeypatch.setattr(run, "reset_can_buses", reset)
-    monkeypatch.setattr(run, "check_can_up", lambda _channels: next(checks))
-    monkeypatch.setattr(run.time, "sleep", lambda _seconds: None)
-
-    output = run.prepare_station_can(cfg)
-    assert len(resets) == 2
-    assert "CAN first verification retry" in output
+    monkeypatch.setattr(run, "check_can_up", lambda _channels: ["can2"])
+    monkeypatch.setattr(run, "bring_up_can_buses", lambda _channels: ["can2: permission denied"])
+    with pytest.raises(RuntimeError, match="permission denied"):
+        run.prepare_station_can(cfg)
 
 
 def test_station_yaml_parses_per_device_channels(tmp_path):

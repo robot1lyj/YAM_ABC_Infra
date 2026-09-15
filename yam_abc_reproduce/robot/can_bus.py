@@ -63,6 +63,31 @@ def reset_can_buses(timeout_s: float = 30.0) -> tuple[bool, str]:
     return False, (r.stderr or out or f"exit code {r.returncode}").strip()
 
 
+def bring_up_can_buses(channels: list[str], timeout_s: float = 5.0) -> list[str]:
+    """Use the official normal CAN bring-up command, without bouncing live buses.
+
+    ``reset_all_can.sh`` remains an explicit recovery action for an unresponsive
+    adapter, not a required step of every arm connection.
+    """
+    errors: list[str] = []
+    for channel in dict.fromkeys(channels):
+        try:
+            result = subprocess.run(
+                ["sudo", "-n", "ip", "link", "set", channel, "up", "type", "can", "bitrate", "1000000"],
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                stdin=subprocess.DEVNULL,
+            )
+        except (subprocess.SubprocessError, OSError) as exc:
+            errors.append(f"{channel}: {exc}")
+            continue
+        if result.returncode:
+            detail = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
+            errors.append(f"{channel}: {detail}")
+    return errors
+
+
 def stop_can_buses(channels: list[str], timeout_s: float = 10.0) -> list[str]:
     """Put only the station-owned CAN interfaces DOWN; return failures.
 

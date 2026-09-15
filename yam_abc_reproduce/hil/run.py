@@ -25,7 +25,7 @@ from ..config import (
     load_yaml,
     robot_channel_for,
 )
-from ..robot.can_bus import check_can_up, reset_can_buses, stop_can_buses
+from ..robot.can_bus import bring_up_can_buses, check_can_up, stop_can_buses
 from ..runtime import build_arm_units, build_cameras_from_config
 from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
@@ -57,26 +57,20 @@ def station_can_channels(cfg) -> list[str]:
 
 def prepare_station_can(cfg) -> str:
     """Bring station CAN up and verify every interface before i2rt opens it."""
-    ok, output = reset_can_buses()
-    if not ok:
-        raise RuntimeError(f"CAN setup failed before arm connection: {output}")
     needed = station_can_channels(cfg)
     down = check_can_up(needed)
     if down:
-        # Four gs_usb adapters can finish their first post-power-cycle transition
-        # at slightly different times. A second complete reset has proved stable
-        # on the RK3588 station; it is still before any i2rt object or motor command.
-        time.sleep(0.2)
-        retry_ok, retry_output = reset_can_buses()
-        output = output + "\nCAN first verification retry:\n" + retry_output
-        down = check_can_up(needed) if retry_ok else down
+        errors = bring_up_can_buses(down)
+        if errors:
+            raise RuntimeError("CAN setup failed before arm connection: " + "; ".join(errors))
+        down = check_can_up(needed)
     if down:
         raise RuntimeError(
-            "CAN interface(s) not up after reset: "
+            "CAN interface(s) not up after bring-up: "
             + ", ".join(down)
-            + ". Check the USB-CAN adapters and passwordless CAN sudo rule."
+            + ". Check the USB-CAN adapters or use the explicit Reset CAN recovery action."
         )
-    return output
+    return "CAN ready without reset: " + ", ".join(needed)
 
 
 class LocalEdgePolicy:
@@ -730,6 +724,7 @@ def main(argv=None, *, service=None):
     )
     workers, io, policy_worker, dashboard = [], None, None, None
     units = []
+    units_closed = False
     cameras = []
     try:
         if service is None:
@@ -796,6 +791,7 @@ def main(argv=None, *, service=None):
         if io:
             close_errors = io.close()
             io = None
+            units_closed = True
             if close_errors:
                 recorder.metadata["close_errors"] = close_errors
                 if service is not None:
@@ -808,11 +804,12 @@ def main(argv=None, *, service=None):
             dashboard.should_exit = True
         if io:
             close_errors = io.close()
+            units_closed = True
             if close_errors:
                 recorder.metadata["close_errors"] = close_errors
                 if service is not None:
                     service.cleanup_error = "; ".join(close_errors)
-        else:
+        elif not units_closed:
             for unit in units:
                 for device in (unit.agent, unit.robot):
                     close = getattr(device, "close_hil", None)

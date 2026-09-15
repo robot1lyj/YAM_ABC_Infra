@@ -41,6 +41,52 @@ def test_latency_trim_uses_observation_clock_and_drops_expired_prefix():
     assert decision.policy_action[0] != rows[0, 0]
 
 
+def test_finite_thor_gripper_overshoot_is_clamped_on_control_side():
+    q = np.zeros(14)
+    arbiter = Arbiter(Mode.INFERENCE, streaming=True, max_action_age=3)
+    arbiter.start(q)
+    rows = chunk(gripper=1.2)
+    rows[:, 13] = -0.3
+    policy(arbiter, rows, observed_at=1, sent_at=1.01, received_at=1.05)
+    decision = arbiter.step(q, q, now=1.05, dt=0.03, leader_ready=True)
+    assert decision.policy_action[[6, 13]].tolist() == [1.0, 0.0]
+    assert decision.action[6] <= 1.0 and decision.action[13] >= 0.0
+
+
+def test_nonfinite_thor_gripper_still_rejected():
+    q = np.zeros(14)
+    arbiter = Arbiter(Mode.INFERENCE, streaming=True)
+    arbiter.start(q)
+    token = arbiter.request(1, 1.01, observed_at=1)
+    rows = chunk()
+    rows[:, 6] = np.nan
+    with pytest.raises(ValueError, match="finite"):
+        arbiter.accept(token, rows, 1.05)
+
+
+def test_station_io_clamps_absolute_joint_targets_to_sdk_limits():
+    from types import SimpleNamespace
+
+    from yam_abc_reproduce.config import StationConfig
+    from yam_abc_reproduce.hil.station import StationIO
+    from yam_abc_reproduce.runtime import build_arm_units
+
+    io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
+    try:
+        target = np.zeros(14)
+        target[0], target[7] = 4 * np.pi, -4 * np.pi
+        decision = SimpleNamespace(
+            action=target, leader_manual=True, leader_freeze=False,
+        )
+        submitted, _ = io.apply(
+            decision, np.zeros(14), np.zeros(14), dt=0.03,
+        )
+        assert submitted[0] == pytest.approx(np.pi)
+        assert submitted[7] == pytest.approx(-np.pi)
+    finally:
+        io.close()
+
+
 def test_deadline_prefetch_can_override_long_freshness_interval():
     q = np.zeros(14)
     arbiter = Arbiter(
@@ -68,6 +114,15 @@ def test_deadline_prefetch_can_override_long_freshness_interval():
     assert third is not None and arbiter.last_request_reason == "deadline"
 
 
+def test_action_dt_cli_override_is_checked_without_model_or_motors(capsys):
+    import json
+
+    from yam_abc_reproduce.hil.run import main
+
+    main(["--mock", "--mode", "inference", "--action-dt", "0.05", "--check"])
+    assert json.loads(capsys.readouterr().out)["action_dt"] == pytest.approx(0.05)
+
+
 def test_smooth_window_only_blends_matching_future_joints_and_not_grippers():
     q = np.zeros(14)
     arbiter = Arbiter(
@@ -88,7 +143,21 @@ def test_smooth_window_only_blends_matching_future_joints_and_not_grippers():
     assert decision.policy_action[0] == pytest.approx(2)
 
 
-def test_ensemble_fuses_same_target_time_newest_first_with_latest_gripper():
+def test_kai0_single_step_overlap_keeps_old_joint_but_latest_gripper():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=0.1,
+        policy_fusion="smooth", smooth_steps=1, max_action_age=3,
+    )
+    arbiter.start(q)
+    policy(arbiter, chunk(0.1, 0.2), observed_at=1, sent_at=1, received_at=1.01)
+    policy(arbiter, chunk(0.4, 0.8), observed_at=1.2, sent_at=1.21, received_at=1.25)
+    decision = arbiter.step(q, q, now=1.25, dt=0.03, leader_ready=True)
+    assert decision.policy_action[0] == pytest.approx(0.1)
+    assert decision.policy_action[6] == pytest.approx(0.8)
+
+
+def test_ensemble_fuses_same_target_time_kai0_oldest_first_with_latest_gripper():
     q = np.zeros(14)
     arbiter = Arbiter(
         Mode.INFERENCE, streaming=True, action_dt=0.1,
@@ -99,7 +168,7 @@ def test_ensemble_fuses_same_target_time_newest_first_with_latest_gripper():
     policy(arbiter, chunk(0, 0.1), observed_at=1, sent_at=1, received_at=1.01)
     policy(arbiter, chunk(2, 0.9), observed_at=1.2, sent_at=1.21, received_at=1.25)
     decision = arbiter.step(q, q, now=1.35, dt=0.03, leader_ready=True)
-    expected = 2 / (1 + np.exp(-0.5))
+    expected = 2 * np.exp(-0.5) / (1 + np.exp(-0.5))
     assert decision.action_index == 1
     assert decision.policy_action[0] == pytest.approx(expected)
     assert decision.policy_action[6] == pytest.approx(0.9)
@@ -107,6 +176,24 @@ def test_ensemble_fuses_same_target_time_newest_first_with_latest_gripper():
     policy(arbiter, chunk(3, 0.7), observed_at=1.44, sent_at=1.45, received_at=1.46)
     decision = arbiter.step(q, q, now=1.46, dt=0.03, leader_ready=True)
     assert decision.policy_action[0] == pytest.approx(3)
+
+
+def test_kai0_oldest_first_weights_three_matching_joint_predictions():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=0.1,
+        policy_fusion="ensemble", ensemble_chunks=3,
+        ensemble_decay=0.5, max_action_age=3,
+    )
+    arbiter.start(q)
+    for joint, grip, origin in ((0, 0.1, 1), (1, 0.4, 1.2), (2, 0.9, 1.4)):
+        policy(arbiter, chunk(joint, grip), observed_at=origin,
+               sent_at=origin + 0.01, received_at=origin + 0.02)
+    decision = arbiter.step(q, q, now=1.52, dt=0.03, leader_ready=True)
+    weights = np.exp(-0.5 * np.arange(3))
+    expected = np.average([0, 1, 2], weights=weights)
+    assert decision.policy_action[0] == pytest.approx(expected)
+    assert decision.policy_action[6] == pytest.approx(0.9)
 
 
 def test_ensemble_does_not_reuse_an_expired_older_prediction():
@@ -234,6 +321,7 @@ def test_mock_30hz_runtime_keeps_policy_ticks_during_background_rpc():
         status = runtime.run(duration=2.2, auto_start=True)
         assert status["tick"] >= 55 and status["deadline_misses"] < 8, status
         assert not status["error"] and len(client.intervals) >= 2
+        assert "policy_metadata" not in recorder.metadata
         second_start, second_end = client.intervals[1]
         during_rpc = [
             row for row in recorder.rows

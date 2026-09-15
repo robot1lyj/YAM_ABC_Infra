@@ -86,10 +86,6 @@ class LocalEdgePolicy:
         return self.client.infer(obs)
 
     @property
-    def metadata(self):
-        return None if self.client is None else self.client.metadata
-
-    @property
     def last_timing(self):
         return None if self.client is None else self.client.last_timing
 
@@ -143,7 +139,7 @@ class Runtime:
                 policy_fusion=settings.get("policy_fusion", "raw"),
                 smooth_steps=settings.get("smooth_steps", 8),
                 ensemble_chunks=settings.get("ensemble_chunks", 3),
-                ensemble_decay=settings.get("ensemble_decay", 0.5),
+                ensemble_decay=settings.get("ensemble_decay", 0.01),
             ),
             worker,
         )
@@ -631,10 +627,6 @@ class Runtime:
             if isinstance(self.recorder, RecordingSession) and self.recorder.mode == "collect":
                 self.recorder.stop_episode("aborted")
             self.recorder.metadata["terminal_status"] = dict(self.status)
-            if self.worker:
-                self.recorder.metadata["policy_metadata"] = getattr(
-                    self.worker.client, "metadata", None
-                )
             # A hardware fault keeps gravity/hold active until explicit quit.
             if self.status.get("phase") == "fault" and not self.io.mock:
                 print(
@@ -697,6 +689,7 @@ def main(argv=None, *, service=None):
     p.add_argument("--smooth-steps", type=int, help="short matching-time smoothing window (1-50)")
     p.add_argument("--ensemble-chunks", type=int, help="recent matching-time chunks (2-5)")
     p.add_argument("--ensemble-decay", type=float, help="newest-first exponential weight decay")
+    p.add_argument("--action-dt", type=float, help="model action target spacing in seconds")
     p.add_argument("--expected-policy-latency", type=float, help="initial total Thor RPC estimate in seconds")
     p.add_argument("--prefetch-margin", type=float, help="extra deadline reserve in seconds")
     p.add_argument("--web-port", type=int, help="optional local dashboard port")
@@ -735,12 +728,14 @@ def main(argv=None, *, service=None):
     cfg = build_station_config(args.station)
     validate_station(cfg, mock=args.mock, check_cameras=service is None)
     hil_cfg = load_yaml(args.station).get("hil", {})
+    hil_cfg = dict(hil_cfg)
+    if args.action_dt is not None:
+        hil_cfg["action_dt"] = args.action_dt
     action_dt = float(hil_cfg.get("action_dt", 1 / 30))
     if not np.isfinite(action_dt) or action_dt <= 0 or not 1 <= cfg.control_hz <= 100:
         p.error("invalid action_dt/control_hz")
     if not args.mock and args.mode not in ("teleop", "collect") and not args.url:
         p.error("--url is required for local edge inference")
-    hil_cfg = dict(hil_cfg)
     for key, option in (
         ("policy_fusion", args.policy_fusion),
         ("smooth_steps", args.smooth_steps),
@@ -764,7 +759,7 @@ def main(argv=None, *, service=None):
             fusion=hil_cfg.get("policy_fusion", "raw"),
             smooth_steps=hil_cfg.get("smooth_steps", 8),
             ensemble_chunks=hil_cfg.get("ensemble_chunks", 3),
-            ensemble_decay=hil_cfg.get("ensemble_decay", 0.5),
+            ensemble_decay=hil_cfg.get("ensemble_decay", 0.01),
         )
     except ValueError as exc:
         p.error(str(exc))
@@ -791,6 +786,7 @@ def main(argv=None, *, service=None):
                     "dependencies": sorted(required),
                     "mock": args.mock,
                     "mode": args.mode,
+                    "action_dt": action_dt,
                     "policy_fusion": hil_cfg.get("policy_fusion", "raw"),
                     "hardware_checked": False,
                     "note": "仅检查模块是否可发现；未验证二进制加载、设备、网络或实时性能",
@@ -819,10 +815,9 @@ def main(argv=None, *, service=None):
             "policy_fusion": hil_cfg.get("policy_fusion", "raw"),
             "smooth_steps": hil_cfg.get("smooth_steps", 8),
             "ensemble_chunks": hil_cfg.get("ensemble_chunks", 3),
-            "ensemble_decay": hil_cfg.get("ensemble_decay", 0.5),
+            "ensemble_decay": hil_cfg.get("ensemble_decay", 0.01),
             "expected_policy_latency": hil_cfg.get("expected_policy_latency", 0.2),
             "prefetch_margin": hil_cfg.get("prefetch_margin", 2 / 30),
-            "policy_url": args.url,
         },
     )
     workers, io, policy_worker, dashboard = [], None, None, None

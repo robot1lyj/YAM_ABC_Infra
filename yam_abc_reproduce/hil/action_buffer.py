@@ -46,7 +46,7 @@ class ActionBuffer:
         fusion: str = "raw",
         smooth_steps: int = 8,
         ensemble_chunks: int = 3,
-        ensemble_decay: float = 0.5,
+        ensemble_decay: float = 0.01,
         max_action_age: float = 1.0,
     ):
         if fusion not in ("raw", "smooth", "ensemble"):
@@ -99,7 +99,7 @@ class ActionBuffer:
                     continue
                 # A short old-to-new ramp at *matching* target times only.
                 old_weight = (
-                    0.5 if self.smooth_steps == 1 else
+                    1.0 if self.smooth_steps == 1 else
                     max(0.0, 1.0 - matched / (self.smooth_steps - 1))
                 )
                 offset = index - first
@@ -125,15 +125,20 @@ class ActionBuffer:
         if self.fusion == "ensemble":
             target = newest.target(index, self.action_dt)
             candidates = [action]
-            weights = [1.0]
-            for rank, older in enumerate(reversed(self.chunks[:-1]), start=1):
+            for older in reversed(self.chunks[:-1]):
                 if now - older.origin > self.max_action_age:
                     continue
                 prior = self._matching(older, target)
                 if prior is not None:
                     candidates.append(prior)
-                    weights.append(exp(-self.ensemble_decay * rank))
             if len(candidates) > 1:
+                # Kai0 ACT-style aggregation gives the oldest matching prediction
+                # weight 1 and exponentially discounts newer joint predictions.
+                # candidates are stored newest-first here.
+                weights = [
+                    exp(-self.ensemble_decay * (len(candidates) - 1 - rank))
+                    for rank in range(len(candidates))
+                ]
                 joints = [i for i in range(14) if i not in GRIPPERS]
                 action[joints] = np.average(
                     np.stack([row[joints] for row in candidates]),

@@ -31,7 +31,7 @@
 - ARX `get_frame()` 依次等相机和取最新关节，没有严格时间戳配对。
 - 其 RGB/BGR 处理、嵌套 CHW 键、夹爪二值化、自动回零和不足块补零不照搬到 YAM。
 
-2026-09-15复核固定Kai0`9d93078`的[Agilex temporal smoothing](https://github.com/OpenDriveLab/kai0/blob/9d93078c757840f50e75248c5c5a94ab7b41e13a/train_deploy_alignment/inference/agilex/inference/agilex_inference_openpi_temporal_smoothing.py)与[temporal ensembling](https://github.com/OpenDriveLab/kai0/blob/9d93078c757840f50e75248c5c5a94ab7b41e13a/train_deploy_alignment/inference/agilex/inference/agilex_inference_openpi_temporal_ensembling.py)。YAM现提供可关闭的短窗口线性平滑和同目标时刻集合；与Kai0的消费计数裁剪、旧预测优先权重不同，YAM按本机观测时间裁剪、设`action_dt/4`匹配容差、新预测优先且夹爪不平均。参考算法形态不移植其ROS、动作单位或自动回位。
+2026-09-15复核固定Kai0`9d93078`的[Agilex temporal smoothing](https://github.com/OpenDriveLab/kai0/blob/9d93078c757840f50e75248c5c5a94ab7b41e13a/train_deploy_alignment/inference/agilex/inference/agilex_inference_openpi_temporal_smoothing.py)与[temporal ensembling](https://github.com/OpenDriveLab/kai0/blob/9d93078c757840f50e75248c5c5a94ab7b41e13a/train_deploy_alignment/inference/agilex/inference/agilex_inference_openpi_temporal_ensembling.py)。YAM可关闭的短窗口平滑与其旧100%→新100%线性权重一致，ensemble改用其ACT较早预测优先指数权重及默认衰减0.01。差异保留：YAM按本机观测时间而非消费计数裁剪、设`action_dt/4`同目标时刻匹配容差、夹爪只取最新且不平均、不在缓冲耗尽时复用last_action或填充旧尾部。没有Kai0式第0步时间偏移配置；不移植其ROS、动作单位或自动回位。
 
 ## condapi
 

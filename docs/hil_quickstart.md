@@ -144,12 +144,12 @@ uv run --no-sync yam-workstation --mode hil --url ws://THOR_IP:8000 --web-port 8
 `THOR_IP`替换为实际值。纯推理使用 `--mode inference`。不提供URL的真实遥操作会话不能
 切入推理/HIL，需断开后填写URL重新连接。无自动重连执行；网络错误会锁定故障。
 模型接口为扁平RGB HWC uint8三图、14D状态、prompt，输出50×14绝对动作；
-关节弧度、夹爪0–1，需与condapi训练/输出变换一致，RK不再次反归一化或加状态。
-当前接收并保存服务元数据，不代表已经验证checkpoint/norm或任务效果。
+Thor已反馈关节输出是rad绝对目标、夹爪0关/1开，Thor完成反归一化、关节delta→absolute和32D→14D；RK不再次反归一化或加状态。有限夹爪预测即使超出[0,1]也由RK裁剪，NaN/Inf仍拒绝，关节按SDK硬限位。
+客户端消费协议要求的首条服务元数据，但不保存模型名称、后端、指纹或服务URL；任务效果仍需另验收。
 
 ## 非RTC推理与可选动作融合
 
-当前`configs/station_hil.yaml`默认`policy_fusion: raw`。`smooth`只在新旧块目标时刻匹配时对前`smooth_steps`步关节目标过渡；`ensemble`按新预测优先的指数权重融合最近`ensemble_chunks`块的同目标时刻关节预测，`ensemble_decay`控制旧预测权重。夹爪在两种方法中都取最新块，不混合开闭。三种选择不改变同步模式、Thor模型或50×14绝对动作协议；`--baseline`则关闭预取与融合，保留普通分块基准。
+当前`configs/station_hil.yaml`默认`policy_fusion: raw`。`smooth`只在新旧块目标时刻匹配时对前`smooth_steps`步关节目标按KAI0的旧100%→新100%线性过渡；`ensemble`按KAI0/ACT的较早预测优先指数权重融合最近`ensemble_chunks`块的同目标时刻关节预测，`ensemble_decay`默认0.01。夹爪在两种方法中都取最新块，不混合开闭。三种选择不改变同步模式、Thor模型或50×14绝对动作协议；`--baseline`则关闭预取与融合，保留普通分块基准。
 
 离线无设备检查与模拟延迟测试：
 
@@ -167,7 +167,7 @@ uv run --no-sync yam-workstation --station configs/station_hil.yaml \
   --web-port 8766 --web-host 192.168.110.140
 ```
 
-获准并验证raw后，可改`--policy-fusion smooth --smooth-steps 6`，或`--policy-fusion ensemble --ensemble-chunks 3 --ensemble-decay 0.5`做运动对照。实际`THOR_IP`、checkpoint/norm、`action_dt`及动作索引0相对观测时刻的语义必须核对；不同则不能靠本机融合参数猜测。请求超过`request_timeout`、缓冲耗尽或动作超过`action_timeout`会保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。
+获准并验证raw后，可改`--policy-fusion smooth --smooth-steps 6`，或`--policy-fusion ensemble --ensemble-chunks 3 --ensemble-decay 0.01`做运动对照。3588以`configs/station_hil.yaml`的`action_dt`或命令行`--action-dt 0.03333333333333333`配置动作间隔，固定认为动作第0步对应本机observation参考时刻；这是动作时间轴，不是触发下一次推理的时间偏移。换模型时如动作间隔/单位不同，先更新配置并做无电机回放，不要求模型名称或指纹匹配。请求超过`request_timeout`、缓冲耗尽或动作超过`action_timeout`会保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。
 
 预取触发不再只受200ms固定间隔限制：每tick计算最新动作块距离H50末端或`action_timeout`的可执行秒数；当它不大于“最近16个有效回复的本机往返p95（初始采用配置估计）+安全余量”时，即使尚未到200ms也提前请求。200ms仍作为正常观测新鲜度的最长重规划间隔；单在途请求期间只保留当tick的最新观测，不建立旧观测队列。当前初始总往返估计为`--expected-policy-latency 0.2`秒，余量为`--prefetch-margin 0.067`秒；这不是Thor模型实测，真联网后会被有效回复p95更新。状态接口显示`policy_buffer_seconds`、`policy_observed_rtt_p95_s`、`policy_latency_budget_s`和最近请求原因。回复行另保存本机打包、send调用、等待回复、解包以及condapi`server_timing.infer_ms`；后者与本机时钟不直接相减为“纯网络”。
 
@@ -195,7 +195,7 @@ D405无三机外部硬同步；本版按**主机接收时间**配对与关节历
 保留设备时间/时间域/帧号，但尚未标定曝光时钟偏移。观测插值仅用于模型/记录；
 控制约束使用最新真实状态。以后实测需要再加时钟校准、多进程或硬件优化。
 
-推理用obs时间与`action_dt`定位当前动作，裁掉过期前缀；不会因为控制Hz变化而把模型时间轴加速。新块替换尚未执行的未来计划，约束后的命令另存；同目标时刻融合仅按上述参数显式启用，不做RTC或模型侧改变。
+推理将动作第0步对齐obs参考时刻，再用`action_dt`定位当前动作、裁掉过期前缀；没有额外“第0步时间偏移”配置，不会因为控制Hz变化而把模型时间轴加速。新块替换尚未执行的未来计划，约束后的命令另存；同目标时刻融合仅按上述参数显式启用，不做RTC或模型侧改变。
 
 ## 记录与训练导出
 

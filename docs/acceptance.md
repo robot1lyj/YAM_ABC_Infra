@@ -2,9 +2,9 @@
 
 ## 2026-09-15：非RTC异步推理缓冲（仅离线模拟）
 
-新增[模拟延迟测试](../tests/test_async_inference.py)验证单在途请求、最新观测、不等待网络、按观测时间物理裁剪前缀、同目标时刻平滑/ensemble、夹爪独立、超时/耗尽保持以及切换/急停后拒绝旧结果。模拟Thor每次延迟320ms，2.2秒30Hz Runtime得到65 tick、0 deadline miss、第二次RPC期间9个有效policy tick、6次推理调用；全套306通过、2跳过、17子测试通过。该结果证明本机模拟路径不等待网络，不代表真实Thor协议/模型语义、RK3588控制延迟或真机任务效果已通过。配置与获准真机闸门见[运行手册](hil_quickstart.md#非rtc推理与可选动作融合)。
+[模拟延迟测试](../tests/test_async_inference.py)覆盖单在途最新观测、观测时间跳步、KAI0式旧100%→新100%短窗口平滑和ACT较早预测优先集合、夹爪独立、动态截止时间预取、超时/耗尽保持、切换/急停拒绝旧结果。320ms模拟Thor的2.2秒30Hz Runtime得到65 tick、0 deadline miss、第二次RPC期间9个policy tick、6次推理调用；400ms抖动模拟在正常新鲜度间隔尚未到时提前请求，返回块丢第0–3步。有限夹爪超出[0,1]在控制侧裁剪，NaN/Inf拒绝；[condapi普通WebSocket处理器无模型联调](../tests/test_condapi_wire.py)用源handler验证三图+14D+prompt往返和50×14返回。全套314通过、2跳过、17子测试通过（仅既有Starlette告警）。这些证明本机模拟/源协议，不代表真实Thor、RK3588控制延迟或真机任务效果通过。配置和现场闸门见[运行手册](hil_quickstart.md#非rtc推理与可选动作融合)。
 
-追加[截止时间预取测试](../tests/test_async_inference.py)：模拟400ms网络/模型抖动时，按最新有效回复本机往返p95和剩余动作可执行秒数，允许在1秒新鲜度间隔尚未到时提前请求；新回复仍从与观测时刻对齐的第4步起，旧前缀不执行。[condapi实际普通WebSocket处理器无模型联调](../tests/test_condapi_wire.py)使用本地condapi源服务端handler和YAM客户端，三路RGB HWC uint8、14D状态、prompt往返并返回50×14及`server_timing`，12项专项测试通过。追加后全套308通过、2跳过、17子测试通过（仅现有Starlette告警）。它证明源协议可互通，不代表Thor已启动该服务或模型语义已核验。
+3588本地YAML/CLI配置`action_dt`，第0步直接对齐observation参考时刻，不设额外偏移；不记录模型名称、后端、指纹、握手metadata或服务URL。Thor侧用户本轮反馈50×14绝对输出合同：左右6关节rad、左右夹爪0关/1开，Thor负责反归一化、关节delta还原和32D裁剪；控制侧关节按SDK硬限位、夹爪裁到[0,1]。该反馈已按范围写入[接口](condapi_interface.md#v1-接口验收合同)，不是本轮真实模型输出测量。
 
 同日IPC无机械臂的三台D405短测：三路图像最新帧引用/状态整理30次，p50/p95/max为0.141/0.162/0.939ms；`openpi_client.msgpack_numpy.Packer`对实际三图+14D+prompt打包30次，p50/p95/max为0.747/2.313/3.589ms，中位请求2,765,227字节；最旧配对图像帧龄p50/p95/max为32.625/45.133/47.884ms。测量在IPC CPU4–7进行，相机worker在`finally`停止，四臂未连接、CAN DOWN。图像帧在相机线程中已复制，此处未计入曝光、USB采集、socket发送、真实Thor处理或磁盘负载；用户给出的约130ms是Thor端估计值，不能相加后冒充已测全链路延迟。
 

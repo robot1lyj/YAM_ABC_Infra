@@ -18,26 +18,26 @@ observation.images.left_rgb、observation.images.right_rgb；prompt 为字符串
 模型端 resize/padding 与训练一致，不擅自把相机采集分辨率等同 engine 输入分辨率。
 输出 actions 为有限的 (50,14)。内部 32D 不能直接发给机械臂。
 训练关节 delta、夹爪 absolute；生产 policy 输出经 inverse transform 回到 absolute。
-RK3588 不再次加状态或二次反归一化；服务握手必须明确这层语义。
+RK3588 不再次加状态或二次反归一化；真机前须通过无电机回放核实这层动作语义。
 物理单位由训练数据和硬件审计绑定；不能仅因两边都14D就认为兼容。
 
 ## v1 接口验收合同
 
-下表冻结双方交付内容；**自动 metadata 比较、完整模型来源写入以及影子执行路径尚待实现**，不是现有服务已经发出全部字段的声明。优先在现有握手 metadata 和会话 manifest 上补充，不改成第二种传输协议；具体字段结构由 P4/P6 在双方合同测试中固定。
+3588只负责观测输入、动作输出和控制安全，不记录模型名称、后端或指纹，也不要求Thor在握手新增这些字段。模型频繁切换时，Thor自行保证所运行policy的正确性；3588仍需核实与硬件直接相关的形状、单位和时间语义。
 
 | 边界 | 约定与验收 |
 |---|---|
-| 身份 | 握手声明 `contract_version=yam-thor-v1`、`model_id`、本次 checkpoint 身份/内容指纹、config/norm/tokenizer 指纹、实际 backend/engine 指纹；引用文件需可定位，不能仅用路径或模型名称代替身份 |
 | 状态 | `observation.state` 为 14D 有限浮点；顺序固定。当前 YAM adapter 设计为关节弧度、夹爪 0闭/1开，但驱动与实物仍需核验；condapi 历史数据单位仍待审计，不能直接宣称一致 |
 | 视觉 | `top_rgb/left_rgb/right_rgb` 为 RGB HWC uint8；top/left/right 的序列号及安装视角由 station 绑定。RK 负责有效配对，Thor 负责训练一致的 resize/padding/normalize；不得漏相机或复用错侧画面 |
 | 任务 | 工作台中文 name/instruction 供操作员使用，英文 task 作为 `prompt`；数据保留 task UUID/版本。服务不能静默改用无关默认 prompt |
-| 动作 | 返回键 `actions`，有限 `(50,14)`，物理空间 absolute target；明确各维单位、关节顺序、方向、夹爪端点与范围。模型端完成 inverse transform，RK 只按已审计硬件映射与限幅执行，不重复 delta/反归一化 |
-| 时间 | metadata 与本地配置匹配 `action_dt`（秒）、`action_horizon=50`、动作第0步的观测/目标对齐语义；v1 暂以第0步对应观测参考时刻，必须用训练样本审计确认。30Hz 控制、H50、10步去噪、0.2s 重规划周期是不同参数 |
-| 会话 | RK 本地保存 session/epoch/request_id/obs_id 与观测、发送、接收、提交时刻。普通协议目前按单连接单在途请求关联，不假定 Thor 已回显这些字段；超时关闭旧连接，重建需重新验证身份并保持，明确开始后才执行 |
+| 动作 | Thor本轮反馈：`actions`为有限`(50,14)`绝对目标；0–5/7–12为左右6关节rad，6/13为左右夹爪0关/1开。Thor负责反归一化、关节delta还原、32D裁到14D；3588不二次反归一化或再加当前关节位置。关节按SDK硬限位，有限夹爪越界值在控制侧裁到[0,1] |
+| 时间 | 3588本地配置`action_dt`（秒），第0步直接绑定本机observation参考时刻；收到回复后按已经过去的动作周期裁掉前缀。30Hz控制、H50、10步去噪、动态预取是不同参数；不配置额外第0步偏移 |
+| 会话 | RK 本地保存session/epoch/request_id/obs_id与观测、发送、接收、提交时刻。普通协议按单连接单在途请求关联，不要求Thor回显这些字段；超时关闭旧连接并保持，明确开始后才执行 |
 | 时钟 | 跨机 monotonic 不直接相减。RK 测本地往返和观测年龄，Thor 测本地处理时长；两者分别报告，不能把往返减 server timing 后简单称为纯网络时延 |
-| 错误 | 缺字段、版本/单位/norm/时间步不匹配、NaN/Inf、错误形状、过期或错 epoch 结果均不得进入执行；不通过补零、截断真实 token、复用旧 norm 或延长动作有效期掩盖错误 |
+| 错误 | 缺少观测/动作字段、单位或动作周期不适用、NaN/Inf、错误形状、过期或错epoch结果均不得进入执行；有限夹爪越界值按控制侧限幅，不把它误判为协议故障；不通过补零、截断真实token或延长动作有效期掩盖错误 |
 
-元数据不完整时允许无电机冻结回放做诊断，禁止将结果晋级真机推理。正式执行前 P4/P6 应做到自动合同 gate，而非靠操作者记住字段；换 checkpoint、norm、模型预处理、引擎或 station 映射后重新验证。物理单位或时间语义不同必须形成显式、可测试的新映射，重新回放；不能填一份 metadata 就认为差异消失。
+真机前先做无电机回放，核实50×14有限绝对动作、物理单位和3588本地`action_dt`。换模型不因名称、后端或指纹而自动阻挡；若新模型的动作单位/时间语义改变，须更新3588配置并重新回放，不能把不同语义直接交给同一控制映射。
+2026-09-15 Thor侧提供上述动作合同和输出逆变换核对结论；这是对方报告，不等于3588已经收到真实模型输出或完成真机回放。夹爪输出变换不保证数值裁剪，因此控制侧在验证50×14有限值后裁到[0,1]，并保留原来的关节SDK硬限位与非有限值拒绝。
 
 ## Thor 服务的实际缺口
 
@@ -48,15 +48,15 @@ RK3588 不再次加状态或二次反归一化；服务握手必须明确这层�
 ## 推理周期与产物
 
 H50 是预测长度，num_steps=10 是去噪次数，都不等于控制Hz或执行全部50步。
-服务绑定 config/checkpoint/norm/模型版本；变更后重新预热并验收。
+Thor自行管理模型、norm、后端及切换后的预热；3588不保存这些模型信息。
 先保留普通推理路径；RTC off 起步，异步请求不等于算法RTC。
 启用 prefix-conditioned RTC 需要服务端明确支持，且保留关闭/回退路径。
 
-2026-09-15控制侧新增非RTC时间戳动作缓冲及可关闭的同目标时刻融合，仍消费普通`infer(observation) -> {"actions": (50,14)}`；**本功能无必需Thor传输协议变更，也不要求模型RTC支持**。`epoch/request_id/observed_at`由RK单在途本地关联，跨机monotonic不直接比较。真机前仍须由condapi核对握手元数据中的`action_dt`、动作索引0与观测参考时刻的关系、absolute单位及checkpoint/norm；若索引0实际对应另一偏移，应在原握手中明确动作起点偏移并做双方回放合同测试，不能由RK猜测或靠融合掩盖。
+2026-09-15控制侧新增非RTC时间戳动作缓冲及可关闭的同目标时刻融合，仍消费普通`infer(observation) -> {"actions": (50,14)}`；**Thor无需为此改传输协议，也不要求模型RTC支持**。`epoch/request_id/observed_at`由RK单在途本地关联，跨机monotonic不直接比较。第0步按本机observation参考时刻对齐，`action_dt`由3588本地配置；不再增加额外时间偏移参数。这比KAI0基于请求前控制步号、返回后跳过已过去步数的方式更直接使用本机观测时间，非模型侧RTC。
 
 本次直接检查condapi `WebsocketPolicyServer._handler`和`YamInputs/YamOutputs`：普通请求可直接发送扁平observation字典的msgpack-numpy字节帧，不必增加RTC envelope；连接后第一条服务消息为msgpack metadata，回复含`actions`及`server_timing.infer_ms`。YAM客户端保持同一连接上单在途请求，封包/解包与`openpi-client`一致；[本地无模型协议测试](../tests/test_condapi_wire.py)已用condapi真实handler对三图/状态/prompt往返验证。IPC当前安装`openpi-client 0.1.0`、`websockets 16.1.1`、`msgpack 1.1.2`，无需Torch/JAX；缺少时按YAM `pyproject.toml` 的`deploy` extra安装。Thor端的模型、norm、tokenizer、TensorRT运行依赖仍只属于condapi系列容器，不能装到IPC来代替服务。
 
-普通condapi握手当前`_yam_policy_metadata()`有`robot_action_dim=14`、`model_action_dim=32`、`action_horizon=50`、image_keys/layout，但**没有**checkpoint/norm身份、`action_dt_s`、动作索引0的目标偏移、完整输出物理单位；`serve_policy.py`也没有直接选择W TensorRT engine的生产入口。普通infer回复仅回`actions`，没有服务端回显RK的monotonic时刻；当前不需要回显，因为RK用本机请求token和观测时刻匹配。真机执行前需要condapi在现有metadata中补足上述模型/时间/单位合同，且先做无电机回放；W后端若要使用，另需包装完整预处理、inverse transform和14D输出为同一普通policy接口。不能把现有形式上的协议互通认作checkpoint适配或真机就绪。
+普通condapi握手先发送metadata，3588客户端只消费该协议消息、不写入采集会话；推理回复仍取`actions`，不要求服务回显RK的monotonic时刻。`serve_policy.py`尚无直接选择W TensorRT engine的生产入口；如果Thor要用W，须由condapi将已核验后端包装为同一普通`infer(observation)` policy，完成预处理、inverse transform和14D输出。无模型源协议往返通过不等于真实Thor推理或硬件动作语义通过。
 
 ## 已报告的性能范围
 
@@ -74,12 +74,11 @@ tokenizer 接口仍200，text80不允许截断有效token；长输入显式使�
 切入人工/恢复/故障使旧epoch失效，网络/编码不在控制线程执行。
 实际封装已使用本页扁平图像键和14D状态，但尚未完成真实Thor联调。
 
-服务元数据会被保存，checkpoint/norm/单位/action_dt的自动契约比较尚未实现。
-不能把字段形状检查当作模型语义验证。
+服务握手metadata只为完成现有协议接收，不保存模型名称、后端、指纹或服务URL；3588保存本地`action_dt`和控制请求/动作计时。字段形状检查不替代动作单位与时间语义的无电机回放。
 跨机单调时钟不能直接相减；当前用RK本地请求年龄/往返统计，不宣称PTP或曝光时钟已校准。
 
 ## 采集数据的训练边界
 
 本项目实时保存 MP4＋HDF5＋JSON 原始集，工作站/服务器显式运行独立转换，目标 LeRobot v3.0；采集控制进程不自动转换。完整 HIL 轨迹包含 policy/hold/human 来源、干预编号和阶段事件。人工纠正训练应使用显式专家导出，或由经过测试的 condapi 加载器读取 `complementary_info.expert_valid` 等标记，不能默认整集均为专家动作。本轮未修改 condapi 训练加载器，也未验证其对新增筛选字段的使用。
 
-交接须包含数据版本与 split、14D 单位/方向/夹爪范围、动作来自最终提交目标而非把反馈冒充目标、实际 fps/action_dt、任务文本与三相机视角、专家筛选方式及转换报告。训练 norm 按同一训练 split 和模型 transform 计算并随 checkpoint 固定；不得复用基础模型 benchmark-only norm。每个 episode 需关联实际 station 与模型会话身份；现有 HIL manifest 的模型来源链尚不完整，P6 补齐后才能称为全链可追溯。
+交接须包含数据版本与split、14D单位/方向/夹爪范围、动作来自最终提交目标而非把反馈冒充目标、实际fps/action_dt、任务文本与三相机视角、专家筛选方式及转换报告。训练norm按同一训练split和模型transform计算并由condapi随模型管理；3588的采集episode不记录模型身份或后端。

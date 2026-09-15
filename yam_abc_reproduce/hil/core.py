@@ -96,7 +96,7 @@ class Arbiter:
         policy_fusion: str = "raw",
         smooth_steps: int = 8,
         ensemble_chunks: int = 3,
-        ensemble_decay: float = 0.5,
+        ensemble_decay: float = 0.01,
         expected_policy_latency: float = 0.2,
         prefetch_margin: float = 2 / 30,
     ):
@@ -278,6 +278,12 @@ class Arbiter:
         rows = np.asarray(actions, dtype=np.float64)
         if rows.shape != (50, 14):
             raise ValueError("policy response must be (50,14)")
+        if not np.isfinite(rows).all():
+            raise ValueError("policy response must be finite")
+        # Thor inverse transform is absolute but may predict grippers outside
+        # the semantic range. The control side owns gripper saturation.
+        rows = rows.copy()
+        rows[:, [6, 13]] = np.clip(rows[:, [6, 13]], 0.0, 1.0)
         for row in rows:
             vector(row)
         origin = token.observed_at if token.observed_at is not None else token.created_at

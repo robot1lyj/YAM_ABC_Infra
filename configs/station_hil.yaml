@@ -29,7 +29,7 @@ hil:
   policy_fusion: raw
   smooth_steps: 8
   ensemble_chunks: 3
-  ensemble_decay: 0.5
+  ensemble_decay: 0.01
   max_frame_age: 0.5
   max_frame_skew: 0.12
   warn_frame_skew: 0.04

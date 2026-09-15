@@ -518,6 +518,14 @@ class Workbench:
             argv.extend(("--url", self.args.url))
         if self.args.baseline:
             argv.append("--baseline")
+        for option, value in (
+            ("--policy-fusion", getattr(self.args, "policy_fusion", None)),
+            ("--smooth-steps", getattr(self.args, "smooth_steps", None)),
+            ("--ensemble-chunks", getattr(self.args, "ensemble_chunks", None)),
+            ("--ensemble-decay", getattr(self.args, "ensemble_decay", None)),
+        ):
+            if value is not None:
+                argv.extend((option, str(value)))
         try:
             # SDK CAN helper threads inherit the control owner's mask at creation.
             place_on_cpus("CONTROL")

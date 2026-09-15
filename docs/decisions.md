@@ -10,7 +10,7 @@
 | 产品 | 遥操作、推理、DAgger/HIL、数据采集四模式 | [架构](dagger_architecture.md) |
 | 接管 | 键盘i冻结并自动相对遥操作，HIL人工阶段手柄①交还模型；②无功能 | [运行手册](hil_quickstart.md) |
 | 推理位置 | 现场Thor模型服务，经网线连接RK3588；RK采集/控制/记录 | [接口](condapi_interface.md) |
-| 推理算法 | 第一版不做RTC；采用非RTC异步重规划，保留普通基准 | [同步](synchronization_design.md) |
+| 推理算法 | 非RTC单在途异步预取与按观测时间裁剪；同目标时刻短窗口平滑/temporal ensembling可关闭，`--baseline`保留普通基准，不改模型 | [同步](synchronization_design.md) |
 | 性能取舍 | 预览/MPP编码使用独立进程；控制不缩窄至两个大核，录制短时积压可停录后排空；长时完整性与运动中延迟仍需验收 | [架构](dagger_architecture.md#性能与格式整理) |
 | 数据 | 采集①开始/结束、②放弃；实时原始MP4/HDF5/JSON，LeRobot v3.0仅显式离线转换；保存Follower反馈/提交动作/三路图像/HIL完整阶段 | [转换](convert.md) |
 | 模型/微调 | 归condapi；本仓库保留适配规范，不另建训练事实来源 | [接口](condapi_interface.md) |

@@ -1,0 +1,257 @@
+"""Non-RTC inference buffering with simulated Thor latency; no hardware or model."""
+
+import threading
+import time
+
+import numpy as np
+import pytest
+
+from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
+from yam_abc_reproduce.hil.policy import PolicyWorker
+from yam_abc_reproduce.hil.session import Session
+
+
+def chunk(joint=0.0, gripper=0.0):
+    rows = np.zeros((50, 14))
+    rows[:, 0] = joint
+    rows[:, 6] = gripper
+    rows[:, 13] = gripper
+    return rows
+
+
+def policy(arbiter, actions, *, observed_at, sent_at, received_at):
+    token = arbiter.request(1, sent_at, observed_at=observed_at)
+    assert token is not None
+    assert arbiter.accept(token, actions, received_at)
+    return token
+
+
+def test_latency_trim_uses_observation_clock_and_drops_expired_prefix():
+    q = np.zeros(14)
+    arbiter = Arbiter(Mode.INFERENCE, streaming=True, action_dt=0.1, max_action_age=3)
+    arbiter.start(q)
+    rows = chunk()
+    rows[:, 0] = np.arange(50) / 100
+    policy(arbiter, rows, observed_at=1.0, sent_at=1.02, received_at=1.36)
+    assert arbiter.action_buffer.chunks[-1].first_index == 3
+    assert len(arbiter.action_buffer.chunks[-1].actions) == 47
+    decision = arbiter.step(q, q, now=1.36, dt=0.03, leader_ready=True)
+    assert decision.action_index == 3
+    assert decision.policy_action[0] == pytest.approx(0.03)
+    assert decision.policy_action[0] != rows[0, 0]
+
+
+def test_smooth_window_only_blends_matching_future_joints_and_not_grippers():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=0.1,
+        policy_fusion="smooth", smooth_steps=3, max_action_age=3,
+    )
+    arbiter.start(q)
+    policy(arbiter, chunk(0, 0.2), observed_at=1, sent_at=1, received_at=1.01)
+    policy(arbiter, chunk(1, 0.8), observed_at=1.2, sent_at=1.21, received_at=1.25)
+    for now, joint in ((1.25, 0), (1.35, 0.5), (1.45, 1)):
+        decision = arbiter.step(q, q, now=now, dt=0.03, leader_ready=True)
+        assert decision.policy_action[0] == pytest.approx(joint)
+        assert decision.policy_action[6] == pytest.approx(0.8)
+
+    # 1.26 is not the old chunk's 1.2 or 1.3 target (tolerance=25ms).
+    policy(arbiter, chunk(2, 0.6), observed_at=1.26, sent_at=1.27, received_at=1.28)
+    decision = arbiter.step(q, q, now=1.28, dt=0.03, leader_ready=True)
+    assert decision.policy_action[0] == pytest.approx(2)
+
+
+def test_ensemble_fuses_same_target_time_newest_first_with_latest_gripper():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=0.1,
+        policy_fusion="ensemble", ensemble_chunks=2, ensemble_decay=0.5,
+        max_action_age=3,
+    )
+    arbiter.start(q)
+    policy(arbiter, chunk(0, 0.1), observed_at=1, sent_at=1, received_at=1.01)
+    policy(arbiter, chunk(2, 0.9), observed_at=1.2, sent_at=1.21, received_at=1.25)
+    decision = arbiter.step(q, q, now=1.35, dt=0.03, leader_ready=True)
+    expected = 2 / (1 + np.exp(-0.5))
+    assert decision.action_index == 1
+    assert decision.policy_action[0] == pytest.approx(expected)
+    assert decision.policy_action[6] == pytest.approx(0.9)
+
+    policy(arbiter, chunk(3, 0.7), observed_at=1.44, sent_at=1.45, received_at=1.46)
+    decision = arbiter.step(q, q, now=1.46, dt=0.03, leader_ready=True)
+    assert decision.policy_action[0] == pytest.approx(3)
+
+
+def test_ensemble_does_not_reuse_an_expired_older_prediction():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=0.1,
+        policy_fusion="ensemble", ensemble_chunks=2,
+        max_action_age=0.35,
+    )
+    arbiter.start(q)
+    policy(arbiter, chunk(0), observed_at=1, sent_at=1, received_at=1.01)
+    policy(arbiter, chunk(2), observed_at=1.3, sent_at=1.31, received_at=1.32)
+    decision = arbiter.step(q, q, now=1.41, dt=0.03, leader_ready=True)
+    assert decision.policy_action[0] == pytest.approx(2)
+
+
+def test_slow_thor_does_not_block_control_or_queue_intermediate_observations():
+    entered = threading.Event()
+    release = threading.Event()
+    observations = []
+
+    class SlowThor:
+        def infer(self, obs):
+            observations.append(obs["id"])
+            if len(observations) == 2:
+                entered.set()
+                assert release.wait(2)
+            return {"actions": chunk(0.2)}
+
+    worker = PolicyWorker(SlowThor())
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=0.1,
+        replan_period=0.2, max_request_age=1.5, max_action_age=3,
+    )
+    session = Session(arbiter, worker)
+
+    def tick(now, identity, event=None):
+        return session.tick(
+            q, q, now=now, dt=0.03, observation_id=identity,
+            observation={"id": identity}, observed_at=now,
+            leader_ready=True, event=event,
+        )
+
+    try:
+        tick(0, 1, "start")
+        deadline = time.monotonic() + 1
+        while worker._replies.empty() and time.monotonic() < deadline:
+            time.sleep(0.001)
+        assert not worker._replies.empty()
+        assert tick(0.05, 2).source == "policy"
+        tick(0.25, 3)
+        assert entered.wait(1)
+        for i, now in enumerate((0.3, 0.4, 0.5, 0.6), start=4):
+            started = time.monotonic()
+            decision = tick(now, i)
+            assert time.monotonic() - started < 0.05
+            assert decision.source == "policy" and decision.phase == Phase.POLICY
+        assert observations == [1, 3]  # nothing queued while Thor is blocked
+        release.set()
+        deadline = time.monotonic() + 1
+        while worker._replies.empty() and time.monotonic() < deadline:
+            time.sleep(0.001)
+        assert not worker._replies.empty()
+        tick(0.65, 8)  # replan sends the latest snapshot, not 4-7
+        deadline = time.monotonic() + 1
+        while len(observations) < 3 and time.monotonic() < deadline:
+            time.sleep(0.001)
+        assert observations == [1, 3, 8]
+    finally:
+        release.set()
+        worker.close()
+
+
+def test_mock_30hz_runtime_keeps_policy_ticks_during_background_rpc():
+    from yam_abc_reproduce.camera.mock_camera import MockCamera
+    from yam_abc_reproduce.camera.worker import CameraWorker
+    from yam_abc_reproduce.config import StationConfig
+    from yam_abc_reproduce.hil.run import Runtime
+    from yam_abc_reproduce.hil.station import StationIO
+    from yam_abc_reproduce.runtime import build_arm_units
+
+    class MemoryRecorder:
+        def __init__(self):
+            self.metadata = {}
+            self.queue = self
+            self.written = 0
+            self.rows = []
+            self.error = None
+
+        def qsize(self):
+            return 0
+
+        def submit(self, row, _images):
+            self.rows.append(row)
+            self.written += 1
+            return True
+
+    class DelayedThor:
+        def __init__(self):
+            self.intervals = []
+
+        def infer(self, obs):
+            started = time.monotonic()
+            time.sleep(0.32)  # ten control periods, but under the 1.5s RPC timeout
+            self.intervals.append((started, time.monotonic()))
+            return {"actions": chunk(0.2)}
+
+    io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
+    cameras = [
+        CameraWorker(MockCamera(role, role, width=16, height=16))
+        for role in ("top", "left", "right")
+    ]
+    client = DelayedThor()
+    worker = PolicyWorker(client)
+    recorder = MemoryRecorder()
+    try:
+        for camera in cameras:
+            camera.start()
+        runtime = Runtime(
+            io, cameras, worker, recorder, mode="inference", hz=30,
+            action_dt=1 / 30, streaming=True,
+            settings={"request_timeout": 1.5, "action_timeout": 1.5},
+        )
+        status = runtime.run(duration=2.2, auto_start=True)
+        assert status["tick"] >= 55 and status["deadline_misses"] < 8, status
+        assert not status["error"] and len(client.intervals) >= 2
+        second_start, second_end = client.intervals[1]
+        during_rpc = [
+            row for row in recorder.rows
+            if second_start <= row["time"] <= second_end
+        ]
+        print(
+            f"async_mock: tick={status['tick']} misses={status['deadline_misses']} "
+            f"policy_ticks_during_second_rpc={len(during_rpc)} "
+            f"thor_calls={len(client.intervals)}"
+        )
+        assert len(during_rpc) >= 5
+        assert all(row["source"] == "policy" for row in during_rpc)
+    finally:
+        for camera in cameras:
+            camera.stop()
+        worker.close()
+        io.close()
+
+
+@pytest.mark.parametrize("event", ("hold", "stop", "mode:teleop"))
+def test_local_reset_clears_plan_and_rejects_old_network_result(event):
+    q = np.zeros(14)
+    arbiter = Arbiter(Mode.INFERENCE, streaming=True, action_dt=0.1)
+    arbiter.start(q)
+    policy(arbiter, chunk(0.2), observed_at=0, sent_at=0, received_at=0.01)
+    old = arbiter.request(2, 0.3, observed_at=0.29)
+    assert old is not None
+    Session(arbiter).tick(q, q, now=0.31, dt=0.03, observation_id=3, event=event)
+    assert arbiter.action_buffer.remaining(0.31) == 0
+    assert not arbiter.accept(old, chunk(1), 0.32)
+    decision = arbiter.step(q, q, now=0.33, dt=0.03)
+    assert not decision.policy_valid
+
+
+def test_request_timeout_and_buffer_exhaustion_hold_instead_of_replaying_tail():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=0.1,
+        max_request_age=0.5, max_action_age=10,
+    )
+    arbiter.start(q)
+    policy(arbiter, chunk(0.2), observed_at=0, sent_at=0, received_at=0.01)
+    assert arbiter.step(q, q, now=4.9, dt=0.03, leader_ready=True).policy_valid
+    assert not arbiter.step(q, q, now=5.1, dt=0.03, leader_ready=True).policy_valid
+    assert arbiter.phase == Phase.HOLD
+    arbiter.start(q)
+    arbiter.request(2, 5.2, observed_at=5.2)
+    assert arbiter.step(q, q, now=5.8, dt=0.03, leader_ready=True).phase == Phase.HOLD

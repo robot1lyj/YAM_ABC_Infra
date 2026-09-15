@@ -31,7 +31,7 @@
 - ARX `get_frame()` 依次等相机和取最新关节，没有严格时间戳配对。
 - 其 RGB/BGR 处理、嵌套 CHW 键、夹爪二值化、自动回零和不足块补零不照搬到 YAM。
 
-当前本项目只采用非 RTC 异步重规划和显式时间裁剪，未实现块间加权融合或时间集成。
+2026-09-15复核固定Kai0`9d93078`的[Agilex temporal smoothing](https://github.com/OpenDriveLab/kai0/blob/9d93078c757840f50e75248c5c5a94ab7b41e13a/train_deploy_alignment/inference/agilex/inference/agilex_inference_openpi_temporal_smoothing.py)与[temporal ensembling](https://github.com/OpenDriveLab/kai0/blob/9d93078c757840f50e75248c5c5a94ab7b41e13a/train_deploy_alignment/inference/agilex/inference/agilex_inference_openpi_temporal_ensembling.py)。YAM现提供可关闭的短窗口线性平滑和同目标时刻集合；与Kai0的消费计数裁剪、旧预测优先权重不同，YAM按本机观测时间裁剪、设`action_dt/4`匹配容差、新预测优先且夹爪不平均。参考算法形态不移植其ROS、动作单位或自动回位。
 
 ## condapi
 

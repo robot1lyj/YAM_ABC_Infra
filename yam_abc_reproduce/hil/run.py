@@ -28,6 +28,7 @@ from ..config import (
 from ..resource_qos import place_on_cpus
 from ..robot.can_bus import bring_up_can_buses, check_can_up, stop_can_buses
 from ..runtime import build_arm_units, build_cameras_from_config
+from .action_buffer import ActionBuffer
 from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
 from .jog import Jog
@@ -133,6 +134,10 @@ class Runtime:
                 max_manual_joint_speed=settings.get("max_manual_joint_speed"),
                 max_manual_gripper_speed=settings.get("max_manual_gripper_speed"),
                 replan_period=settings.get("replan_period", 0.2),
+                policy_fusion=settings.get("policy_fusion", "raw"),
+                smooth_steps=settings.get("smooth_steps", 8),
+                ensemble_chunks=settings.get("ensemble_chunks", 3),
+                ensemble_decay=settings.get("ensemble_decay", 0.5),
             ),
             worker,
         )
@@ -579,6 +584,9 @@ class Runtime:
                     "mode": a.mode.value,
                     "phase": a.phase.value,
                     "source": decision.source,
+                    "policy_fusion": a.action_buffer.fusion,
+                    "policy_buffer_remaining": a.action_buffer.remaining(now),
+                    "policy_request_pending": a.pending is not None,
                     "leader_error_rad": error,
                     "frame_age_s": quality.get("age_s"),
                     "arrival_skew_s": quality.get("arrival_skew_s"),
@@ -672,6 +680,13 @@ def main(argv=None, *, service=None):
     p.add_argument("--duration", type=float)
     p.add_argument("--demo", action="store_true", help="mock only: automated takeover/resume")
     p.add_argument("--baseline", action="store_true", help="ordinary non-prefetch baseline")
+    p.add_argument(
+        "--policy-fusion", choices=("raw", "smooth", "ensemble"),
+        help="non-RTC timestamped chunk fusion; default comes from station config",
+    )
+    p.add_argument("--smooth-steps", type=int, help="short matching-time smoothing window (1-50)")
+    p.add_argument("--ensemble-chunks", type=int, help="recent matching-time chunks (2-5)")
+    p.add_argument("--ensemble-decay", type=float, help="newest-first exponential weight decay")
     p.add_argument("--web-port", type=int, help="optional local dashboard port")
     p.add_argument(
         "--web-host",
@@ -713,9 +728,32 @@ def main(argv=None, *, service=None):
         p.error("invalid action_dt/control_hz")
     if not args.mock and args.mode not in ("teleop", "collect") and not args.url:
         p.error("--url is required for local edge inference")
+    hil_cfg = dict(hil_cfg)
+    for key, option in (
+        ("policy_fusion", args.policy_fusion),
+        ("smooth_steps", args.smooth_steps),
+        ("ensemble_chunks", args.ensemble_chunks),
+        ("ensemble_decay", args.ensemble_decay),
+    ):
+        if option is not None:
+            hil_cfg[key] = option
+    if args.baseline:
+        hil_cfg["policy_fusion"] = "raw"
     for key, value in hil_cfg.items():
+        if key == "policy_fusion":
+            continue
         if not isinstance(value, (float, int)) or not np.isfinite(value) or value <= 0:
             p.error(f"invalid hil setting: {key}")
+    try:
+        ActionBuffer(
+            action_dt,
+            fusion=hil_cfg.get("policy_fusion", "raw"),
+            smooth_steps=hil_cfg.get("smooth_steps", 8),
+            ensemble_chunks=hil_cfg.get("ensemble_chunks", 3),
+            ensemble_decay=hil_cfg.get("ensemble_decay", 0.5),
+        )
+    except ValueError as exc:
+        p.error(str(exc))
     # Check before constructing cameras, motors, sockets or recording threads.
     required = {"numpy", "yaml", "av", "h5py"}
     if args.web_port:
@@ -739,6 +777,7 @@ def main(argv=None, *, service=None):
                     "dependencies": sorted(required),
                     "mock": args.mock,
                     "mode": args.mode,
+                    "policy_fusion": hil_cfg.get("policy_fusion", "raw"),
                     "hardware_checked": False,
                     "note": "仅检查模块是否可发现；未验证二进制加载、设备、网络或实时性能",
                 },
@@ -763,6 +802,10 @@ def main(argv=None, *, service=None):
             "rtc": False,
             "streaming": not args.baseline,
             "action_dt": action_dt,
+            "policy_fusion": hil_cfg.get("policy_fusion", "raw"),
+            "smooth_steps": hil_cfg.get("smooth_steps", 8),
+            "ensemble_chunks": hil_cfg.get("ensemble_chunks", 3),
+            "ensemble_decay": hil_cfg.get("ensemble_decay", 0.5),
             "policy_url": args.url,
         },
     )

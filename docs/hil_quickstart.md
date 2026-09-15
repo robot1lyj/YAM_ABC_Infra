@@ -147,6 +147,27 @@ uv run --no-sync yam-workstation --mode hil --url ws://THOR_IP:8000 --web-port 8
 关节弧度、夹爪0–1，需与condapi训练/输出变换一致，RK不再次反归一化或加状态。
 当前接收并保存服务元数据，不代表已经验证checkpoint/norm或任务效果。
 
+## 非RTC推理与可选动作融合
+
+当前`configs/station_hil.yaml`默认`policy_fusion: raw`。`smooth`只在新旧块目标时刻匹配时对前`smooth_steps`步关节目标过渡；`ensemble`按新预测优先的指数权重融合最近`ensemble_chunks`块的同目标时刻关节预测，`ensemble_decay`控制旧预测权重。夹爪在两种方法中都取最新块，不混合开闭。三种选择不改变同步模式、Thor模型或50×14绝对动作协议；`--baseline`则关闭预取与融合，保留普通分块基准。
+
+离线无设备检查与模拟延迟测试：
+
+```bash
+uv run --no-sync yam-workstation --mock --mode inference --policy-fusion smooth --smooth-steps 6 --check
+uv run --no-sync pytest -q tests/test_async_inference.py
+```
+
+Thor提供已核验的普通WebSocket policy后，在已支撑、行程清空且有人现场照看的IPC上使用当前服务的启动配置加入下列参数；若8766服务已运行，不另启第二个控制进程。先做无电机合同回放，再获现场许可进入短时纯推理：
+
+```bash
+uv run --no-sync yam-workstation --station configs/station_hil.yaml \
+  --mode inference --url ws://THOR_IP:8000 --policy-fusion raw \
+  --web-port 8766 --web-host 192.168.110.140
+```
+
+获准并验证raw后，可改`--policy-fusion smooth --smooth-steps 6`，或`--policy-fusion ensemble --ensemble-chunks 3 --ensemble-decay 0.5`做运动对照。实际`THOR_IP`、checkpoint/norm、`action_dt`及动作索引0相对观测时刻的语义必须核对；不同则不能靠本机融合参数猜测。请求超过`request_timeout`、缓冲耗尽或动作超过`action_timeout`会保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。
+
 ## 实用同步与性能默认值
 
 第一版沿用采集线程，增加8帧历史；状态历史128条；网络使用独立线程。
@@ -170,9 +191,7 @@ D405无三机外部硬同步；本版按**主机接收时间**配对与关节历
 保留设备时间/时间域/帧号，但尚未标定曝光时钟偏移。观测插值仅用于模型/记录；
 控制约束使用最新真实状态。以后实测需要再加时钟校准、多进程或硬件优化。
 
-推理用obs时间与action_dt定位当前动作，裁掉过期前缀，保留全部50步未来块；
-不会因为控制Hz变化而把模型时间轴加速。新块替换尚未执行的计划，约束后的命令另存；
-首版不做RTC、时间集成或块间加权平滑，避免先改变模型动作语义。
+推理用obs时间与`action_dt`定位当前动作，裁掉过期前缀；不会因为控制Hz变化而把模型时间轴加速。新块替换尚未执行的未来计划，约束后的命令另存；同目标时刻融合仅按上述参数显式启用，不做RTC或模型侧改变。
 
 ## 记录与训练导出
 

@@ -12,6 +12,8 @@ from enum import StrEnum
 
 import numpy as np
 
+from .action_buffer import ActionBuffer
+
 
 class Mode(StrEnum):
     TELEOP = "teleop"
@@ -90,6 +92,10 @@ class Arbiter:
         action_dt: float = 1 / 30,
         replan_period: float = 0.2,
         tick_timeout: float = 0.1,
+        policy_fusion: str = "raw",
+        smooth_steps: int = 8,
+        ensemble_chunks: int = 3,
+        ensemble_decay: float = 0.5,
     ):
         values = (
             max_joint_speed,
@@ -125,6 +131,14 @@ class Arbiter:
         self.tick_timeout = tick_timeout
         self._last_request_at = -float("inf")
         self._active_request = None
+        self.action_buffer = ActionBuffer(
+            action_dt,
+            fusion=policy_fusion if streaming else "raw",
+            smooth_steps=smooth_steps,
+            ensemble_chunks=ensemble_chunks,
+            ensemble_decay=ensemble_decay,
+            max_action_age=max_action_age,
+        )
         self.mode = Mode(mode)
         self.phase = Phase.HOLD
         self.execute_steps = execute_steps
@@ -156,6 +170,7 @@ class Arbiter:
         self.pending = None
         self._chunk = None
         self._index = 0
+        self.action_buffer.clear()
         self._hold = vector(state)
         self.phase = phase
 
@@ -242,8 +257,11 @@ class Arbiter:
         if self.streaming and now - origin >= min(self.max_action_age, len(rows) * self.action_dt):
             self._transition(Phase.HOLD, self._hold)
             return False
+        if self.streaming and not self.action_buffer.integrate(token, rows, origin, now):
+            self._transition(Phase.HOLD, self._hold)
+            return False
         self._active_request = token
-        self._chunk = rows.copy() if self.streaming else rows[: self.execute_steps].copy()
+        self._chunk = None if self.streaming else rows[: self.execute_steps].copy()
         self._origin_time = origin
         self._index = 0
         self.pending = None
@@ -294,22 +312,28 @@ class Arbiter:
                 if not self._pickup[j]:
                     selected[dim] = target
             self._previous_grip = vector(leader)[[6, 13]]
-        elif self.phase in (Phase.RESUME, Phase.POLICY) and self._chunk is not None:
-            if self.streaming:
-                self._index = max(0, int((now - self._origin_time) / self.action_dt))
-            if self.streaming and self._index >= len(self._chunk):
+        elif self.phase in (Phase.RESUME, Phase.POLICY) and (
+            self.action_buffer.chunks if self.streaming else self._chunk is not None
+        ):
+            current = self.action_buffer.current(now) if self.streaming else None
+            if self.streaming and current is None:
                 self._transition(Phase.HOLD, q)
                 selected = q.copy()
             elif now - self._origin_time > self.max_action_age:
                 self._transition(Phase.HOLD, q)
                 selected = q.copy()
-            elif self._index < len(self._chunk) and (self.phase == Phase.POLICY or leader_ready):
-                action_index = self._index
-                policy = self._chunk[self._index].copy()
-                selected = policy.copy()
-                self._index += 1
-                source = "policy"
-                self.phase = Phase.POLICY
+            elif self.phase == Phase.POLICY or leader_ready:
+                if self.streaming:
+                    policy, action_index, token = current
+                    self._active_request = token
+                elif self._index < len(self._chunk):
+                    action_index = self._index
+                    policy = self._chunk[self._index].copy()
+                    self._index += 1
+                if policy is not None:
+                    selected = policy.copy()
+                    source = "policy"
+                    self.phase = Phase.POLICY
         # Bound commanded tracking error per nominal tick; this is not a measured velocity guarantee.
         joint_speed = self.max_joint_speed
         if self.phase == Phase.HUMAN and self.max_manual_joint_speed is None:

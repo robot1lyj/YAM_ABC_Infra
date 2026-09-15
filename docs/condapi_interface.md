@@ -51,6 +51,8 @@ H50 是预测长度，num_steps=10 是去噪次数，都不等于控制Hz或执�
 先保留普通推理路径；RTC off 起步，异步请求不等于算法RTC。
 启用 prefix-conditioned RTC 需要服务端明确支持，且保留关闭/回退路径。
 
+2026-09-15控制侧新增非RTC时间戳动作缓冲及可关闭的同目标时刻融合，仍消费普通`infer(observation) -> {"actions": (50,14)}`；**本功能无必需Thor传输协议变更，也不要求模型RTC支持**。`epoch/request_id/observed_at`由RK单在途本地关联，跨机monotonic不直接比较。真机前仍须由condapi核对握手元数据中的`action_dt`、动作索引0与观测参考时刻的关系、absolute单位及checkpoint/norm；若索引0实际对应另一偏移，应在原握手中明确动作起点偏移并做双方回放合同测试，不能由RK猜测或靠融合掩盖。
+
 ## 已报告的性能范围
 
 来源：condapi/docs/reference/thor/11_pi05_candidate_test_plan.md 当前 W 小节。

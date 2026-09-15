@@ -25,6 +25,7 @@ from ..config import (
     load_yaml,
     robot_channel_for,
 )
+from ..resource_qos import place_on_cpus
 from ..robot.can_bus import bring_up_can_buses, check_can_up, stop_can_buses
 from ..runtime import build_arm_units, build_cameras_from_config
 from .buttons import HandleButtons
@@ -253,6 +254,7 @@ class Runtime:
         last_obs_at = None
         last_record_images = {}
         try:
+            place_on_cpus("CONTROL")
             while not self.stopping.is_set():
                 now = time.monotonic()
                 elapsed = now - start
@@ -744,6 +746,9 @@ def main(argv=None, *, service=None):
             )
         )
         return
+    # The headless entrypoint also places SDK helper threads before constructing
+    # any arm or recording worker; Workbench does the same in its owner thread.
+    place_on_cpus("CONTROL")
     output = args.output or Path(cfg.save_root) / time.strftime("hil_%Y%m%d_%H%M%S")
     recorder = RecordingSession(
         output,

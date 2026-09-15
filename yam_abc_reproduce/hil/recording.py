@@ -10,6 +10,8 @@ from pathlib import Path
 
 import numpy as np
 
+from ..resource_qos import place_on_cpus
+
 
 def json_value(value):
     if isinstance(value, np.ndarray):
@@ -65,6 +67,7 @@ class Recorder:
         encoder = None
         pending = []
         try:
+            place_on_cpus("RECORDING")
             while not self._stop.is_set() or not self.queue.empty():
                 try:
                     record, images = self.queue.get(timeout=0.05)
@@ -264,6 +267,7 @@ class RecordingSession:
             active = None
 
         try:
+            place_on_cpus("RECORDING")
             while not self._stop.is_set() or not self.queue.empty():
                 try:
                     item = self.queue.get(timeout=0.05)

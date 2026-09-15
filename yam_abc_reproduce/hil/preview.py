@@ -6,6 +6,8 @@ import time
 
 import numpy as np
 
+from ..resource_qos import place_on_cpus
+
 SHAPE = (3, 720, 1280, 3)
 ROLES = ("top", "left", "right")
 
@@ -15,6 +17,7 @@ def _encode(buffer, dimensions, lock, output, stop):
 
     import cv2
 
+    place_on_cpus("PREVIEW")
     try:
         os.nice(10)
     except OSError:

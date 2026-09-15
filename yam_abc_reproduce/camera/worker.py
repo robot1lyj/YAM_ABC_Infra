@@ -8,6 +8,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 
+from ..resource_qos import place_on_cpus
 from .interface import CameraDriver, CameraFrame, CameraMode
 
 
@@ -35,6 +36,7 @@ class CameraWorker:
         self._latest: CameraFrame | None = None
         self._lock = threading.Lock()
         self._first = threading.Event()
+        self._startup_error: Exception | None = None
         self._running = False
         self._thread: threading.Thread | None = None
 
@@ -47,13 +49,25 @@ class CameraWorker:
         if self._running:
             return
         self._running = True
+        self._first.clear()
+        self._startup_error = None
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         if not self._first.wait(warmup_timeout):
             self.stop()
             raise RuntimeError(f"camera {self.name!r} produced no frames within {warmup_timeout}s")
+        if self._startup_error is not None:
+            error = self._startup_error
+            self.stop()
+            raise RuntimeError(f"camera {self.name!r} CPU placement failed: {error}") from error
 
     def _run(self) -> None:
+        try:
+            place_on_cpus("CAMERA")
+        except Exception as exc:
+            self._startup_error = exc
+            self._first.set()
+            return
         while self._running:
             try:
                 frame = self._driver.read()

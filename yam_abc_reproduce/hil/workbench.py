@@ -451,6 +451,7 @@ class Workbench:
             self.thread.start()
 
     def _run(self):
+        from ..resource_qos import place_on_cpus
         from .run import main
 
         argv = [
@@ -470,6 +471,8 @@ class Workbench:
         if self.args.baseline:
             argv.append("--baseline")
         try:
+            # SDK CAN helper threads inherit the control owner's mask at creation.
+            place_on_cpus("CONTROL")
             from ..config import build_station_config
 
             base = Path(self.args.output or build_station_config(self.args.station).save_root)

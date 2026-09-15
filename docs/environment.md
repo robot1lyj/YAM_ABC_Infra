@@ -71,6 +71,11 @@ uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 RK3588正式实例使用`--web-host 192.168.110.140`并由
 `deploy/yam-workstation.service`作为用户服务运行，局域网入口为
 `http://192.168.110.140:8766`。监听LAN不会关闭Host/Origin校验；页面服务启动本身不连接硬件。
+2026-09-15服务配置调整为普通页面/相机线程先在0–3号A55核运行，
+`YAM_ABC_CONTROL_CPUS=4,5`、`YAM_ABC_ENCODER_CPUS=6,7`分别固定控制与MPP写入；
+预览和录制桥接留在0–3号核。该亲和性只在此RK3588服务环境配置，其他平台不设置
+变量则不绑核。它不是独立控制进程或硬实时保证；部署后需核对实际线程掩码、相机帧率
+和录制/不录制控制延迟，若性能退化应回滚服务配置。
 
 本机环境路径：`/home/wuyan-lyj/YAM/yam-abc-reproduce/.venv`；uv路径：
 `/home/wuyan-lyj/.local/bin/uv`。这些路径描述当前开发机，不意味着已在RK3588/Thor安装完成。

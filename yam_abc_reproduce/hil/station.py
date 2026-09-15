@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
+from ..resource_qos import place_on_cpus
 from .core import vector
 
 
@@ -23,7 +24,12 @@ class StationIO:
         self._read_pool = (
             None
             if mock
-            else ThreadPoolExecutor(max_workers=4, thread_name_prefix="station-read")
+            else ThreadPoolExecutor(
+                max_workers=4,
+                thread_name_prefix="station-read",
+                initializer=place_on_cpus,
+                initargs=("CONTROL",),
+            )
         )
         self.read_timings_s = {}
         self.leader_gain, self.leader_speed = leader_gain, leader_speed

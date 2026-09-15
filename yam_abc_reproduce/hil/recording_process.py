@@ -10,6 +10,7 @@ import traceback
 
 import numpy as np
 
+from ..resource_qos import place_on_cpus
 from .storage import SegmentWriter
 
 
@@ -41,6 +42,8 @@ def encode(
     writer = None
     try:
         parent_death_guard()
+        # Three FFmpeg/MPP subprocesses inherit this writer process's CPU mask.
+        place_on_cpus("ENCODER")
         writer = SegmentWriter(
             path, fps, metadata, seconds, reserve, video_backend=video_backend
         )

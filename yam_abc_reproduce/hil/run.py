@@ -148,8 +148,22 @@ class Runtime:
         self.jog = Jog()
         self.maintenance = Maintenance()
         self.operator_error = None
+        self.recording_error = None
         self._record_started = None
         self.recording_allowed = True
+
+    def _recording_failed(self, state, reason):
+        """Abort the episode without turning a storage fault into a motor fault."""
+        if self.recording_error is not None:
+            return
+        self.recording_error = str(reason)
+        self.outcome = "aborted"
+        self.recorder.metadata["recording_error"] = self.recording_error
+        self.recorder.abort_episode()
+        self.session.arbiter.hold(state)
+        hold_errors = self.io.hold()
+        if hold_errors:
+            raise RuntimeError("hold after recording failure: " + "; ".join(hold_errors))
 
     def event(self, event):
         allowed = {
@@ -176,6 +190,11 @@ class Runtime:
             raise ValueError("unknown event")
         if event in ("record", "discard") and not self.recording_allowed:
             raise ValueError("standalone teleoperation does not record data")
+        if self.recording_error and not (
+            event in ("hold", "stop", "quit", "reset_stop", "mode:teleop")
+            or (event == "start" and self.status.get("mode") == "teleop")
+        ):
+            raise ValueError("录制已中断；仅可切换为不录制的遥操作或断开机械臂")
         if self.maintenance.latched and event not in ("stop", "hold", "quit", "reset_stop"):
             raise ValueError("紧急暂停已锁存，请先检查现场并解除锁存")
         if event in ("home", "capture_home", "gravity"):
@@ -213,6 +232,8 @@ class Runtime:
             self.events.put_nowait((event, time.monotonic()))
 
     def request_jog(self, arm, joint, delta):
+        if self.recording_error:
+            raise ValueError("录制已中断；请先断开机械臂，再进入设备调试")
         if self.status.get("mode") != "collect" or self.status.get("phase") != "hold":
             raise ValueError("关节点动仅在采集模式暂停状态可用")
         if (
@@ -246,6 +267,8 @@ class Runtime:
                 self.observations.add_state(now, q)
                 snapshot = self.observations.snapshot(now, self.prompt)
                 observation_done = time.monotonic()
+                if isinstance(self.recorder, RecordingSession) and self.recorder.error:
+                    self._recording_failed(q, self.recorder.error)
                 try:
                     event, requested_at = self.events.get_nowait()
                 except queue.Empty:
@@ -290,6 +313,13 @@ class Runtime:
                         self.events.get_nowait()
                     while not self.takeovers.empty():
                         self.takeovers.get_nowait()
+                if (
+                    self.recording_error
+                    and self.session.arbiter.mode != Mode.TELEOP
+                    and event is not None
+                    and event not in ("stop", "hold", "reset_stop", "mode:teleop")
+                ):
+                    event, requested_at = "hold", now
                 obs_id, observed_at, obs, images, quality = (
                     (0, None, None, {}, {}) if snapshot is None else snapshot
                 )
@@ -492,7 +522,10 @@ class Runtime:
                     last_record_images = images
                 row["observation_valid"] = snapshot is not None
                 if not self.recorder.submit(row, images or last_record_images):
-                    raise RuntimeError(self.recorder.error or "recorder unavailable")
+                    if isinstance(self.recorder, RecordingSession):
+                        self._recording_failed(q, self.recorder.error or "recorder unavailable")
+                    else:
+                        raise RuntimeError(self.recorder.error or "recorder unavailable")
                 submitted_done = time.monotonic()
                 performance = self.latencies.add(
                     now,
@@ -548,6 +581,7 @@ class Runtime:
                     "intervention_id": self.intervention_id,
                     "recording": getattr(self.recorder, "recording", True),
                     "recording_saving": getattr(self.recorder, "saving", False),
+                    "recording_error": self.recording_error,
                     "error": a.fault_reason,
                     "outcome": self.outcome,
                 }
@@ -577,7 +611,7 @@ class Runtime:
                     self.worker.client, "metadata", None
                 )
             # A hardware fault keeps gravity/hold active until explicit quit.
-            if self.outcome == "aborted" and not self.io.mock:
+            if self.status.get("phase") == "fault" and not self.io.mock:
                 print(
                     "Fault latched; arms held where possible. Support arms, then q to shut down.",
                     flush=True,
@@ -797,8 +831,10 @@ def main(argv=None, *, service=None):
                 if service is not None:
                     service.cleanup_error = "; ".join(close_errors)
         recorder.close(runtime.outcome)
-        if runtime.outcome == "aborted" or recorder.error:
-            raise RuntimeError(result.get("error") or recorder.error or "session aborted")
+        if recorder.error and runtime.recording_error is None:
+            runtime.recording_error = recorder.error
+        if result.get("phase") == "fault":
+            raise RuntimeError(result.get("error") or "hardware session aborted")
     finally:
         if dashboard:
             dashboard.should_exit = True

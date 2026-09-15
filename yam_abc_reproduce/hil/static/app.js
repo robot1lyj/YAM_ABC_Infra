@@ -86,14 +86,16 @@ function render() {
   const teleopView = mode === "teleop" || !state.selected_task,
     collectionReady = camerasConnected() && !!state.selected_task,
     canRun =
-      connected && !state.initializing && !latched && (mode === "teleop" || collectionReady),
+      connected && !state.initializing && !latched &&
+      (mode === "teleop" || (collectionReady && !state.recording_error)),
     canRecord =
       connected &&
       !state.initializing &&
       !latched &&
+      !state.recording_error &&
       collectionReady &&
       mode === "collect",
-    canMaintain = connected && !latched && paused && !recording,
+    canMaintain = connected && !latched && paused && !recording && !state.recording_error,
     idle = maint === "idle";
   text("environment", state.mock ? "模拟工作站" : "真实设备");
   $("environment").className = "pill" + (state.mock ? "" : " ok");
@@ -149,6 +151,7 @@ function render() {
       !!state.initializing ||
       latched ||
       state.phase === "fault" ||
+      (state.recording_error && b.dataset.mode !== "teleop") ||
       (!state.selected_task && b.dataset.mode !== "teleop");
   });
   $("workspace-page").classList.toggle("teleop-view", teleopView);
@@ -191,7 +194,9 @@ function render() {
           : maint === "gravity"
             ? "手动摆放机械臂 · 结束后保持"
             : paused
-              ? "等待开始指令"
+              ? state.recording_error
+                ? "录制失败，已保持；可切换为不录制的遥操作或断开"
+                : "等待开始指令"
               : state.phase === "human"
                 ? "Leader 正在控制 Follower"
                 : "本地策略控制中",
@@ -259,6 +264,7 @@ function render() {
     "record-badge",
     recording
       ? "● 录制中 " + Math.floor(state.episode_elapsed_s || 0) + "s"
+      : state.recording_error ? "录制中断 · 已保持"
       : state.recording_saving ? "正在保存本集" : state.connection === "finalizing"
         ? "正在整理"
         : "未录制",
@@ -357,8 +363,8 @@ function render() {
     );
     healthRow(
       "录制队列",
-      connected ? `${state.record_queue || 0} 帧等待` : "未启动",
-      connected && !state.error,
+      state.recording_error ? "录制中断" : connected ? `${state.record_queue || 0} 帧等待` : "未启动",
+      connected && !state.error && !state.recording_error,
     );
   }
   const errors = [
@@ -367,6 +373,7 @@ function render() {
     state.camera_error,
     state.task_error,
     state.error,
+    state.recording_error,
     state.cleanup_error,
     state.maintenance_error,
     state.operator_error,

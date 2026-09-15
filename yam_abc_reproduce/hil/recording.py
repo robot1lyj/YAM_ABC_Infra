@@ -174,6 +174,7 @@ class RecordingSession:
         self.mode = mode
         self.outcome = "unknown"
         self.recording = False
+        self._abort_requested = threading.Event()
         self.episodes = []
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True, name="episode-session")
@@ -217,16 +218,21 @@ class RecordingSession:
         if self.recording and self._put(("stop", outcome)):
             self.recording = False
 
+    def abort_episode(self):
+        """Stop accepting frames now; let the writer drain/abort off control."""
+        self.recording = False
+        self._abort_requested.set()
+
     def set_mode(self, mode, outcome="unknown"):
         if mode != self.mode:
             self.stop_episode(outcome)
             self.mode = mode
 
     def submit(self, record, images):
-        if self.error:
-            return False
         if not self.recording:
             return True
+        if self.error:
+            return False
         # Retain gaps and HOLD in active episodes for audit; exporter selects experts.
         return self._put(("row", record, images))
 
@@ -266,6 +272,9 @@ class RecordingSession:
                 except queue.Empty:
                     if active and active.error:
                         raise RuntimeError(active.error)
+                    if self._abort_requested.is_set():
+                        self._abort_requested.clear()
+                        finish("aborted")
                     continue
                 if item[0] == "start":
                     if active:

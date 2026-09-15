@@ -38,6 +38,7 @@ class Workbench:
         self.output = None
         self.state = "disconnected"
         self.error = None
+        self.recording_error = None
         self.cleanup_error = None
         self.thread = None
         self._lock = threading.Lock()
@@ -240,6 +241,7 @@ class Workbench:
             "mock": self.args.mock,
             "mode": live.get("mode", self.mode),
             "connection_error": self.error,
+            "recording_error": live.get("recording_error") or self.recording_error,
             "cleanup_error": self.cleanup_error,
             "control_age_s": age,
             "operator_lost": self._operator_lost,
@@ -435,6 +437,7 @@ class Workbench:
             self._snapshot = {}
             self._camera_previous = {}
             self.error = None
+            self.recording_error = None
             self.state = "connecting"
             self.heartbeat()
             self.log(
@@ -520,10 +523,15 @@ class Workbench:
         )
 
     def saved(self):
+        self.recording_error = self.runtime.recording_error if self.runtime else None
         self.runtime = None
         self._previews = {}
         self.state = "disconnected"
-        self.log("本地MP4与HDF5数据已保存；可上传服务器后独立转换")
+        self.log(
+            "录制中断，机械臂已断开；请检查本集错误与已写入数据"
+            if self.recording_error
+            else "本地MP4与HDF5数据已保存；可上传服务器后独立转换"
+        )
 
     def event(self, event):
         if event in ("preview_on", "preview_off"):

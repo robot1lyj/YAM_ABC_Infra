@@ -425,3 +425,102 @@ def test_gravity_retains_entry_gripper_target_when_feedback_drifts(tmp_path):
         np.testing.assert_allclose(runtime.maintenance.grippers, [0.4, 0.4])
     finally:
         rec.close()
+
+
+def test_recording_failure_holds_arms_without_faulting_session(tmp_path, monkeypatch):
+    from yam_abc_reproduce.hil.recording import RecordingSession
+    from yam_abc_reproduce.hil.run import Runtime
+
+    class IO:
+        mock = True
+
+        def __init__(self):
+            self.holds = 0
+            self.commands = 0
+
+        def read(self):
+            q = np.zeros(14)
+            q[[6, 13]] = 0.5
+            return q, q.copy(), [[False, False]] * 2, [0.0] * 4
+
+        def apply(self, decision, q, leader, **kwargs):
+            self.commands += 1
+            return decision.action.copy(), {}
+
+        def hold(self):
+            self.holds += 1
+            return []
+
+    rec = RecordingSession(tmp_path / "recording-failure", mode="collect")
+    original_submit = rec.submit
+    submitted = 0
+
+    def fail_after_two_rows(row, images):
+        nonlocal submitted
+        if rec.recording:
+            submitted += 1
+            if submitted == 3:
+                rec.error = "episode queue full"
+                return False
+        return original_submit(row, images)
+
+    monkeypatch.setattr(rec, "submit", fail_after_two_rows)
+    io = IO()
+    runtime = Runtime(
+        io,
+        [SimpleNamespace(role=r, history=lambda: []) for r in ("top", "left", "right")],
+        None,
+        rec,
+        mode="collect",
+    )
+    try:
+        rec.start_episode()
+        runtime.event("start")
+        runtime.run(duration=0.2)
+        assert runtime.status["phase"] == "hold"
+        assert runtime.status["recording_error"] == "episode queue full"
+        assert runtime.status["error"] is None
+        assert not rec.recording
+        assert io.holds >= 2
+        assert io.commands >= 5  # Control keeps ticking after the writer fails.
+        with pytest.raises(ValueError, match="录制已中断"):
+            runtime.event("record")
+        with pytest.raises(ValueError, match="录制已中断"):
+            runtime.event("start")
+
+        runtime.event("mode:teleop")
+        runtime.run(duration=0.08)
+        assert runtime.status["mode"] == "teleop"
+        assert runtime.status["phase"] == "hold"
+        runtime.event("start")
+        runtime.run(duration=0.08)
+        assert runtime.status["phase"] == "human"
+        assert runtime.status["recording_error"] == "episode queue full"
+    finally:
+        rec.close("aborted")
+    assert rec.episodes[0]["outcome"] == "aborted"
+
+
+def test_full_episode_queue_aborts_in_writer_without_blocking_control(tmp_path, monkeypatch):
+    from yam_abc_reproduce.hil.recording import RecordingSession
+
+    gate = threading.Event()
+    real_run = RecordingSession._run
+
+    def delayed_run(self):
+        assert gate.wait(2)
+        real_run(self)
+
+    monkeypatch.setattr(RecordingSession, "_run", delayed_run)
+    rec = RecordingSession(tmp_path / "full-episode-queue", mode="collect", capacity=1)
+    try:
+        rec.start_episode()
+        assert not rec.submit({"tick": 0}, {})
+        assert rec.error == "episode queue full"
+        rec.abort_episode()
+        assert not rec.recording
+        assert rec.submit({"tick": 1}, {})  # The control loop no longer enters a writer queue.
+    finally:
+        gate.set()
+        rec.close("aborted")
+    assert rec.episodes[0]["outcome"] == "aborted"

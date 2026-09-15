@@ -37,18 +37,24 @@ def test_takeover_invalidates_inflight_and_requires_new_response():
 def test_soft_pickup_and_joint_mismatch():
     q = pose(0.7)
     h = pose(0.1)
+    q[[0, 7]] = [0.45, -0.6]
+    h[[0, 7]] = [-0.4, 0.3]
     a = Arbiter(Mode.TELEOP)
     a.start(q, h)
     d = a.step(q, h, now=0, dt=0.03)
+    assert d.phase == Phase.HUMAN
+    np.testing.assert_allclose(d.action[[0, 7]], q[[0, 7]])
     assert d.action[6] == 0.7
+
+    # Large absolute mismatch is safe: only relative leader motion is applied.
+    h[[0, 7]] += [0.01, -0.02]
+    d = a.step(q, h, now=0.015, dt=0.03)
+    np.testing.assert_allclose(d.action[[0, 7]], q[[0, 7]] + [0.01, -0.018])
+
     h[[6, 13]] = 0.8
     d = a.step(q, h, now=0.03, dt=0.03)
     assert d.gripper_owned == (True, True)
     assert d.action[6] == pytest.approx(0.73)
-    h[0] = 1
-    a.hold(q)
-    a.start(q, h)
-    assert a.phase == Phase.HOLD
 
 
 def test_normal_chunks_do_not_prefetch():

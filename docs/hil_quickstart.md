@@ -160,7 +160,7 @@ uv run --no-sync yam-workstation --mode hil --url ws://THOR_IP:8000 --web-port 8
 | request/action_timeout | 1.5s / 1.5s | 拒绝明显过期请求/动作 |
 | tick_timeout | 500ms | 严重控制停顿锁故障，普通miss只统计；不追赶补发旧周期 |
 | replan_period | 200ms | 最多一个在途请求，执行旧块时请求新块 |
-| handover/mirror_error | 0.2 / 0.5rad | 交接门限/运行中的leader大偏差保持 |
+| handover/mirror_error | 0.2 / 0.5rad | 策略恢复交接门限/运行中的leader大偏差保持；人工遥操作以当前主从偏移软接管，不受此门限阻挡 |
 
 这些是可调的开发默认值，不是现场性能证明或最终控制参数。
 D405无三机外部硬同步；本版按**主机接收时间**配对与关节历史插值，

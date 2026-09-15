@@ -155,13 +155,14 @@ class Arbiter:
 
     def _human(self, state, leader):
         q, h = vector(state), vector(leader)
-        joint = np.ones(14, dtype=bool)
-        joint[[6, 13]] = False
-        if np.max(np.abs(q[joint] - h[joint])) > self.handover_error:
-            self._transition(Phase.HOLD, q)
-            return
         self._transition(Phase.HUMAN, q)
-        self._offset = np.zeros(14)
+        # Start manual control as a clutch: the follower must not jump to an
+        # unrelated absolute leader pose when an operator begins a new episode.
+        # Subsequent leader *motion* is mirrored one-for-one from this baseline.
+        # Grippers keep their existing soft-pickup behavior below instead of
+        # inheriting an angular offset from the teaching-handle trigger.
+        self._offset = q - h
+        self._offset[[6, 13]] = 0
         self._pickup = [False, False]
         self._previous_grip = h[[6, 13]].copy()
 

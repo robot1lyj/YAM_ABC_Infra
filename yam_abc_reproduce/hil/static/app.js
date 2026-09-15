@@ -625,7 +625,7 @@ $("header-reset").onclick = () =>
 $("capture-home").onclick = () =>
   confirmAction(
     "保存当前四臂准备位？",
-    "这将覆盖本机当前配置的准备位。请确认四台机械臂姿态合适、Leader 与 Follower 对齐；保存不会运动。",
+    "这将覆盖本机当前配置的准备位。请确认四台机械臂姿态合适；保存不会运动，也不要求 Leader 与 Follower 精确对齐。",
     () => action("/event/capture_home"),
   );
 $("home").onclick = () =>

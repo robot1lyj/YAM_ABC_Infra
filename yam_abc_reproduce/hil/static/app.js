@@ -405,7 +405,6 @@ function render() {
     $("logs").append(row);
   }
   $("device-cards").replaceChildren();
-  let onlineArms = 0;
   for (const [name, i] of devices) {
     const card = document.createElement("article");
     card.className = "device-card";
@@ -413,7 +412,6 @@ function render() {
       meta = document.createElement("span"),
       dot = document.createElement("i"),
       ok = connected && Number.isFinite(ages[i]) && ages[i] < 0.25;
-    if (ok) onlineArms += 1;
     dot.className = "led" + (ok ? " ok" : "");
     title.append(dot, document.createTextNode(name));
     meta.textContent = connected
@@ -422,7 +420,6 @@ function render() {
     card.append(title, meta);
     $("device-cards").append(card);
   }
-  text("arm-online-count", connected ? `${onlineArms} / 4 在线` : "等待连接");
   const q = state.follower_state || [],
     offset = arm === "left" ? 0 : 7;
   document.querySelectorAll("[data-joint-value]").forEach((el) => {
@@ -503,7 +500,6 @@ function renderInitialization(context) {
       !done[i] && done.slice(0, i).every(Boolean),
     );
   });
-  $("init-step-preflight").classList.toggle("error", !!preflight && !preflight.ok);
   text("init-progress", `${done.filter(Boolean).length} / 5`);
   text(
     "init-preflight-status",
@@ -511,7 +507,7 @@ function renderInitialization(context) {
       ? preflight.ok
         ? `预检通过 · ${preflight.can?.length || 0} 路 CAN · ${preflight.camera_serials?.length || 0} 台相机`
         : `发现问题：${(preflight.errors || []).join("；")}`
-      : "检查 CAN 与相机",
+      : "检查 4 路 CAN、夹爪型号和 3 台相机序列号",
   );
   text(
     "init-camera-status",
@@ -519,7 +515,7 @@ function renderInitialization(context) {
       ? "三路画面均在线且帧龄正常"
       : state.camera_connection === "connecting"
         ? "正在连接并等待新鲜画面"
-        : "等待三路画面",
+        : "连接 top / left / right 并确认画面新鲜",
   );
   const limits = state.gripper_limits || [];
   const followers = state.initialization?.inventory?.followers || [];
@@ -533,14 +529,14 @@ function renderInitialization(context) {
       : state.connection === "connecting"
         ? "正在顺序连接设备；未固定行程的夹爪会先完成自动标定"
         : gripperRangesPinned
-          ? "夹爪范围已保存"
-          : "连接前确认夹爪行程",
+          ? "夹爪范围已保存；连接时不扫行程，四臂保持当前位置"
+          : "夹爪先闭合并清空行程；连接后保持当前位置",
   );
   text(
     "init-complete-status",
     accepted
       ? `上次验收：${accepted.accepted_at || "已保存"}`
-      : "等待验收",
+      : "保存配置指纹、设备清单和夹爪行程测量",
   );
 
   $("init-preflight").disabled = !online || context.transitional;

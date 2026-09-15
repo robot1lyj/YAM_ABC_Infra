@@ -376,87 +376,100 @@
           <section class="panel initialization-panel">
             <div class="panel-heading initialization-heading">
               <div>
-                <h2>设备初始化</h2>
+                <div class="eyebrow">NEW DEVICE COMMISSIONING</div>
+                <h2>设备初始化向导</h2>
               </div>
               <span id="init-progress" class="pill">0 / 5</span>
             </div>
-            <div id="init-inventory" hidden></div>
+            <p class="initialization-intro">
+              新工作站或更换设备后按顺序执行。流程只在明确操作时连接硬件，不写机械臂零位、不自动回零，也不会启动遥操作。
+            </p>
+            <div id="init-inventory" class="init-inventory"></div>
             <div class="init-steps">
               <article class="init-step" id="init-step-preflight">
                 <span class="init-number">1</span>
-                <div><strong>配置预检</strong><small id="init-preflight-status">检查 CAN 与相机</small></div>
-                <button class="button" id="init-preflight">开始预检</button>
+                <div><strong>核对配置与端口</strong><small id="init-preflight-status">检查 4 路 CAN、夹爪型号和 3 台相机序列号</small></div>
+                <button class="button" id="init-preflight">只读预检</button>
               </article>
               <article class="init-step" id="init-step-cameras">
                 <span class="init-number">2</span>
-                <div><strong>相机检查</strong><small id="init-camera-status">等待三路画面</small></div>
+                <div><strong>验证三路相机</strong><small id="init-camera-status">连接 top / left / right 并确认画面新鲜</small></div>
                 <button class="button" id="init-cameras">连接相机</button>
               </article>
               <article class="init-step" id="init-step-arms">
                 <span class="init-number">3</span>
-                <div><strong>机械臂连接</strong><small id="init-arm-status">等待四臂反馈</small></div>
-                <button class="button" id="init-arms">连接设备</button>
+                <div><strong>初始化四臂与夹爪</strong><small id="init-arm-status">夹爪先闭合并清空行程；连接后保持当前位置</small></div>
+                <button class="button" id="init-arms">初始化连接</button>
               </article>
               <article class="init-step" id="init-step-gravity">
                 <span class="init-number">4</span>
-                <div><strong>运动检查</strong><small>检查双臂活动状态</small></div>
+                <div><strong>重力补偿与 Leader 检查</strong><small>进入重力补偿，轻推双 Follower；同时确认双 Leader 顺滑、松手基本停留</small></div>
                 <button class="button" id="init-gravity">进入重力补偿</button>
                 <label class="init-check"><input type="checkbox" id="init-gravity-check" />双 Follower 通过</label>
                 <label class="init-check"><input type="checkbox" id="init-leader-check" />双 Leader 通过</label>
               </article>
               <article class="init-step" id="init-step-complete">
                 <span class="init-number">5</span>
-                <div><strong>完成</strong><small id="init-complete-status">等待验收</small></div>
-                <button class="button primary" id="init-complete">保存结果</button>
+                <div><strong>保存迁移验收记录</strong><small id="init-complete-status">保存配置指纹、设备清单和夹爪行程测量</small></div>
+                <button class="button primary" id="init-complete">完成初始化</button>
               </article>
             </div>
+            <p class="maintenance-note">任何异常先按顶部软件急停；现场危险使用物理急停。退出重力补偿后机械臂保持，再保存验收记录。</p>
           </section>
           <div class="device-layout">
-            <section class="panel device-status-panel">
+            <section class="panel">
               <div class="panel-heading">
                 <h2><svg><use href="#i-arm" /></svg>机械臂姿态</h2>
                 <span class="muted">2 LEADERS + 2 FOLLOWERS</span>
               </div>
-              <div class="device-overview">
-                <span class="device-symbol"><svg><use href="#i-arm" /></svg></span>
-                <div><strong>双臂系统</strong><span id="arm-online-count">等待连接</span></div>
-              </div>
               <div id="device-cards" class="device-cards"></div>
+              <div class="device-note">
+                连接后四臂保持；需要手动摆位时请明确进入重力补偿。关节点动控制
+                Follower；遥操作采用相对接管，开始时 Follower 保持原位，无需精确对齐 Leader。
+              </div>
             </section>
             <section class="panel maintenance-panel">
               <div class="panel-heading">
-                <h2><svg><use href="#i-spark" /></svg>姿态维护</h2>
+                <h2><svg><use href="#i-spark" /></svg>准备位与重力补偿</h2>
                 <span class="pill">四臂维护</span>
               </div>
               <div class="maintenance-status">
                 <i class="led"></i>
                 <p id="home-status">尚未保存准备位</p>
               </div>
+              <p class="maintenance-intro">
+                先暂停并结束录制，再选择下方操作。回位完成或结束补偿后，机械臂保持不动。
+              </p>
               <div class="maintenance-groups">
                 <section>
                   <h3>准备位</h3>
+                  <p>保存合适的四臂姿态，供下一次采集恢复。</p>
                   <div class="maintenance-buttons">
                     <button class="button maintenance-action" id="capture-home">
                       <svg><use href="#i-record" /></svg
                       ><span
-                        ><strong>保存当前准备位</strong></span
+                        ><strong>保存当前准备位</strong
+                        ><small>记录当前姿态 · 不产生运动</small></span
                       >
                     </button>
                     <button class="button primary maintenance-action" id="home">
                       <svg><use href="#i-arm" /></svg
                       ><span
-                        ><strong>回准备位</strong></span
+                        ><strong>回准备位</strong
+                        ><small>四臂协调回位 · 夹爪保持当前开度</small></span
                       >
                     </button>
                   </div>
                 </section>
                 <section>
                   <h3>重力补偿</h3>
+                  <p>手扶机械臂调整姿态，完成后结束补偿。</p>
                   <div class="maintenance-buttons">
                     <button class="button maintenance-action" id="gravity">
                       <svg><use href="#i-arm" /></svg
                       ><span
-                        ><strong>进入重力补偿</strong></span
+                        ><strong>进入重力补偿</strong
+                        ><small>停止策略与遥操作 · 手动摆位</small></span
                       >
                     </button>
                     <button
@@ -466,25 +479,33 @@
                     >
                       <span class="maintenance-pause">Ⅱ</span
                       ><span
-                        ><strong>结束并保持</strong></span
+                        ><strong>结束补偿并保持</strong
+                        ><small>退出手动摆位 · 保持当前姿态</small></span
                       >
                     </button>
                   </div>
                 </section>
               </div>
+              <p class="maintenance-note">
+                回位前清空完整路径；需要立即停止时，使用顶部急停。
+              </p>
             </section>
           </div>
           <section class="panel jog-panel">
             <div class="panel-heading">
-              <h2><svg><use href="#i-grid" /></svg>关节点动</h2>
-              <span class="pill">保持状态可用</span>
+              <h2><svg><use href="#i-grid" /></svg>Follower 关节调试</h2>
+              <span class="pill">暂停后可调节</span>
             </div>
             <div class="jog-toolbar">
               <div class="segmented">
                 <button class="active" data-arm="left">左 Follower</button
                 ><button data-arm="right">右 Follower</button>
               </div>
+              <span>单击微调 · 夹爪单步 10%</span>
             </div>
+            <p class="device-note">
+              仅在「数据采集」模式、已暂停且未录制时可用。每次点击为一个有限步长；无连续按住运动。暂停立即取消待执行点动。
+            </p>
             <div id="joint-controls"></div>
             <div class="gripper-control">
               <div>

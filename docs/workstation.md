@@ -83,13 +83,23 @@ RK3588上的原三路串行libx264录制无法持续30Hz；放大或自动调节
 进程各约5.4–5.7%单核CPU。当前默认自动选择`h264_rkmpp`并在manifest记录，硬编探针失败
 则使用上述已验证的软件回退。设备权限由`video`组的最小udev规则提供。
 
+2026-09-15四臂由操作员确认已支撑后从工作台断开，仅用三路真实D405在IPC执行
+`scripts/probe_camera_recording.py`的30秒采集（先5秒相机预热、预选`h264_rkmpp`）；
+代码`e34c5dc`，默认会话队列150项。提交897有效帧、启动期1次无效快照，HDF5与
+top/left/right MP4逐项回读897帧；预选后从开启录制到首次观察到一帧写入为0.938秒
+（轮询分辨率最多50ms），后端探针0.060秒，外层会话队列峰值9/150、内层Recorder
+队列峰值8/8；完整30秒未溢出。此数值是完整录制路径到首帧写入，不是MPP编码器单体
+启动耗时；不含四臂控制并发负载。原始报告在IPC
+`/data/YAM/data/debug/camera-only-20260915-1356-mpp-startup/camera_probe.json`
+（SHA-256 `f300fe92842db508603e52fcca4d0b7720f2753e1a58ae81fdccc7dbdbbf7e90`）。
+
 ## 待核验
 
 ### 2026-09-15 四臂重连无应答（USB重插后恢复）
 
 此前四臂曾在三相机在线时连接并保持成功，随后录制首秒因`episode queue full`独立故障退出。下一次四臂重连在`can_left`电机6、`can_right`电机5及双Leader部分设备上陆续报告`fail to communicate`；2026-09-15 13:29的保持态重试更早在`can_left`电机1的官方`motor_on`阶段失败，尚未进入遥操作或录制。四个USB-CAN设备保持原固定Hub下联口枚举，接口能UP到1 Mbit/s；内核无USB断连记录。用户现场确认四台控制器供电和实体急停均正常。
 
-对照：不再例行执行`reset_all_can.sh`而按官方正常命令直接拉起四口，仍失败；绕过本项目工作台、用IPC固定的i2rt`get_yam_robot(channel="can_left", gripper_type=linear_4310, gripper_limits_override=已保存范围)`只初始化左Follower，电机1仍无应答；随后显式运行官方`reset_all_can.sh`并复测，结果相同。断开三相机再单臂复测亦失败，`can_left`发送丢弃计数从15增至25；以上单臂测试未运行夹爪标定、遥操作、Home或改动电机参数，不能据此定性电机损坏。用户重插USB后，左Follower相同官方单臂初始化立即成功，关闭时力矩置零；随后从工作台连接四臂成功，保持十余秒，四臂反馈龄均为数毫秒，`can_left`收发均达65104包、无丢包或错误。当前工作台四臂已连接并保持，三相机未连接；遥操作和录制尚未在恢复后复测。此对照说明故障与USB-CAN链路状态相关，但不能仅凭重插恢复定位到适配器、Hub或控制器的具体部件；若复发，应检查这些实际连接与供电，不以软件速度/超时限制掩盖链路故障。
+对照：不再例行执行`reset_all_can.sh`而按官方正常命令直接拉起四口，仍失败；绕过本项目工作台、用IPC固定的i2rt`get_yam_robot(channel="can_left", gripper_type=linear_4310, gripper_limits_override=已保存范围)`只初始化左Follower，电机1仍无应答；随后显式运行官方`reset_all_can.sh`并复测，结果相同。断开三相机再单臂复测亦失败，`can_left`发送丢弃计数从15增至25；以上单臂测试未运行夹爪标定、遥操作、Home或改动电机参数，不能据此定性电机损坏。用户重插USB后，左Follower相同官方单臂初始化立即成功，关闭时力矩置零；随后从工作台连接四臂成功，保持十余秒，四臂反馈龄均为数毫秒，`can_left`收发均达65104包、无丢包或错误。随后操作员确认四臂支撑，工作台已断开四臂，三相机未连接，四CAN均DOWN；遥操作和四臂并发录制尚未在恢复后复测。此对照说明故障与USB-CAN链路状态相关，但不能仅凭重插恢复定位到适配器、Hub或控制器的具体部件；若复发，应检查这些实际连接与供电，不以软件速度/超时限制掩盖链路故障。
 
 证据来自IPC `journalctl --user -u yam-workstation.service`（12:59与13:29窗口）、`journalctl -k`、`ip -details -statistics link show can_left`、`lsusb -t`、官方单臂命令标准错误及同步`candump -L can_left`；连接状态通过工作台页面核对。内核在13:35:20记录左CANable所在`usb 5-2.3`断开（device 11），13:35:22重新枚举（device 13）并由`gs_usb`重建`can_left`；其他口没有同期重新枚举。内核另在13:34与13:37对右Follower和右Leader记录`Unexpected unused echo id`，表明这两口某些回显未匹配主机发送上下文，但不能据此确定左口故障机理。软件假设“每次CAN重置导致当前无应答”已被不重置对照否定，保留正常拉起优化但不称为硬件修复。
 

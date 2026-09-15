@@ -8,14 +8,10 @@ Type=simple
 WorkingDirectory=/data/YAM
 Environment=PYTHONUNBUFFERED=1
 # The IPC kernel reserves RK3588's Cortex-A76 cores with isolcpus/nohz_full=4-7.
-# The ordinary UI/camera service starts on the A55 cores. Individual owner/
-# writer threads opt into the isolated A76 cores; do not crowd all roles there.
-CPUAffinity=0 1 2 3
-Environment=YAM_ABC_CONTROL_CPUS=4,5
-Environment=YAM_ABC_RECORDING_CPUS=0,1,2,3
-Environment=YAM_ABC_ENCODER_CPUS=6,7
-Environment=YAM_ABC_CAMERA_CPUS=0,1,2,3
-Environment=YAM_ABC_PREVIEW_CPUS=0,1,2,3
+# A supervised 2026-09-15 motion A/B found that restricting control to only
+# cores 4-5 caused perceptible teleoperation jitter. Keep the verified 4-7
+# service mask until recording is isolated without narrowing control's cores.
+CPUAffinity=4 5 6 7
 ExecStart=/data/YAM/.venv/bin/yam-workstation --station /data/YAM/configs/station_hil.yaml --mode collect --web-port 8766 --web-host 192.168.110.140
 Restart=on-failure
 RestartSec=3

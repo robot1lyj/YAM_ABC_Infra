@@ -63,6 +63,14 @@ def prepare_station_can(cfg) -> str:
     needed = station_can_channels(cfg)
     down = check_can_up(needed)
     if down:
+        # Four gs_usb adapters can finish their first post-power-cycle transition
+        # at slightly different times. A second complete reset has proved stable
+        # on the RK3588 station; it is still before any i2rt object or motor command.
+        time.sleep(0.2)
+        retry_ok, retry_output = reset_can_buses()
+        output = output + "\nCAN first verification retry:\n" + retry_output
+        down = check_can_up(needed) if retry_ok else down
+    if down:
         raise RuntimeError(
             "CAN interface(s) not up after reset: "
             + ", ".join(down)

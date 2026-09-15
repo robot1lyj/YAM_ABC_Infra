@@ -62,6 +62,26 @@ def test_hil_refuses_to_open_i2rt_when_can_did_not_come_up(monkeypatch):
         run.prepare_station_can(cfg)
 
 
+def test_hil_retries_one_post_power_cycle_can_transition(monkeypatch):
+    from yam_abc_reproduce.hil import run
+
+    cfg = _one_arm_station()
+    resets = []
+    checks = iter([["can2"], []])
+
+    def reset():
+        resets.append(True)
+        return True, f"reset {len(resets)}"
+
+    monkeypatch.setattr(run, "reset_can_buses", reset)
+    monkeypatch.setattr(run, "check_can_up", lambda _channels: next(checks))
+    monkeypatch.setattr(run.time, "sleep", lambda _seconds: None)
+
+    output = run.prepare_station_can(cfg)
+    assert len(resets) == 2
+    assert "CAN first verification retry" in output
+
+
 def test_station_yaml_parses_per_device_channels(tmp_path):
     path = tmp_path / "station.yaml"
     path.write_text(

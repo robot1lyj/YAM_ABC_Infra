@@ -183,6 +183,18 @@ DM4310、`kp=10`，官方`minimum_gello.py`设备轮询周期2 ms，而本采集
 
 证据来自IPC `journalctl --user -u yam-workstation.service`（12:59与13:29窗口）、`journalctl -k`、`ip -details -statistics link show can_left`、`lsusb -t`、官方单臂命令标准错误及同步`candump -L can_left`；连接状态通过工作台页面核对。内核在13:35:20记录左CANable所在`usb 5-2.3`断开（device 11），13:35:22重新枚举（device 13）并由`gs_usb`重建`can_left`；其他口没有同期重新枚举。内核另在13:34与13:37对右Follower和右Leader记录`Unexpected unused echo id`，表明这两口某些回显未匹配主机发送上下文，但不能据此确定左口故障机理。软件假设“每次CAN重置导致当前无应答”已被不重置对照否定，保留正常拉起优化但不称为硬件修复。
 
+### 2026-09-15 右 Leader 间歇无应答与手柄按钮部分实测
+
+代码`685d860`在本地离线回归296通过、2跳过（17个子测试通过），IPC服务PID`30582`运行；页面连接四臂后为无任务`teleop/HOLD`，未运动或录制。新版独立页面已显示保持时可首次选任务，旧浏览器标签页没有加载到新脚本；**任务选定→采集切换的真机验收尚未执行**。现场按键状态采样（`/status.buttons`，约5Hz）确认左Leader①在16:03:50–53、左②在16:04:09–11、右Leader①在16:04:32–33分别只让对应位置变为`true`，松手后为`false`；遥操作模式无按钮录制事件。右Leader②的按下未得到可靠采样，不能写成四键通过。
+
+16:04:58，IPC用户服务日志显示右Leader `can_lead_r` 官方驱动对`0x50E`编码器/手柄设备的读取连续重试后报`fail to communicate`，同总线控制线程退出；工作台随后报`SDK state update stale`进入fault。`0x50E`在固定i2rt中是编码器请求ID，不是某个关节DM电机编号。用户报告四臂电机都显红色，判断可能统一掉使能；没有定位单个过温关节的证据。故障发生在右①成功采样约25秒后、右②尝试期间，但因右②未被捕捉、没有独立复现，不能把任一按钮定为原因。`can_lead_r`当时仍为`ERROR-ACTIVE`、没有BUS-OFF，TX累积丢弃10包；内核同窗口无USB重新枚举记录。用户确认四臂支撑后，页面关闭故障会话，四个工作站CAN均DOWN、相机未连接；页面保留connection fault记录，无录制数据。
+
+关闭后只对右Leader做**不使能电机**的官方`0x50E#FF02`编码器读取请求，`candump`收到`0x50F#000005000000`回复，随后`can_lead_r`已DOWN。这证明该设备在隔离短测时能应答，不证明长期稳定；具体间歇点可能在USB-CAN、Hub、控制器供电或设备固件，尚无部件级证据。
+
+随后用户确认四臂可受监护短暂重新使能。小补丁`fb05b7e`把显式输出根下的无任务遥操作临时目录放在任务输出同一文件系统，解决IPC `/data`→`/tmp` 的mock跨设备原子重命名失败；本地完整回归296通过、2跳过，IPC同一迁移用例1通过。IPC服务PID`31413`，从新版页面连接四臂为`teleop/HOLD`，三D405连接成功；16:18:28页面首次创建任务`3b1acd22-9388-42d1-bb33-9f689067ab07`，原`standalone-teleop/session_20260915_161730_d012f3`目录消失，同名会话迁到`data/episodes/<任务UUID>/`，`session.json`的`task/collection_task/station.task_name`正确。控制tick持续增长、四臂始终显示连接和HOLD，没有重建设备；页面再切`collect`仍HOLD，明确点击开始后才进入HUMAN。
+
+采集HUMAN无活动集时，右Leader②在16:20:34–37被明确捕捉为仅右侧第二位`true`，松手复位，未误录制或故障。左①在16:21:32按下沿实际开启第一集，右①在16:22:02按下沿结束；约30秒/902步，三路D405，`h264_rkmpp`。外层会话队列峰138/300、内层编码队列峰32/32，启动期积压明显但后续追上；结束封装后`recording_saving=false`、队列0、无录制/电机错误。独立读回`episode_000001/segment_000000/samples.h5`的`committed_rows/tick/video_indices`均902，top/left/right MP4经`ffprobe -count_frames`各902解码帧；manifest任务身份正确。该短集证明本段完整，不证明长时吞吐或录制时跟手性。下一步仍须通过实体②在**活动测试集**时验证放弃并确保第一集不受影响；这一轮第二集未启动，操作员无后续按键时页面已切回`collect/HOLD`，四臂连接保持、相机在线、录制关闭、队列0。
+
 - 接线/P0已由用户确认；2026-09-14 用户进一步确认两台 Follower 均为标准夹爪，对应固定 i2rt 的 `linear_4310`（标准 DM4310 直线夹爪），已写入 `configs/station_hil.yaml`。后续在P3仍需检查实际总线通信与端接、夹爪行程和关节方向。USB下联口到四个稳定CAN名已应用，板载bcan不用于该接线；Hub型号可按需补充，不单独阻断开发或重复要求本体S/N。
 - 相机流兼容性、采集性能/时间戳、标定，以及机械安装、电源、急停、零位、关节方向与夹爪端点；底层控制电脑已确定为下节 RK3588 IPC。
 - 2026-09-14 已完成四臂1–6号电机逐个通讯/OFF及两follower官方零重力初始化；左右

@@ -152,14 +152,18 @@ class Runtime:
         self._record_started = None
         self.recording_allowed = True
 
-    def _recording_failed(self, reason):
-        """Abort the episode, leaving unrelated motion control untouched."""
+    def _recording_failed(self, state, reason):
+        """Abort the episode and signal HOLD without latching a motor fault."""
         if self.recording_error is not None:
             return
         self.recording_error = str(reason)
         self.outcome = "aborted"
         self.recorder.metadata["recording_error"] = self.recording_error
         self.recorder.abort_episode()
+        self.session.arbiter.hold(state)
+        hold_errors = self.io.hold()
+        if hold_errors:
+            raise RuntimeError("hold after recording failure: " + "; ".join(hold_errors))
 
     def event(self, event):
         allowed = {
@@ -264,7 +268,7 @@ class Runtime:
                 snapshot = self.observations.snapshot(now, self.prompt)
                 observation_done = time.monotonic()
                 if isinstance(self.recorder, RecordingSession) and self.recorder.error:
-                    self._recording_failed(self.recorder.error)
+                    self._recording_failed(q, self.recorder.error)
                 try:
                     event, requested_at = self.events.get_nowait()
                 except queue.Empty:
@@ -524,7 +528,7 @@ class Runtime:
                 row["observation_valid"] = snapshot is not None
                 if not self.recorder.submit(row, images or last_record_images):
                     if isinstance(self.recorder, RecordingSession):
-                        self._recording_failed(self.recorder.error or "recorder unavailable")
+                        self._recording_failed(q, self.recorder.error or "recorder unavailable")
                     else:
                         raise RuntimeError(self.recorder.error or "recorder unavailable")
                 submitted_done = time.monotonic()

@@ -250,7 +250,7 @@ def test_failed_episode_is_listed_as_aborted(tmp_path, monkeypatch):
 def test_default_session_queue_covers_encoder_spawn_burst(tmp_path):
     rec = RecordingSession(tmp_path / "startup", fps=30)
     try:
-        assert rec.queue.maxsize == 150
+        assert rec.queue.maxsize == 300
     finally:
         rec.close("aborted")
 

@@ -195,7 +195,7 @@ function render() {
             ? "手动摆放机械臂 · 结束后保持"
             : paused
               ? state.recording_error
-                ? "录制失败；可继续不录制的遥操作或断开"
+                ? "录制失败，已保持；可切换为不录制的遥操作或断开"
                 : "等待开始指令"
               : state.phase === "human"
                 ? "Leader 正在控制 Follower"
@@ -264,7 +264,7 @@ function render() {
     "record-badge",
     recording
       ? "● 录制中 " + Math.floor(state.episode_elapsed_s || 0) + "s"
-      : state.recording_error ? "录制中断 · 遥操作可继续"
+      : state.recording_error ? "录制中断 · 已保持"
       : state.recording_saving ? "正在保存本集" : state.connection === "finalizing"
         ? "正在整理"
         : "未录制",

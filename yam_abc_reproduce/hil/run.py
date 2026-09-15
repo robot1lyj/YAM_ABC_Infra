@@ -134,6 +134,7 @@ class Runtime:
                 max_action_age=settings.get("action_timeout", 1.5),
                 tick_timeout=settings.get("tick_timeout", 0.5),
                 handover_error=settings.get("handover_error", 0.2),
+                max_manual_joint_speed=settings.get("max_manual_joint_speed", 3.0),
                 replan_period=settings.get("replan_period", 0.2),
             ),
             worker,
@@ -381,7 +382,12 @@ class Runtime:
                     decision.action[[6, 13]] = self.maintenance.grippers
                     decision.selected_action = decision.action.copy()
                 # Never enlarge a motion step because this loop missed its deadline.
-                limits = np.full(14, a.max_joint_speed * period)
+                joint_speed = (
+                    a.max_manual_joint_speed
+                    if decision.phase == Phase.HUMAN
+                    else a.max_joint_speed
+                )
+                limits = np.full(14, joint_speed * period)
                 limits[[6, 13]] = a.max_gripper_speed * period
                 decision.action = np.clip(decision.action, q - limits, q + limits)
                 decision_done = time.monotonic()

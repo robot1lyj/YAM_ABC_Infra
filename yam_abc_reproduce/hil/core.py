@@ -79,6 +79,7 @@ class Arbiter:
         *,
         execute_steps: int = 10,
         max_joint_speed: float = 0.6,
+        max_manual_joint_speed: float = 3.0,
         max_gripper_speed: float = 1.0,
         max_request_age: float = 0.5,
         max_action_age: float = 1.0,
@@ -91,6 +92,7 @@ class Arbiter:
     ):
         values = (
             max_joint_speed,
+            max_manual_joint_speed,
             max_gripper_speed,
             max_request_age,
             max_action_age,
@@ -116,6 +118,7 @@ class Arbiter:
         self.phase = Phase.HOLD
         self.execute_steps = execute_steps
         self.max_joint_speed = max_joint_speed
+        self.max_manual_joint_speed = max_manual_joint_speed
         self.max_gripper_speed = max_gripper_speed
         self.max_request_age = max_request_age
         self.max_action_age = max_action_age
@@ -298,7 +301,10 @@ class Arbiter:
                 source = "policy"
                 self.phase = Phase.POLICY
         # Bound commanded tracking error per nominal tick; this is not a measured velocity guarantee.
-        limit = np.full(14, self.max_joint_speed * dt)
+        joint_speed = (
+            self.max_manual_joint_speed if self.phase == Phase.HUMAN else self.max_joint_speed
+        )
+        limit = np.full(14, joint_speed * dt)
         limit[[6, 13]] = self.max_gripper_speed * dt
         action = np.clip(selected, q - limit, q + limit)
         self._hold = action.copy()

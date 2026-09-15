@@ -49,12 +49,31 @@ def test_soft_pickup_and_joint_mismatch():
     # Large absolute mismatch is safe: only relative leader motion is applied.
     h[[0, 7]] += [0.01, -0.02]
     d = a.step(q, h, now=0.015, dt=0.03)
-    np.testing.assert_allclose(d.action[[0, 7]], q[[0, 7]] + [0.01, -0.018])
+    np.testing.assert_allclose(d.action[[0, 7]], q[[0, 7]] + [0.01, -0.02])
 
     h[[6, 13]] = 0.8
     d = a.step(q, h, now=0.03, dt=0.03)
     assert d.gripper_owned == (True, True)
     assert d.action[6] == pytest.approx(0.73)
+
+
+def test_manual_and_policy_motion_have_separate_speed_limits():
+    q = pose()
+    h = q.copy()
+    a = Arbiter(Mode.COLLECT, max_joint_speed=0.6, max_manual_joint_speed=3.0)
+    a.start(q, h)
+    h[0] = 1.0
+    manual = a.step(q, h, now=0.03, dt=0.03)
+    assert manual.action[0] == pytest.approx(0.09)
+
+    a.change_mode(Mode.INFERENCE, q)
+    a.start(q)
+    token = a.request(1, 0.04)
+    actions = np.tile(q, (50, 1))
+    actions[:, 0] = 1.0
+    assert a.accept(token, actions, 0.05)
+    policy = a.step(q, q, now=0.06, dt=0.03, leader_ready=True)
+    assert policy.action[0] == pytest.approx(0.018)
 
 
 def test_normal_chunks_do_not_prefetch():

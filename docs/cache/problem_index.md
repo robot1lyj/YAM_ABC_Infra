@@ -7,7 +7,7 @@
 
 | 问题/关键词 | 检查方法及前提 | 历史尝试 / 可复用工具 |
 |---|---|---|
-| 项目日报、阶段进度、对外汇报 | [日报目录](../reports/)；按报告截止时间区分已提交、在途和未验收 | [2026-09-14日报](../reports/2026-09-14-daily.md)、[当时来源快照](../reports/2026-09-14-daily-sources.json)；日报不替代现场当前状态 |
+| 项目日报、阶段进度、对外汇报 | [日报目录](../reports/)；台账/日报/周报统一按“项目名称、已完成工作、当前问题、下一步计划”；不用内部阶段编号和相对日期，按来源版本区分已完成与待验收 | [2026-09-14日报](../reports/2026-09-14-daily.md)、[当时来源快照](../reports/2026-09-14-daily-sources.json)；日报不替代现场当前状态 |
 | IPC开工、USB Hub/USB-CAN固定下联口、D405序列号与稳定入口、Thor服务、模型单位/action_dt | [设备身份登记P0](../workstation.md#第一步设备身份登记-p0)、[架构工作包](../dagger_architecture.md#后续-agent-工作包与依赖)、[接口合同](../condapi_interface.md#v1-接口验收合同) | [USB-CAN端口命名证据](../evidence/20260914-rk3588-ipc-can-port-names.txt)、[相机身份证据](../evidence/20260914-rk3588-ipc-cameras.txt)、[本地核查证据](../evidence/20260914-architecture-audit.json)、[规划记录](records/architecture-baseline-20260914.json)；现场状态需复核 |
 | IPC NVMe挂载、YAM迁移、uv重同步 | [环境](../environment.md) | [NVMe现场证据](../evidence/20260914-rk3588-ipc-nvme.txt)、[NVMe记录](records/rk3588-ipc-nvme-20260914.json)；磁盘、重刷或路径变更后现场复查 |
 | IPC gs_usb驱动、USB-CAN枚举、P0角色识别 | [硬件事实](../workstation.md)、[环境](../environment.md) | [gs_usb修复证据](../evidence/20260914-rk3588-ipc-gs-usb.txt)；驱动/内核或USB拓扑变更后现场复查 |

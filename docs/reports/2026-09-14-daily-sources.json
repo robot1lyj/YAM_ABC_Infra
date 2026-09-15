@@ -184,5 +184,22 @@
     "YAM": "29bab84 2026-09-14T18:32:28+08:00 docs: record live page arm initialization\n4f40c3e 2026-09-14T18:29:55+08:00 fix: prepare CAN before workstation arm connect\nf5cdab1 2026-09-14T18:23:21+08:00 fix: explain disabled arm connection\neabb043 2026-09-14T18:22:09+08:00 docs: record page-driven camera validation\nde02d55 2026-09-14T18:19:56+08:00 docs: record live IPC workstation service\n912105f 2026-09-14T18:18:01+08:00 feat: serve acquisition platform on IPC LAN\n186f7aa 2026-09-14T18:14:51+08:00 docs: record initialization platform preflight\nd40b838 2026-09-14T18:13:17+08:00 feat: add guided device initialization\nbebdba8 2026-09-14T17:51:20+08:00 docs: accept dual follower gravity test\nfd970a1 2026-09-14T17:43:17+08:00 docs: record YAM leader handle preflight\n7560c81 2026-09-14T17:41:03+08:00 fix: validate safe YAM follower startup\ndee6e3a 2026-09-14T17:14:54+08:00 feat: bring up RK3588 camera recording\na91176b 2026-09-14T15:58:40+08:00 记录IPC相机USB3复核结果\nf73a45f 2026-09-14T15:12:29+08:00 确立设备与采集平台交付边界及冷热记忆预算\nb47e472 2026-09-14T14:53:41+08:00 固化IPC USB设备命名与相机身份\n409e745 2026-09-14T14:30:09+08:00 明确每次代码更新后自动提交并双端同步\n63c19c1 2026-09-14T13:58:23+08:00 Add read-only arm and camera USB identity wizard\n0f23fa7 2026-09-14T11:36:05+08:00 Document RK3588 IPC deployment and P0 inventory\nde80532 2026-09-14T10:48:45+08:00 固定RK3588与Thor架构及USB设备身份登记顺序",
     "condapi": "d9f9d4e 2026-09-14T16:21:39+08:00 修正训练看板总体剩余时间\ne8e7040 2026-09-14T15:36:23+08:00 记录3588直连网络基线\n07b3534 2026-09-14T15:12:11+08:00 为记忆技能加入冷热分层与热入口容量治理"
   },
-  "boundary": "未提交修复与已提交产品能力分开；以下报告是截至该时间的快照，不声称当日最终收尾状态。"
+  "boundary": "未提交修复与已提交产品能力分开；以下报告是截至该时间的快照，不声称当日最终收尾状态。",
+  "revision": {
+    "purpose": "补入晚间已提交的夹爪复测和控制性能结果，按项目名称、已完成工作、当前问题、下一步计划汇报；不使用相对日期及内部阶段编号。",
+    "supersedes": "原18:49快照关于夹爪未修复、控制周期瓶颈未解决的当前状态判断；原快照保留为历史证据。",
+    "yam_head": "7dcb8c999aec8b3d79ede7029b33b499ea676a77",
+    "evidence_files": [
+      {
+        "path": "docs/acceptance.md",
+        "sha256": "d2b752b6fcdeffa17fbbfa3864fc3707e5ea38a6f50109b5d2d6fcbfa760af4a"
+      },
+      {
+        "path": "docs/evidence/20260914-rk3588-p3-left-init.json",
+        "sha256": "283fcd9c1890972ddb07f46c660531afdcbf46ef90d108360327658e9d552418"
+      }
+    ],
+    "method": "核对已提交文档和现场证据；未执行新的真机测试。",
+    "excluded": "工作区未提交业务代码及测试改动。"
+  }
 }

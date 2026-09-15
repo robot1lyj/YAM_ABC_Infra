@@ -53,6 +53,7 @@ class Workbench:
         self.camera_slots = [CameraSlot(role) for role in ("top", "left", "right")]
         self.camera_state = "disconnected"
         self.camera_error = None
+        self.video_backend = None
         self.camera_thread = None
         self._camera_workers = []
         self._camera_generation = 0
@@ -232,6 +233,7 @@ class Workbench:
             "connection": self.state,
             "camera_connection": self.camera_state,
             "camera_error": self.camera_error,
+            "video_backend": self.video_backend,
             "tasks": [dict(t) for t in self.tasks.items],
             "selected_task": None if self.selected_task is None else dict(self.selected_task),
             "task_error": self.tasks.error,
@@ -315,6 +317,17 @@ class Workbench:
                 worker = CameraWorker(driver)
                 workers.append(worker)
                 worker.start()
+            # Resolve and probe the encoder before a recording episode exists. RKMPP
+            # cold-start can take longer than the bounded recording queues allow.
+            if self.args.mock:
+                self.video_backend = "libx264"
+            else:
+                from .video import select_backend
+
+                first = workers[0].read()
+                if first is None or "rgb" not in first.images:
+                    raise RuntimeError("相机首帧不可用于录制编码器预热")
+                self.video_backend = select_backend(first.images["rgb"], int(cfg.control_hz))
             if self._closing.is_set():
                 raise RuntimeError("工作台正在关闭")
             for slot in self.camera_slots:
@@ -322,9 +335,10 @@ class Workbench:
             self._camera_workers = workers
             self._camera_generation += 1
             self.camera_state = "connected"
-            self.log("三路相机已连接，可独立预览")
+            self.log(f"三路相机已连接，录制编码器 {self.video_backend} 已就绪")
         except Exception as exc:
             self.camera_error = str(exc)
+            self.video_backend = None
             for device in [*workers, *drivers[len(workers) :]]:
                 try:
                     device.stop()
@@ -366,6 +380,7 @@ class Workbench:
             except Exception as exc:
                 errors.append(str(exc))
         self._camera_workers = []
+        self.video_backend = None
         self.camera_error = "; ".join(errors) or None
         self.camera_state = "fault" if errors else "disconnected"
         self.log("相机已断开" if not errors else "相机关闭失败：" + self.camera_error)

@@ -241,7 +241,15 @@ def read_rows(path):
 
 
 class SegmentWriter:
-    def __init__(self, path, fps, metadata, segment_seconds=60, min_free_bytes=512 * 1024**2):
+    def __init__(
+        self,
+        path,
+        fps,
+        metadata,
+        segment_seconds=60,
+        min_free_bytes=512 * 1024**2,
+        video_backend=None,
+    ):
         if (
             not np.isfinite(fps)
             or fps <= 0
@@ -253,7 +261,9 @@ class SegmentWriter:
         self.limit = max(1, int(fps * segment_seconds))
         self.min_free_bytes = min_free_bytes
         self.segments, self.videos, self.counts = [], {}, {}
-        self.video_backend = None
+        self.video_backend = video_backend
+        if video_backend is not None:
+            self.metadata["video_encoder"] = video_backend
         self.samples = None
         self.written = self.local = 0
         self.error = None

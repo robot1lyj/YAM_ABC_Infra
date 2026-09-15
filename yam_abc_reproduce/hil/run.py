@@ -718,6 +718,7 @@ def main(argv=None, *, service=None):
         segment_seconds=args.segment_seconds,
         min_free_bytes=int(args.min_free_gb * 1024**3),
         fps=cfg.control_hz,
+        video_backend=None if service is None else service.video_backend,
         metadata={
             "station": dataclasses.asdict(cfg),
             "mock": args.mock,

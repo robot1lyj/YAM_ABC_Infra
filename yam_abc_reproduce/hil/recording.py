@@ -29,6 +29,7 @@ class Recorder:
         metadata=None,
         segment_seconds=60,
         min_free_bytes=512 * 1024**2,
+        video_backend=None,
     ):
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=False)
@@ -36,6 +37,7 @@ class Recorder:
         self.segment_seconds = segment_seconds
         self.min_free_bytes = min_free_bytes
         self.metadata = metadata or {}
+        self.video_backend = video_backend
         self.queue = queue.Queue(maxsize=capacity)
         self.error = None
         self.written = 0
@@ -80,6 +82,7 @@ class Recorder:
                         self.queue.maxsize,
                         self.segment_seconds,
                         self.min_free_bytes,
+                        self.video_backend,
                     )
                     for old in pending:
                         encoder.submit(old, {})
@@ -113,6 +116,7 @@ class Recorder:
                         self.metadata,
                         self.segment_seconds,
                         self.min_free_bytes,
+                        video_backend=self.video_backend,
                     )
                     for row in pending:
                         writer.append(row, {})
@@ -147,6 +151,7 @@ class RecordingSession:
         metadata=None,
         segment_seconds=60,
         min_free_bytes=512 * 1024**2,
+        video_backend=None,
     ):
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=False)
@@ -154,6 +159,7 @@ class RecordingSession:
         self.min_free_bytes = min_free_bytes
         self.segment_seconds = segment_seconds
         self.fps = fps
+        self.video_backend = video_backend
         self.queue = queue.Queue(maxsize=capacity)
         self.error = None
         self.queue_peak = 0
@@ -265,6 +271,7 @@ class RecordingSession:
                         segment_seconds=self.segment_seconds,
                         min_free_bytes=self.min_free_bytes,
                         metadata=dict(self.metadata, collection_mode=item[1]),
+                        video_backend=self.video_backend,
                     )
                     self._active = active
                 elif item[0] == "stop":

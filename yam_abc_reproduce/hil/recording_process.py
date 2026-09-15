@@ -36,11 +36,14 @@ def encode(
     result,
     written,
     write_max_ms,
+    video_backend,
 ):
     writer = None
     try:
         parent_death_guard()
-        writer = SegmentWriter(path, fps, metadata, seconds, reserve)
+        writer = SegmentWriter(
+            path, fps, metadata, seconds, reserve, video_backend=video_backend
+        )
         views = {r: np.frombuffer(b, dtype=np.uint8).reshape(shapes[r]) for r, b in buffers.items()}
         while True:
             item = incoming.get()
@@ -68,7 +71,9 @@ def encode(
 
 
 class EncoderProcess:
-    def __init__(self, path, fps, metadata, images, capacity, seconds, reserve):
+    def __init__(
+        self, path, fps, metadata, images, capacity, seconds, reserve, video_backend=None
+    ):
         ctx = mp.get_context("spawn")
         self.incoming, self.free, self.result = (
             ctx.Queue(capacity),
@@ -99,6 +104,7 @@ class EncoderProcess:
                 self.result,
                 self.written,
                 self.write_max_ms,
+                video_backend,
             ),
             daemon=True,
         )

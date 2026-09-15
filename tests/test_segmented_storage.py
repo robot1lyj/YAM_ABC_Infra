@@ -70,6 +70,22 @@ def test_three_camera_encodes_run_in_parallel(monkeypatch, tmp_path):
     assert writer.counts == {role: 1 for role in ROLES}
 
 
+def test_preselected_video_backend_skips_cold_probe(monkeypatch, tmp_path):
+    import yam_abc_reproduce.hil.video as video
+
+    def unexpected_probe(*_args, **_kwargs):
+        raise AssertionError("video backend was probed during recording")
+
+    monkeypatch.setattr(video, "select_backend", unexpected_probe)
+    path = tmp_path / "prewarmed"
+    path.mkdir()
+    writer = SegmentWriter(path, 30, {}, min_free_bytes=0, video_backend="libx264")
+    writer.append(row(0), images(0))
+    writer.close("success")
+    assert writer.written == 1
+    assert writer.metadata["video_encoder"] == "libx264"
+
+
 def test_segment_boundaries_preserve_one_episode_and_exact_decoded_pixels(tmp_path):
     source = make_episode(tmp_path / "source")
     raw = list(read_rows(source))

@@ -151,3 +151,17 @@ class ActionBuffer:
             newest.first_index + len(newest.actions)
             - max(newest.first_index, self._index_at(newest, now)),
         )
+
+    def seconds_to_expiry(self, now: float) -> float:
+        """Usable horizon, limited by both H50 and the existing action-age guard."""
+        if not self.chunks:
+            return 0.0
+        newest = self.chunks[-1]
+        index = self._index_at(newest, now)
+        if index < newest.first_index or index >= newest.first_index + len(newest.actions):
+            return 0.0
+        end = min(
+            newest.origin + (newest.first_index + len(newest.actions)) * self.action_dt,
+            newest.origin + self.max_action_age,
+        )
+        return max(0.0, end - now)

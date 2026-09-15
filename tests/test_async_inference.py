@@ -41,6 +41,33 @@ def test_latency_trim_uses_observation_clock_and_drops_expired_prefix():
     assert decision.policy_action[0] != rows[0, 0]
 
 
+def test_deadline_prefetch_can_override_long_freshness_interval():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=0.1,
+        replan_period=1.0, max_action_age=1.0,
+        expected_policy_latency=0.25, prefetch_margin=0.05,
+    )
+    arbiter.start(q)
+    first = arbiter.request(1, 1.0, observed_at=1.0)
+    assert first is not None and arbiter.last_request_reason == "deadline"
+    arbiter._last_request_at = 1.0
+    assert arbiter.accept(first, chunk(), 1.02)
+    assert arbiter.action_buffer.seconds_to_expiry(1.6) == pytest.approx(0.4)
+    assert arbiter.request(2, 1.6, observed_at=1.6) is None
+    second = arbiter.request(3, 1.75, observed_at=1.75)
+    assert second is not None and arbiter.last_request_reason == "deadline"
+    arbiter._last_request_at = 1.75
+    assert arbiter.accept(second, chunk(), 2.15)  # simulated 400ms Thor/network jitter
+    assert arbiter.observed_policy_rtt_p95 == pytest.approx(0.381, abs=0.01)
+    assert arbiter.policy_latency_budget > 0.42
+    # The latest observation's old prefix (four 100ms steps) was not executed.
+    assert arbiter.action_buffer.chunks[-1].first_index == 4
+    assert arbiter.request(4, 2.3, observed_at=2.3) is None
+    third = arbiter.request(5, 2.35, observed_at=2.35)
+    assert third is not None and arbiter.last_request_reason == "deadline"
+
+
 def test_smooth_window_only_blends_matching_future_joints_and_not_grippers():
     q = np.zeros(14)
     arbiter = Arbiter(

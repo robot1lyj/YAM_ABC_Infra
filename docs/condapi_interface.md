@@ -2,7 +2,8 @@
 
 这是本项目的适配约束，不取代 condapi 的模型/训练事实所有者。
 源仓库 `/home/wuyan-lyj/condapi`，本次读取 HEAD `1077699987cd66d5b95ba0402d4163250f8bc0cb`；源文件哈希、检查范围和已有工作区变更见 [本轮核查](evidence/20260914-architecture-audit.json)。2026-09-08 快照 `925d2ed3de37660c94694cc4bff292d721783108` 的 [原证据](evidence/20260908-condapi-sources.json)保留为历史。
-本次只读 condapi 本地文档和代码，没有连接或操作 Thor、RK3588、训练服务器，也没有修改 condapi。系统部署和工作包归 [架构基线](dagger_architecture.md#2026-09-14-架构基线-v1)。
+2026-09-14架构审计只读 condapi 本地文档和代码，没有连接或操作 Thor、RK3588、训练服务器，也没有修改 condapi。系统部署和工作包归 [架构基线](dagger_architecture.md#2026-09-14-架构基线-v1)。
+2026-09-15本轮新增源协议核查使用condapi本地HEAD`0717105d844dc27926a567b2a8d7976fde05a0a4`；只读`src/openpi/serving/websocket_policy_server.py`、`src/openpi/policies/yam_policy.py`、`src/openpi/training/config.py`和`packages/openpi-client`。condapi工作区另有与本次无关的`training_dashboard.service`未提交改动，本轮未触碰。本轮IPC无电机相机测量另见[验收](acceptance.md#2026-09-15非rtc异步推理缓冲仅离线模拟)，不属于2026-09-14的架构审计范围。
 
 ## 职责及数据边界
 
@@ -52,6 +53,10 @@ H50 是预测长度，num_steps=10 是去噪次数，都不等于控制Hz或执�
 启用 prefix-conditioned RTC 需要服务端明确支持，且保留关闭/回退路径。
 
 2026-09-15控制侧新增非RTC时间戳动作缓冲及可关闭的同目标时刻融合，仍消费普通`infer(observation) -> {"actions": (50,14)}`；**本功能无必需Thor传输协议变更，也不要求模型RTC支持**。`epoch/request_id/observed_at`由RK单在途本地关联，跨机monotonic不直接比较。真机前仍须由condapi核对握手元数据中的`action_dt`、动作索引0与观测参考时刻的关系、absolute单位及checkpoint/norm；若索引0实际对应另一偏移，应在原握手中明确动作起点偏移并做双方回放合同测试，不能由RK猜测或靠融合掩盖。
+
+本次直接检查condapi `WebsocketPolicyServer._handler`和`YamInputs/YamOutputs`：普通请求可直接发送扁平observation字典的msgpack-numpy字节帧，不必增加RTC envelope；连接后第一条服务消息为msgpack metadata，回复含`actions`及`server_timing.infer_ms`。YAM客户端保持同一连接上单在途请求，封包/解包与`openpi-client`一致；[本地无模型协议测试](../tests/test_condapi_wire.py)已用condapi真实handler对三图/状态/prompt往返验证。IPC当前安装`openpi-client 0.1.0`、`websockets 16.1.1`、`msgpack 1.1.2`，无需Torch/JAX；缺少时按YAM `pyproject.toml` 的`deploy` extra安装。Thor端的模型、norm、tokenizer、TensorRT运行依赖仍只属于condapi系列容器，不能装到IPC来代替服务。
+
+普通condapi握手当前`_yam_policy_metadata()`有`robot_action_dim=14`、`model_action_dim=32`、`action_horizon=50`、image_keys/layout，但**没有**checkpoint/norm身份、`action_dt_s`、动作索引0的目标偏移、完整输出物理单位；`serve_policy.py`也没有直接选择W TensorRT engine的生产入口。普通infer回复仅回`actions`，没有服务端回显RK的monotonic时刻；当前不需要回显，因为RK用本机请求token和观测时刻匹配。真机执行前需要condapi在现有metadata中补足上述模型/时间/单位合同，且先做无电机回放；W后端若要使用，另需包装完整预处理、inverse transform和14D输出为同一普通policy接口。不能把现有形式上的协议互通认作checkpoint适配或真机就绪。
 
 ## 已报告的性能范围
 

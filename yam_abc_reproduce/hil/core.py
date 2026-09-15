@@ -7,6 +7,7 @@ agreed hardware units. This module does not establish real-device safety.
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -96,6 +97,8 @@ class Arbiter:
         smooth_steps: int = 8,
         ensemble_chunks: int = 3,
         ensemble_decay: float = 0.5,
+        expected_policy_latency: float = 0.2,
+        prefetch_margin: float = 2 / 30,
     ):
         values = (
             max_joint_speed,
@@ -107,6 +110,8 @@ class Arbiter:
             action_dt,
             replan_period,
             tick_timeout,
+            expected_policy_latency,
+            prefetch_margin,
         )
         if (
             not isinstance(execute_steps, int)
@@ -128,6 +133,12 @@ class Arbiter:
         self.streaming = streaming
         self.action_dt = action_dt
         self.replan_period = replan_period
+        # The seed is a total IPC-to-Thor round-trip estimate, not model-only latency.
+        # Accepted replies replace it with the recent p95 controller-clock RTT.
+        self.expected_policy_latency = expected_policy_latency
+        self.prefetch_margin = prefetch_margin
+        self._policy_rtts = deque(maxlen=16)
+        self.last_request_reason: str | None = None
         self.tick_timeout = tick_timeout
         self._last_request_at = -float("inf")
         self._active_request = None
@@ -166,6 +177,7 @@ class Arbiter:
     def _transition(self, phase: Phase, state: np.ndarray):
         self._active_request = None
         self._last_request_at = -float("inf")
+        self.last_request_reason = None
         self.epoch += 1
         self.pending = None
         self._chunk = None
@@ -226,20 +238,35 @@ class Arbiter:
     def request(
         self, observation_id: int, now: float, observed_at: float | None = None
     ) -> Request | None:
+        if not np.isfinite(now):
+            raise ValueError("finite monotonic time required")
         if self.phase not in (Phase.POLICY, Phase.RESUME) or self.pending is not None:
             return None
         if self.streaming:
-            if now - self._last_request_at < self.replan_period:
+            horizon = self.action_buffer.seconds_to_expiry(now)
+            deadline_due = horizon <= self.policy_latency_budget
+            cadence_due = now - self._last_request_at >= self.replan_period
+            if not deadline_due and not cadence_due:
                 return None
+            self.last_request_reason = "deadline" if deadline_due else "freshness"
         elif self._chunk is not None and self._index < len(self._chunk):
             return None
-        if not np.isfinite(now):
-            raise ValueError("finite monotonic time required")
         self._serial += 1
         if observed_at is not None and (not np.isfinite(observed_at) or observed_at > now):
             raise ValueError("invalid observation time")
         self.pending = Request(self.epoch, self._serial, observation_id, now, observed_at)
         return self.pending
+
+    @property
+    def observed_policy_rtt_p95(self) -> float | None:
+        if not self._policy_rtts:
+            return None
+        return float(np.percentile(self._policy_rtts, 95))
+
+    @property
+    def policy_latency_budget(self) -> float:
+        observed = self.observed_policy_rtt_p95
+        return max(self.expected_policy_latency, observed or 0.0) + self.prefetch_margin
 
     def accept(self, token: Request, actions, now: float) -> bool:
         if token != self.pending or token.epoch != self.epoch:
@@ -260,6 +287,8 @@ class Arbiter:
         if self.streaming and not self.action_buffer.integrate(token, rows, origin, now):
             self._transition(Phase.HOLD, self._hold)
             return False
+        if self.streaming:
+            self._policy_rtts.append(age)
         self._active_request = token
         self._chunk = None if self.streaming else rows[: self.execute_steps].copy()
         self._origin_time = origin

@@ -156,6 +156,7 @@ uv run --no-sync yam-workstation --mode hil --url ws://THOR_IP:8000 --web-port 8
 ```bash
 uv run --no-sync yam-workstation --mock --mode inference --policy-fusion smooth --smooth-steps 6 --check
 uv run --no-sync pytest -q tests/test_async_inference.py
+CONDAPI_ROOT=/home/wuyan-lyj/condapi uv run --no-sync pytest -q tests/test_condapi_wire.py
 ```
 
 Thor提供已核验的普通WebSocket policy后，在已支撑、行程清空且有人现场照看的IPC上使用当前服务的启动配置加入下列参数；若8766服务已运行，不另启第二个控制进程。先做无电机合同回放，再获现场许可进入短时纯推理：
@@ -167,6 +168,8 @@ uv run --no-sync yam-workstation --station configs/station_hil.yaml \
 ```
 
 获准并验证raw后，可改`--policy-fusion smooth --smooth-steps 6`，或`--policy-fusion ensemble --ensemble-chunks 3 --ensemble-decay 0.5`做运动对照。实际`THOR_IP`、checkpoint/norm、`action_dt`及动作索引0相对观测时刻的语义必须核对；不同则不能靠本机融合参数猜测。请求超过`request_timeout`、缓冲耗尽或动作超过`action_timeout`会保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。
+
+预取触发不再只受200ms固定间隔限制：每tick计算最新动作块距离H50末端或`action_timeout`的可执行秒数；当它不大于“最近16个有效回复的本机往返p95（初始采用配置估计）+安全余量”时，即使尚未到200ms也提前请求。200ms仍作为正常观测新鲜度的最长重规划间隔；单在途请求期间只保留当tick的最新观测，不建立旧观测队列。当前初始总往返估计为`--expected-policy-latency 0.2`秒，余量为`--prefetch-margin 0.067`秒；这不是Thor模型实测，真联网后会被有效回复p95更新。状态接口显示`policy_buffer_seconds`、`policy_observed_rtt_p95_s`、`policy_latency_budget_s`和最近请求原因。回复行另保存本机打包、send调用、等待回复、解包以及condapi`server_timing.infer_ms`；后者与本机时钟不直接相减为“纯网络”。
 
 ## 实用同步与性能默认值
 
@@ -182,7 +185,8 @@ uv run --no-sync yam-workstation --station configs/station_hil.yaml \
 | max_state_age | 250ms | SDK状态循环停止更新则故障；不是每个CAN电机的独立接收时间 |
 | request/action_timeout | 1.5s / 1.5s | 拒绝明显过期请求/动作 |
 | tick_timeout | 500ms | 严重控制停顿锁故障，普通miss只统计；不追赶补发旧周期 |
-| replan_period | 200ms | 最多一个在途请求，执行旧块时请求新块 |
+| replan_period | 200ms | 正常新鲜度的最长间隔；缓冲截止时间紧迫时可提前 |
+| expected_policy_latency / prefetch_margin | 200ms / 67ms | 首次总往返预算/两个30Hz周期余量；收到有效回复后按最近16次本机往返p95更新 |
 | handover/mirror_error | 0.2 / 0.5rad | 策略恢复交接门限/运行中的leader大偏差保持；普通遥操作使用绝对1:1关节目标，不受HIL交接门限阻挡 |
 | max_joint_speed / max_manual_joint_speed | 5.0rad/s / 无 | 策略与自动运动的每周期变化上限；人工遥操作关节与夹爪均不做应用层速度裁剪 |
 

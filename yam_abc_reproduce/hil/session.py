@@ -53,6 +53,9 @@ class Session:
                     "received_at": now,
                     "discarded": reply.token != self.arbiter.pending,
                     "error": reply.error,
+                    "worker_elapsed_ms": reply.worker_elapsed_ms,
+                    "server_timing": reply.server_timing,
+                    "client_timing": reply.client_timing,
                     "actions": reply.actions
                     if reply.actions is not None and np.isfinite(reply.actions).all()
                     else None,

@@ -42,6 +42,8 @@ hil:
   handover_error: 0.2
   mirror_error: 0.5
   replan_period: 0.2
+  expected_policy_latency: 0.2 # seed for total round trip; replaced by accepted-reply p95
+  prefetch_margin: 0.067 # two 30Hz control periods of reserve
   request_timeout: 1.5
   action_timeout: 1.5
   tick_timeout: 0.5

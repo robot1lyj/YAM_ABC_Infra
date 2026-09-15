@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,6 +18,9 @@ class Reply:
     token: Request
     actions: np.ndarray | None
     error: str | None = None
+    worker_elapsed_ms: float | None = None
+    server_timing: dict | None = None
+    client_timing: dict | None = None
 
 
 class PolicyWorker:
@@ -59,8 +63,14 @@ class PolicyWorker:
                 except queue.Empty:
                     continue
                 try:
+                    started = time.monotonic()
                     response = self.client.infer(observation)
-                    reply = Reply(token, np.array(response["actions"], copy=True))
+                    reply = Reply(
+                        token, np.array(response["actions"], copy=True),
+                        worker_elapsed_ms=(time.monotonic() - started) * 1000,
+                        server_timing=response.get("server_timing"),
+                        client_timing=getattr(self.client, "last_timing", None),
+                    )
                 except Exception as exc:
                     reply = Reply(token, None, f"{type(exc).__name__}: {exc}")
                 self._replies.put_nowait(reply)
@@ -90,6 +100,7 @@ class PlainPolicyClient:
         self.timeout = timeout
         self._codec = msgpack_numpy
         self._packer = msgpack_numpy.Packer()
+        self.last_timing = None
         self._ws = connect(
             url,
             proxy=None,
@@ -106,11 +117,25 @@ class PlainPolicyClient:
 
     def infer(self, observation):
         try:
-            self._ws.send(self._packer.pack(observation))
+            started = time.monotonic()
+            packed = self._packer.pack(observation)
+            packed_at = time.monotonic()
+            self._ws.send(packed)
+            sent_at = time.monotonic()
             response = self._ws.recv(timeout=self.timeout)
+            received_at = time.monotonic()
             if isinstance(response, str):
                 raise RuntimeError(response)
-            return self._codec.unpackb(response)
+            result = self._codec.unpackb(response)
+            decoded_at = time.monotonic()
+            self.last_timing = {
+                "pack_ms": (packed_at - started) * 1000,
+                "send_ms": (sent_at - packed_at) * 1000,
+                "wait_response_ms": (received_at - sent_at) * 1000,
+                "unpack_ms": (decoded_at - received_at) * 1000,
+                "payload_bytes": len(packed),
+            }
+            return result
         except Exception:
             self.close()
             raise

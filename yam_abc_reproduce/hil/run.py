@@ -89,6 +89,10 @@ class LocalEdgePolicy:
     def metadata(self):
         return None if self.client is None else self.client.metadata
 
+    @property
+    def last_timing(self):
+        return None if self.client is None else self.client.last_timing
+
     def close(self):
         if self.client:
             self.client.close()
@@ -134,6 +138,8 @@ class Runtime:
                 max_manual_joint_speed=settings.get("max_manual_joint_speed"),
                 max_manual_gripper_speed=settings.get("max_manual_gripper_speed"),
                 replan_period=settings.get("replan_period", 0.2),
+                expected_policy_latency=settings.get("expected_policy_latency", 0.2),
+                prefetch_margin=settings.get("prefetch_margin", 2 / 30),
                 policy_fusion=settings.get("policy_fusion", "raw"),
                 smooth_steps=settings.get("smooth_steps", 8),
                 ensemble_chunks=settings.get("ensemble_chunks", 3),
@@ -586,6 +592,10 @@ class Runtime:
                     "source": decision.source,
                     "policy_fusion": a.action_buffer.fusion,
                     "policy_buffer_remaining": a.action_buffer.remaining(now),
+                    "policy_buffer_seconds": a.action_buffer.seconds_to_expiry(now),
+                    "policy_observed_rtt_p95_s": a.observed_policy_rtt_p95,
+                    "policy_latency_budget_s": a.policy_latency_budget,
+                    "policy_request_reason": a.last_request_reason,
                     "policy_request_pending": a.pending is not None,
                     "leader_error_rad": error,
                     "frame_age_s": quality.get("age_s"),
@@ -687,6 +697,8 @@ def main(argv=None, *, service=None):
     p.add_argument("--smooth-steps", type=int, help="short matching-time smoothing window (1-50)")
     p.add_argument("--ensemble-chunks", type=int, help="recent matching-time chunks (2-5)")
     p.add_argument("--ensemble-decay", type=float, help="newest-first exponential weight decay")
+    p.add_argument("--expected-policy-latency", type=float, help="initial total Thor RPC estimate in seconds")
+    p.add_argument("--prefetch-margin", type=float, help="extra deadline reserve in seconds")
     p.add_argument("--web-port", type=int, help="optional local dashboard port")
     p.add_argument(
         "--web-host",
@@ -734,6 +746,8 @@ def main(argv=None, *, service=None):
         ("smooth_steps", args.smooth_steps),
         ("ensemble_chunks", args.ensemble_chunks),
         ("ensemble_decay", args.ensemble_decay),
+        ("expected_policy_latency", args.expected_policy_latency),
+        ("prefetch_margin", args.prefetch_margin),
     ):
         if option is not None:
             hil_cfg[key] = option
@@ -806,6 +820,8 @@ def main(argv=None, *, service=None):
             "smooth_steps": hil_cfg.get("smooth_steps", 8),
             "ensemble_chunks": hil_cfg.get("ensemble_chunks", 3),
             "ensemble_decay": hil_cfg.get("ensemble_decay", 0.5),
+            "expected_policy_latency": hil_cfg.get("expected_policy_latency", 0.2),
+            "prefetch_margin": hil_cfg.get("prefetch_margin", 2 / 30),
             "policy_url": args.url,
         },
     )

@@ -1,21 +1,22 @@
 # 已接受的项目决策
 
 这是用户需求与工程取舍的规范所有者，按主题更新，不记录完整对话。
-用户改变约束时同步修改相关规范、摘要和依赖记录；下表维护当前范围（最近核查2026-09-14）。
+用户改变约束时同步修改相关规范、摘要和依赖记录；下表维护当前范围（最近核查2026-09-15）。
 
 | 决策 | 当前约定 | 落地所有者 |
 |---|---|---|
 | 主项目 | yam-abc-reproduce 为主仓库；保留上游历史，SDK只用子模块 | [环境](environment.md) |
-| 硬件 | 2标准YAM Follower、2官方电动Leader、3台D405；平行夹爪电机型号待实物核验 | [工作站](workstation.md) |
+| 硬件 | 2标准YAM Follower、2官方电动Leader、3台D405；两只标准DM4310夹爪及实测行程已登记 | [工作站](workstation.md) |
 | 产品 | 遥操作、推理、DAgger/HIL、数据采集四模式 | [架构](dagger_architecture.md) |
 | 接管 | 键盘i冻结并自动相对遥操作，HIL人工阶段手柄①交还模型；②无功能 | [运行手册](hil_quickstart.md) |
 | 推理位置 | 现场Thor模型服务，经网线连接RK3588；RK采集/控制/记录 | [接口](condapi_interface.md) |
 | 推理算法 | 第一版不做RTC；采用非RTC异步重规划，保留普通基准 | [同步](synchronization_design.md) |
-| 性能取舍 | 以实用为先，允许放宽小偏差；实测前不重构ROS2/共享内存/C++ | [同步](synchronization_design.md) |
+| 性能取舍 | 预览/MPP编码使用独立进程；控制不缩窄至两个大核，录制短时积压可停录后排空；长时完整性与运动中延迟仍需验收 | [架构](dagger_architecture.md#性能与格式整理) |
 | 数据 | 采集①开始/结束、②放弃；实时原始MP4/HDF5/JSON，LeRobot v3.0仅显式离线转换；保存Follower反馈/提交动作/三路图像/HIL完整阶段 | [转换](convert.md) |
 | 模型/微调 | 归condapi；本仓库保留适配规范，不另建训练事实来源 | [接口](condapi_interface.md) |
 | 环境 | uv、Python3.12、国内镜像；提交pyproject/uv.lock，不提交.venv | [环境](environment.md) |
 | 手柄范围 | 遥操作/推理不分配手柄按钮；空格单独暂停 | [采集手册](collect.md) |
+| 任务切换 | 无任务遥操作可在保持时首次绑定任务并切采集，不断开四臂；绑定后当前会话任务固定 | [采集手册](collect.md#遥操作和采集) |
 | 文档语言 | 当前README、用户手册、记忆与评审使用中文，保留命令/API原名 | [README](../README.md) |
 | 上下文 | 完整证据保留，按任务摘要/章节逐步展开；无默认累计读取额度 | [记忆](memory.md) |
 

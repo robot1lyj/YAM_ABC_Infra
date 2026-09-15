@@ -217,7 +217,7 @@ stateDiagram-v2
 
 ## 第四模式：数据采集
 
-`collect` 复用遥操作的 HUMAN 控制，不请求模型。`RecordingSession` 在有界后台队列中处理 episode 开始、帧和结束，视频封装不在控制循环。其余模式持续记录，模式切换切开 episode；采集模式由操作者显式分段，未录制时不保存逐帧数据。人工采集是 `source=human`、`is_intervention=false`，HIL 人工接管才标记干预。按钮①开始/结束，②放弃当前集；两者不暂停遥操作。具体映射见 [采集手册](collect.md)。
+`collect` 复用遥操作的 HUMAN 控制，不请求模型。`RecordingSession` 在有界后台队列中处理 episode 开始、帧和结束，视频封装不在控制循环。推理/HIL明确开始后持续记录，遥操作不创建训练episode；模式切换切开活动episode，采集模式由操作者显式分段，未录制时不保存逐帧数据。人工采集是 `source=human`、`is_intervention=false`，HIL 人工接管才标记干预。按钮①开始/结束，②放弃当前集；两者不暂停遥操作。具体映射见 [采集手册](collect.md)。
 
 无任务遥操作会话允许在四臂保持、未录制时首次绑定采集任务：工作台将空会话目录迁入任务UUID目录并更新会话元数据和Runtime采集上下文，然后可切换`collect`，不重建设备或控制线程。模式切换仍保持，等待显式开始；首次绑定后任务身份锁定到该机械臂会话，其他任务须保存断开后再选。
 

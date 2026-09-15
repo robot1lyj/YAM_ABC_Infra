@@ -16,7 +16,7 @@ follower 配标准平行夹爪。leader 不是被动 GELLO。
 | 右官方 leader | can_lead_r | yam_lead_right |
 
 官方 leader 手柄类型是 `yam_teaching_handle`。当前专用配置为
-[configs/station_hil.yaml](../configs/station_hil.yaml)，已绑定官方leader类型；电机型号仍需实物填写，相机序列号已写入 [configs/cameras.yaml](../configs/cameras.yaml)。
+[configs/station_hil.yaml](../configs/station_hil.yaml)，已绑定官方Leader、两只标准`linear_4310`夹爪的实测行程、四路CAN角色与三相机序列号；设备更换时重核身份和行程。
 `configs/station_yam.yaml` 是保留的上游被动GELLO示例，不能直接启动本工作站。
 
 ## 第一步：设备身份登记 P0
@@ -25,8 +25,8 @@ follower 配标准平行夹爪。leader 不是被动 GELLO。
 
 | 设备角色 | 本体型号 / 本体S/N或资产标签（非必需） | 机械臂所接 USB-CAN 下联口 / 适配器审计S/N | IPC端口与hub层级 / CAN通道 | 当前结论 |
 |---|---|---|---|---|
-| 左 follower / yam_left | 标准YAM；本体S/N不要求；夹爪型号待核 | `5-2.3`；适配器审计S/N `207D34A258455017` | USB Hub `5-2.3`；稳定名 `can_left` | USB口已核验；本体S/N不适用 |
-| 右 follower / yam_right | 标准YAM；本体S/N不要求；夹爪型号待核 | `5-2.4`；适配器审计S/N `207C378445465006` | USB Hub `5-2.4`；稳定名 `can_right` | USB口已核验；本体S/N不适用 |
+| 左 follower / yam_left | 标准YAM＋DM4310；本体S/N不要求 | `5-2.3`；适配器审计S/N `207D34A258455017` | USB Hub `5-2.3`；稳定名 `can_left` | USB口与夹爪型号已核验；本体S/N不适用 |
+| 右 follower / yam_right | 标准YAM＋DM4310；本体S/N不要求 | `5-2.4`；适配器审计S/N `207C378445465006` | USB Hub `5-2.4`；稳定名 `can_right` | USB口与夹爪型号已核验；本体S/N不适用 |
 | 左 leader / yam_lead_left | 官方电动YAM；本体S/N不要求；yam_teaching_handle | `5-2.1`；适配器审计S/N `207F34A658455017` | USB Hub `5-2.1`；稳定名 `can_lead_l` | USB口已核验；本体S/N不适用 |
 | 右 leader / yam_lead_right | 官方电动YAM；本体S/N不要求；yam_teaching_handle | `5-2.2`；适配器审计S/N `205534A258455017` | USB Hub `5-2.2`；稳定名 `can_lead_r` | USB口已核验；本体S/N不适用 |
 | 顶部相机 / top | D405；`260522275397` | 相机自身 RealSense S/N | USB3；`/dev/yam-camera-top`（当前 `/dev/video6`） | 已核验 |
@@ -185,7 +185,7 @@ DM4310、`kp=10`，官方`minimum_gello.py`设备轮询周期2 ms，而本采集
 
 ### 2026-09-15 右 Leader 间歇无应答与手柄按钮部分实测
 
-代码`685d860`在本地离线回归296通过、2跳过（17个子测试通过），IPC服务PID`30582`运行；页面连接四臂后为无任务`teleop/HOLD`，未运动或录制。新版独立页面已显示保持时可首次选任务，旧浏览器标签页没有加载到新脚本；**任务选定→采集切换的真机验收尚未执行**。现场按键状态采样（`/status.buttons`，约5Hz）确认左Leader①在16:03:50–53、左②在16:04:09–11、右Leader①在16:04:32–33分别只让对应位置变为`true`，松手后为`false`；遥操作模式无按钮录制事件。右Leader②的按下未得到可靠采样，不能写成四键通过。
+代码`685d860`在本地离线回归296通过、2跳过（17个子测试通过）。16:03的首轮IPC页面连接四臂后为无任务`teleop/HOLD`，未运动或录制；旧浏览器标签页没有加载到新脚本，故**这一首轮**未完成任务选定→采集切换。现场按键状态采样（`/status.buttons`，约5Hz）确认左Leader①在16:03:50–53、左②在16:04:09–11、右Leader①在16:04:32–33分别只让对应位置变为`true`，松手后为`false`；遥操作模式无按钮录制事件。右Leader②在此轮未得到可靠采样，后续成功短测见下文。
 
 16:04:58，IPC用户服务日志显示右Leader `can_lead_r` 官方驱动对`0x50E`编码器/手柄设备的读取连续重试后报`fail to communicate`，同总线控制线程退出；工作台随后报`SDK state update stale`进入fault。`0x50E`在固定i2rt中是编码器请求ID，不是某个关节DM电机编号。用户报告四臂电机都显红色，判断可能统一掉使能；没有定位单个过温关节的证据。故障发生在右①成功采样约25秒后、右②尝试期间，但因右②未被捕捉、没有独立复现，不能把任一按钮定为原因。`can_lead_r`当时仍为`ERROR-ACTIVE`、没有BUS-OFF，TX累积丢弃10包；内核同窗口无USB重新枚举记录。用户确认四臂支撑后，页面关闭故障会话，四个工作站CAN均DOWN、相机未连接；页面保留connection fault记录，无录制数据。
 
@@ -195,7 +195,9 @@ DM4310、`kp=10`，官方`minimum_gello.py`设备轮询周期2 ms，而本采集
 
 采集HUMAN无活动集时，右Leader②在16:20:34–37被明确捕捉为仅右侧第二位`true`，松手复位，未误录制或故障。左①在16:21:32按下沿实际开启第一集，右①在16:22:02按下沿结束；约30秒/902步，三路D405，`h264_rkmpp`。外层会话队列峰138/300、内层编码队列峰32/32，启动期积压明显但后续追上；结束封装后`recording_saving=false`、队列0、无录制/电机错误。独立读回`episode_000001/segment_000000/samples.h5`的`committed_rows/tick/video_indices`均902，top/left/right MP4经`ffprobe -count_frames`各902解码帧；manifest任务身份正确。该短集证明本段完整，不证明长时吞吐或录制时跟手性。
 
-实体左Leader②在活动的第二测试集由用户按下，后台结果`episode_000002`为`discarded`/721步；短促按下沿未被约5Hz状态采样抓到，但用户确认操作，过程中没有页面弃集动作。第三测试集等待右②过久，队列升到约222/300，**由页面主动放弃**以避免队列满；其`episode_000003`结果`discarded`/2763步，不归因于随后按键。第四段先让用户就绪，再由页面开启录制、明确提示右②；用户确认仅按右Leader②，后台结果`episode_000004`为`discarded`/460步，此段没有页面弃集动作。现场结果支持左右②在活动集时放弃；第四段短按原始`true`未被状态采样抓到，归因依赖用户确认与后台结果，不将它冒充逐包审计。三段弃集后台关闭后目录均已删除，不可从本会话恢复；第一段`episode_000001`及`session.json`仍在，`episode_count=1`。当前IPC页面`collect/HOLD`，四臂与三相机保持连接，录制关闭、队列0、无电机/录制错误。右Leader先前间歇无应答在本轮连续运行及右②复测中未复发，但部件根因仍未确定。
+实体左Leader②在活动的第二测试集由用户按下，后台结果`episode_000002`为`discarded`/721步；短促按下沿未被约5Hz状态采样抓到，但用户确认操作，过程中没有页面弃集动作。第三测试集等待右②过久，队列升到约222/300，**由页面主动放弃**以避免队列满；其`episode_000003`结果`discarded`/2763步，不归因于随后按键。第四段先让用户就绪，再由页面开启录制、明确提示右②；用户确认仅按右Leader②，后台结果`episode_000004`为`discarded`/460步，此段没有页面弃集动作。现场结果支持左右②在活动集时放弃；第四段短按原始`true`未被状态采样抓到，归因依赖用户确认与后台结果，不将它冒充逐包审计。三段弃集后台关闭后目录均已删除；右Leader先前间歇无应答在本轮连续运行及右②复测中未复发，但部件根因仍未确定。
+
+同日16:39用户自行在页面断开四臂并完成保存；`/status`显示`connection=disconnected`、`recording_saving=false`，四路CAN均DOWN。按用户收尾要求，精确核对后删除本次测试UUID`3b1acd22-9388-42d1-bb33-9f689067ab07`的唯一会话（约23MB，含保留的902步第一集）和任务卡，其余两个验收任务未变。IPC挂载盘不能创建系统回收站，故直接删除、不可恢复；本段独立回读结论仍保留在上文，不把已删除的测试集写成现存数据。
 
 - 接线/P0已由用户确认；2026-09-14 用户进一步确认两台 Follower 均为标准夹爪，对应固定 i2rt 的 `linear_4310`（标准 DM4310 直线夹爪），已写入 `configs/station_hil.yaml`。后续在P3仍需检查实际总线通信与端接、夹爪行程和关节方向。USB下联口到四个稳定CAN名已应用，板载bcan不用于该接线；Hub型号可按需补充，不单独阻断开发或重复要求本体S/N。
 - 相机流兼容性、采集性能/时间戳、标定，以及机械安装、电源、急停、零位、关节方向与夹爪端点；底层控制电脑已确定为下节 RK3588 IPC。

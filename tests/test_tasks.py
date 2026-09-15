@@ -149,6 +149,78 @@ def test_taskless_teleop_can_run_but_never_record(tmp_path):
         service.close()
 
 
+def test_taskless_teleop_can_bind_collection_task_without_reconnecting_arms(tmp_path):
+    task = Tasks(tmp_path / "tasks").create(
+        "双臂采集", "操作后开始录制", "Record a bimanual demonstration."
+    )
+    service = Workbench(
+        SimpleNamespace(
+            mode="teleop",
+            mock=True,
+            url=None,
+            station="configs/station_hil.yaml",
+            output=tmp_path / "sessions",
+            task_root=tmp_path / "tasks",
+            baseline=False,
+            raw_only=True,
+        )
+    )
+    service.preview_enabled = False
+
+    def wait(predicate, timeout=15):
+        deadline = time.monotonic() + timeout
+        while not predicate() and time.monotonic() < deadline:
+            service.heartbeat()
+            time.sleep(0.05)
+        assert predicate(), service.status
+
+    try:
+        service.connect()
+        wait(lambda: service.runtime is not None and service.status.get("tick", 0) > 2)
+        runtime, owner, standalone_output = service.runtime, service.thread, service.output
+        assert service.taskless_teleop and not runtime.recording_allowed
+        service.event("start")
+        wait(lambda: service.status.get("phase") == "human")
+        with pytest.raises(ValueError, match="暂停遥操作"):
+            service.select_task(task["id"])
+        service.event("hold")
+        wait(lambda: service.status.get("phase") == "hold")
+        service.connect_cameras()
+        wait(lambda: service.camera_state == "connected")
+        assert service.select_task(task["id"]) == task
+        assert service.runtime is runtime and service.thread is owner
+        assert not service.taskless_teleop and runtime.recording_allowed
+        assert service.output.parent.name == task["id"]
+        assert not standalone_output.exists()
+        with pytest.raises(ValueError, match="已绑定"):
+            service.create_task("另一个任务", "不能混写", "Record another task.")
+        service.event("mode:collect")
+        wait(lambda: service.status.get("mode") == "collect")
+        assert service.status["phase"] == "hold"
+        service.event("start")
+        wait(lambda: service.status.get("phase") == "human")
+        service.event("record")
+        wait(lambda: service.status.get("recorded_steps", 0) > 5)
+        service.event("record")
+        wait(lambda: not service.status.get("recording"))
+        output = service.output
+        service.disconnect(supported=True)
+        wait(lambda: not service.thread.is_alive(), 30)
+        assert service.error is None
+        session = json.loads((output / "session.json").read_text())
+        assert session["collection_task"] == task and session["task"] == task["task"]
+        manifest = json.loads((output / session["episodes"][0]["path"] / "manifest.json").read_text())
+        assert manifest["collection_task"] == task
+        assert manifest["station"]["task_name"] == task["task"]
+        assert manifest["steps"] > 5
+    finally:
+        if service.runtime is not None:
+            service.disconnect(supported=True)
+            if service.thread:
+                service.thread.join(10)
+        service.close()
+
+
 def test_teleop_mode_never_records_even_with_a_selected_task(tmp_path):
     service = Workbench(
         SimpleNamespace(

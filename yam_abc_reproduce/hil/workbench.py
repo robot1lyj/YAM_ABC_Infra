@@ -263,14 +263,58 @@ class Workbench:
         self._heartbeat = time.monotonic()
         self._operator_lost = False
 
-    def _task_editable(self):
+    def _task_editable(self, *, first_binding=False):
         if self.thread and self.thread.is_alive():
-            raise ValueError("请先断开机械臂并完成当前会话保存，再切换任务；相机可保持连接")
+            if (
+                first_binding
+                and self.state == "connected"
+                and self.taskless_teleop
+                and not self.initializing
+                and self.runtime is not None
+            ):
+                if self.runtime.status.get("phase") != "hold":
+                    raise ValueError("请先暂停遥操作，再选择采集任务；机械臂无需断开")
+                if (
+                    self.runtime.status.get("maintenance") != "idle"
+                    or self.runtime.status.get("stop_latched")
+                    or self.runtime.recording_error
+                ):
+                    raise ValueError("请先结束设备维护并检查当前状态，再绑定采集任务")
+                return
+            raise ValueError("当前采集任务已绑定；换任务需先保存并断开机械臂")
+
+    def _bind_task(self, task):
+        if not self.taskless_teleop or self.runtime is None:
+            return
+        from ..config import build_station_config
+
+        base = Path(self.args.output or build_station_config(self.args.station).save_root)
+        output = base / task["id"] / self.output.name
+        metadata = {
+            **self.runtime.recorder.metadata,
+            "operator_task": task["task"],
+            "task": task["task"],
+            "collection_task": dict(task),
+            "station": {
+                **self.runtime.recorder.metadata["station"],
+                "task_name": task["task"],
+            },
+        }
+        self.runtime.recorder.bind_task(output, metadata)
+        self.runtime.prompt = task["task"]
+        self.runtime.recording_allowed = True
+        self.output = output
+        self._session_task = dict(task)
+        self.task = task["task"]
+        self.taskless_teleop = False
+        self.log("遥操作会话已绑定采集任务；机械臂保持连接，切换数据采集后可录制")
 
     def create_task(self, name, instruction, task):
         with self._lock:
-            self._task_editable()
-            self.selected_task = self.tasks.create(name, instruction, task)
+            self._task_editable(first_binding=True)
+            selected = self.tasks.create(name, instruction, task)
+            self._bind_task(selected)
+            self.selected_task = selected
             self.log("已创建并选择任务：" + self.selected_task["name"])
             return dict(self.selected_task)
 
@@ -283,8 +327,12 @@ class Workbench:
 
     def select_task(self, task_id):
         with self._lock:
-            self._task_editable()
-            self.selected_task = self.tasks.get(task_id)
+            self._task_editable(first_binding=True)
+            selected = self.tasks.get(task_id)
+            if not selected.get("task"):
+                raise ValueError("请先补填当前任务的英文 task")
+            self._bind_task(selected)
+            self.selected_task = selected
             self.log("已选择任务：" + self.selected_task["name"])
             return dict(self.selected_task)
 
@@ -552,6 +600,8 @@ class Workbench:
             with self._lock:
                 if self.state in ("connecting", "finalizing", "disconnecting"):
                     raise ValueError("请等待当前连接或保存操作完成")
+                if self.runtime is not None and mode != "teleop" and self.selected_task is None:
+                    raise ValueError("请先暂停遥操作并选择采集任务；机械臂无需断开")
                 if self.runtime is None:
                     self.mode = mode
                     self.log("已选择模式：" + mode)
@@ -567,7 +617,7 @@ class Workbench:
         ) and not (event == "record" and self.runtime.status.get("recording"))
         if needs_collection_context:
             if self.selected_task is None:
-                raise ValueError("遥操作不录制；请断开机械臂并选择采集任务")
+                raise ValueError("遥操作不录制；请先暂停并选择采集任务")
             if self.camera_state != "connected":
                 raise ValueError("开始录制或模型执行前请先连接三路相机")
         updated = self.runtime.status.get("updated_at", 0)

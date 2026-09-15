@@ -124,6 +124,29 @@ def test_hdf5_batches_preserve_nulls_and_ignore_uncommitted_tail(tmp_path):
     assert rows[-1]["observation_state"] == [0.1] * 14
 
 
+def test_unrecorded_session_task_binding_rolls_back_on_manifest_failure(monkeypatch, tmp_path):
+    import yam_abc_reproduce.hil.storage as storage
+
+    original = tmp_path / "teleop" / "session"
+    target = tmp_path / "episodes" / "task-uuid" / "session"
+    rec = RecordingSession(original, mode="teleop", metadata={"task": "teleop"})
+    try:
+        def fail_manifest(*_args, **_kwargs):
+            raise OSError("manifest write failed")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(storage, "atomic_json", fail_manifest)
+            with pytest.raises(OSError, match="manifest write failed"):
+                rec.bind_task(target, {"task": "record blocks"})
+        assert rec.path == original and rec.metadata == {"task": "teleop"}
+        assert original.exists() and not target.exists()
+        rec.bind_task(target, {"task": "record blocks"})
+        assert rec.path == target and rec.metadata["task"] == "record blocks"
+        assert json.loads((target / "session.json").read_text())["task"] == "record blocks"
+    finally:
+        rec.close()
+
+
 def test_session_checkpoints_before_disconnect(tmp_path):
     rec = RecordingSession(tmp_path / "session", mode="collect")
     try:

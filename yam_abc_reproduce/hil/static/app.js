@@ -85,6 +85,10 @@ function render() {
     recording = !!state.recording;
   const teleopView = mode === "teleop" || !state.selected_task,
     collectionReady = camerasConnected() && !!state.selected_task,
+    canBindTask =
+      connected && state.taskless_teleop && paused && !latched &&
+      maint === "idle" && !recording && !state.recording_saving &&
+      !state.recording_error,
     canRun =
       connected && !state.initializing && !latched &&
       (mode === "teleop" || (collectionReady && !state.recording_error)),
@@ -124,7 +128,7 @@ function render() {
       : state.selected_task?.task
         ? "连接当前任务的四台机械臂；连接后先保持"
         : "无需采集任务，直接连接四臂进行遥操作";
-  renderTask(transitional || state.connection === "connected");
+  renderTask(transitional || (state.connection === "connected" && !canBindTask));
   const cameraBusy = ["connecting", "disconnecting"].includes(
     state.camera_connection,
   );
@@ -873,8 +877,10 @@ function renderTask(locked) {
     locked
       ? task
         ? "任务已锁定 · 断开机械臂并完成保存后可切换"
-        : "遥操作会话 · 断开后可选择采集任务"
-      : "同一任务的每次采集会话独立保存",
+        : "先暂停遥操作，保持机械臂连接即可选择任务"
+      : state.taskless_teleop
+        ? "四臂已保持 · 选择任务即可切换数据采集"
+        : "同一任务的每次采集会话独立保存",
   );
   $("create-task").disabled = !online || locked;
   $("edit-task").disabled = !online || locked || !task;
@@ -892,7 +898,9 @@ function renderTask(locked) {
   text(
     "workflow-tip",
     !task
-      ? "可直接连接机械臂遥操作 · 录制前请选择任务"
+      ? state.taskless_teleop
+        ? "暂停遥操作后选任务；不需断开机械臂"
+        : "可直接连接机械臂遥操作 · 录制前请选择任务"
       : !task.task
         ? "请在任务详情中编辑并补填英文 task"
         : !camerasConnected()

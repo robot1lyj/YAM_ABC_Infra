@@ -263,6 +263,43 @@ class RecordingSession:
             self.stop_episode(outcome)
             self.mode = mode
 
+    def bind_task(self, path, metadata):
+        """Promote an unrecorded standalone session without rebuilding the arms."""
+        if (
+            self.recording
+            or self.episodes
+            or self._active is not None
+            or not self.queue.empty()
+            or self.error
+            or self._stop.is_set()
+        ):
+            raise ValueError("当前会话已有录制数据，不能更换采集任务")
+        target = Path(path)
+        if target.exists():
+            raise FileExistsError(f"采集会话目录已存在：{target}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        original = self.path
+        original.rename(target)
+        try:
+            from .storage import atomic_json
+
+            atomic_json(
+                target / "session.json",
+                dict(
+                    metadata,
+                    schema="yam_session_v2",
+                    episodes=[],
+                    session_queue_peak=self.queue_peak,
+                    error=None,
+                    outcome=self.outcome,
+                ),
+            )
+        except Exception:
+            target.rename(original)
+            raise
+        self.path = target
+        self.metadata = metadata
+
     def submit(self, record, images):
         if not self.recording:
             return True

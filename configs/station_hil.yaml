@@ -30,7 +30,7 @@ hil:
   leader_gain: 0.2
   leader_speed: 0.5
   # Manual tracking has no application-level slew limit, matching official GELLO.
-  # Policy and automatic maintenance paths retain this 5 rad/s per-tick bound.
+  # This includes the grippers; policy and automatic paths retain their bounds.
   max_joint_speed: 5.0
   handover_error: 0.2
   mirror_error: 0.5

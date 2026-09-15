@@ -54,7 +54,7 @@ def test_soft_pickup_and_absolute_identity_mapping():
     h[[6, 13]] = 0.8
     d = a.step(q, h, now=0.03, dt=0.03)
     assert d.gripper_owned == (True, True)
-    assert d.action[6] == pytest.approx(0.73)
+    assert d.action[6] == pytest.approx(0.8)
 
 
 def test_manual_is_unclipped_while_policy_keeps_configured_speed_limit():

@@ -136,6 +136,7 @@ class Runtime:
                 handover_error=settings.get("handover_error", 0.2),
                 max_joint_speed=settings.get("max_joint_speed", 5.0),
                 max_manual_joint_speed=settings.get("max_manual_joint_speed"),
+                max_manual_gripper_speed=settings.get("max_manual_gripper_speed"),
                 replan_period=settings.get("replan_period", 0.2),
             ),
             worker,
@@ -394,7 +395,12 @@ class Runtime:
                 elif decision.phase == Phase.HUMAN:
                     joint_speed = a.max_manual_joint_speed
                 limits = np.full(14, joint_speed * period)
-                limits[[6, 13]] = a.max_gripper_speed * period
+                gripper_speed = a.max_gripper_speed
+                if decision.phase == Phase.HUMAN and a.max_manual_gripper_speed is None:
+                    gripper_speed = np.inf
+                elif decision.phase == Phase.HUMAN:
+                    gripper_speed = a.max_manual_gripper_speed
+                limits[[6, 13]] = gripper_speed * period
                 decision.action = np.clip(decision.action, q - limits, q + limits)
                 decision_done = time.monotonic()
                 submitted, stamps = self.io.apply(

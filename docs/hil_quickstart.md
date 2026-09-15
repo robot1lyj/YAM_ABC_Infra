@@ -165,7 +165,7 @@ uv run --no-sync yam-workstation --mode hil --url ws://THOR_IP:8000 --web-port 8
 | tick_timeout | 500ms | 严重控制停顿锁故障，普通miss只统计；不追赶补发旧周期 |
 | replan_period | 200ms | 最多一个在途请求，执行旧块时请求新块 |
 | handover/mirror_error | 0.2 / 0.5rad | 策略恢复交接门限/运行中的leader大偏差保持；人工遥操作以当前主从偏移软接管，不受此门限阻挡 |
-| max_joint_speed / max_manual_joint_speed | 5.0rad/s / 无 | 策略与自动运动的每周期变化上限；人工相对遥操作与官方GELLO一致，不做应用层速度裁剪 |
+| max_joint_speed / max_manual_joint_speed | 5.0rad/s / 无 | 策略与自动运动的每周期变化上限；人工遥操作关节与夹爪均不做应用层速度裁剪 |
 
 这些是可调的开发默认值，不是现场性能证明或最终控制参数。
 D405无三机外部硬同步；本版按**主机接收时间**配对与关节历史插值，

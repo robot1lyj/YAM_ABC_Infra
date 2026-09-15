@@ -81,6 +81,7 @@ class Arbiter:
         max_joint_speed: float = 5.0,
         max_manual_joint_speed: float | None = None,
         max_gripper_speed: float = 1.0,
+        max_manual_gripper_speed: float | None = None,
         max_request_age: float = 0.5,
         max_action_age: float = 1.0,
         handover_error: float = 0.15,
@@ -109,6 +110,13 @@ class Arbiter:
                 max_manual_joint_speed is not None
                 and (not np.isfinite(max_manual_joint_speed) or max_manual_joint_speed <= 0)
             )
+            or (
+                max_manual_gripper_speed is not None
+                and (
+                    not np.isfinite(max_manual_gripper_speed)
+                    or max_manual_gripper_speed <= 0
+                )
+            )
         ):
             raise ValueError("invalid limits")
         self.streaming = streaming
@@ -123,6 +131,7 @@ class Arbiter:
         self.max_joint_speed = max_joint_speed
         self.max_manual_joint_speed = max_manual_joint_speed
         self.max_gripper_speed = max_gripper_speed
+        self.max_manual_gripper_speed = max_manual_gripper_speed
         self.max_request_age = max_request_age
         self.max_action_age = max_action_age
         self.handover_error = handover_error
@@ -308,7 +317,12 @@ class Arbiter:
         elif self.phase == Phase.HUMAN:
             joint_speed = self.max_manual_joint_speed
         limit = np.full(14, joint_speed * dt)
-        limit[[6, 13]] = self.max_gripper_speed * dt
+        gripper_speed = self.max_gripper_speed
+        if self.phase == Phase.HUMAN and self.max_manual_gripper_speed is None:
+            gripper_speed = np.inf
+        elif self.phase == Phase.HUMAN:
+            gripper_speed = self.max_manual_gripper_speed
+        limit[[6, 13]] = gripper_speed * dt
         action = np.clip(selected, q - limit, q + limit)
         self._hold = action.copy()
         return Decision(

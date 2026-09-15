@@ -153,7 +153,15 @@
       "transport": "During the optimized hold test all four CAN links remained ERROR-ACTIVE at 1 Mbit/s with zero RX/TX errors, drops, restarts, bus errors, error-passive transitions, or bus-off.",
       "scope": "This proves ample 30 Hz compute and IO margin in a supervised hold session with three cameras active. It does not replace low-amplitude physical teleoperation, emergency-stop, long-duration recording, or thermal acceptance."
     },
-    "verification": "272 tests passed, 2 skipped, 17 subtests passed; focused regressions prove four delayed device reads overlap while preserving order and that immutable i2rt snapshots do not enter the producer lock and are copied before return; focused Ruff and git diff checks passed."
+    "post_reboot_gripper_turn_incident": {
+      "date": "2026-09-15",
+      "observation": "After an IPC reboot, a page-started teleop session remained in HOLD but both follower snapshots reported normalized gripper 0.0 while the operator confirmed both physical grippers were open and felt cool. The controller later returned DM status 0xC for motor 7 on each follower. The session was disconnected and all four CAN links returned DOWN.",
+      "recorded_rows": "All 50 committed rows kept measured and submitted gripper values at exactly 0.0; no teleoperation start event occurred. Leader triggers were about 0.99 and the maximum arm-only leader/follower error was about 0.66 rad.",
+      "root_cause": "The saved open endpoints near -5.04 rad belong to one absolute-encoder turn. After restart the same physical position can be reported near +1.24 rad, exactly 2π away. PR #82 correctly excludes the gripper from arm offset correction, but a pinned range must still be translated as one interval into the encoder's current turn. Without that translation the adapter clipped the physically open state to normalized 0.0 and commanded the wrong hard endpoint.",
+      "additional_fault": "Teleop mode opened an episode before the operator pressed Start. MPP cold startup blocked the bounded bridge long enough for the 32-row session queue to fill; hardware release then waited behind recording finalization.",
+      "remediation_pending_live_retest": "Align both pinned endpoints together by k*2π using the startup motor position, keep operational commands 2% inside calibrated hard stops, require the new helper before hardware construction, start non-collection recording only on explicit motion start, and release robot IO before draining encoders. Offline verification passed; do not reconnect until motor-controller power has been cycled and a supervised hold retest is authorized."
+    },
+    "verification": "273 tests passed, 2 skipped, 17 subtests passed; focused regressions prove four delayed device reads overlap while preserving order, immutable i2rt snapshots do not enter the producer lock, hard-stop commands receive an operational margin, and saved gripper limits preserve span/order across equivalent +/-2π encoder turns; focused Ruff and git diff checks passed."
   },
   "acceptance": {
     "passed": [

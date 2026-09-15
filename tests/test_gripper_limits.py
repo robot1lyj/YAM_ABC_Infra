@@ -32,7 +32,7 @@ def test_hardware_build_fails_closed_without_upstream_wrap_fix(monkeypatch):
     from yam_abc_reproduce.robot.yam_adapter import _build_yam
 
     monkeypatch.delattr(get_robot_module, "_apply_arm_motor_wrap_offsets", raising=False)
-    with pytest.raises(RuntimeError, match="linear-gripper wrap handling"):
+    with pytest.raises(RuntimeError, match="linear-gripper wrap/turn handling"):
         _build_yam("can_never_opened", "yam", "linear_4310", None, [0.0, -5.0])
 
 

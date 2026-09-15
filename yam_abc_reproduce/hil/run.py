@@ -762,6 +762,16 @@ def main(argv=None, *, service=None):
         with Keyboard(runtime.event) if service is None else nullcontext():
             result = runtime.run(duration=args.duration, auto_start=args.demo, demo=args.demo)
         print(json.dumps(result), flush=True)
+        # Release motor control before a potentially slow encoder drain. On a
+        # recording fault this prevents joints or grippers remaining energized
+        # while queued MP4/HDF5 data is finalized.
+        if io:
+            close_errors = io.close()
+            io = None
+            if close_errors:
+                recorder.metadata["close_errors"] = close_errors
+                if service is not None:
+                    service.cleanup_error = "; ".join(close_errors)
         recorder.close(runtime.outcome)
         if runtime.outcome == "aborted" or recorder.error:
             raise RuntimeError(result.get("error") or recorder.error or "session aborted")

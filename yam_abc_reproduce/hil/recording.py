@@ -132,8 +132,9 @@ class Recorder:
 class RecordingSession:
     """Ordered episode boundaries; all directory creation and finalization are off control.
 
-    One bounded queue feeds the writer. Collection is opt-in; other modes record
-    continuously. A mode change closes the preceding episode before opening another.
+    One bounded queue feeds the writer. Every mode is opt-in: the runtime opens a
+    non-collection episode only when motion actually starts, while collection uses
+    its explicit record command. A mode change closes any preceding episode.
     """
 
     def __init__(
@@ -166,8 +167,6 @@ class RecordingSession:
         self._thread = threading.Thread(target=self._run, daemon=True, name="episode-session")
         self._write_manifest()
         self._thread.start()
-        if mode != "collect":
-            self.start_episode()
 
     @property
     def saving(self):
@@ -210,8 +209,6 @@ class RecordingSession:
         if mode != self.mode:
             self.stop_episode(outcome)
             self.mode = mode
-            if mode != "collect":
-                self.start_episode()
 
     def submit(self, record, images):
         if self.error:

@@ -30,6 +30,12 @@ def _denormalize(norm: float, lo: float, hi: float) -> float:
     return float(lo + np.clip(norm, 0.0, 1.0) * (hi - lo))
 
 
+# Calibration records the mechanical hard stops. Holding position exactly at a
+# stop can keep a DM4310 loaded indefinitely, so normal commands stay slightly
+# inside the measured travel. This is about 0.10-0.11 rad on the current station.
+GRIPPER_ENDPOINT_MARGIN = 0.02
+
+
 def _build_yam(
     channel: str,
     arm_type: str,
@@ -52,9 +58,15 @@ def _build_yam(
     # then lands in a different coordinate frame and a hold command can press
     # beyond the physical stop.  Fail before opening CAN unless the exact
     # upstream PR #82 correction is installed by our deployment script.
-    if not hasattr(get_robot_module, "_apply_arm_motor_wrap_offsets"):
+    if not all(
+        hasattr(get_robot_module, helper)
+        for helper in (
+            "_apply_arm_motor_wrap_offsets",
+            "_align_gripper_limits_to_motor_position",
+        )
+    ):
         raise RuntimeError(
-            "unsafe i2rt linear-gripper wrap handling; run "
+            "unsafe i2rt linear-gripper wrap/turn handling; run "
             "scripts/apply_i2rt_safety_patches.sh before connecting hardware"
         )
 
@@ -115,6 +127,7 @@ class YamRobot(RobotInterface):
         self._n = num_arm_joints
         self._g_open = gripper_raw_open
         self._g_closed = gripper_raw_closed
+        self._gripper_command_margin = GRIPPER_ENDPOINT_MARGIN
 
     def num_dofs(self) -> int:
         return self._n + 1
@@ -142,7 +155,13 @@ class YamRobot(RobotInterface):
     def command_joint_pos(self, pos: np.ndarray) -> None:
         pos = np.asarray(pos, dtype=np.float64).reshape(-1)
         arm = pos[: self._n]
-        grip_raw = _denormalize(pos[self._n], self._g_closed, self._g_open)
+        margin = getattr(self, "_gripper_command_margin", GRIPPER_ENDPOINT_MARGIN)
+        grip = np.clip(
+            pos[self._n],
+            margin,
+            1.0 - margin,
+        )
+        grip_raw = _denormalize(grip, self._g_closed, self._g_open)
         self._robot.command_joint_pos(np.concatenate([arm, [grip_raw]]))
 
     def gravity_compensate(self, pos: np.ndarray) -> None:
@@ -150,7 +169,13 @@ class YamRobot(RobotInterface):
         if not self._robot.use_gravity_comp:
             raise RuntimeError("SDK gravity compensation is not configured")
         raw = np.asarray(pos, dtype=float).copy()
-        raw[self._n] = _denormalize(raw[self._n], self._g_closed, self._g_open)
+        margin = getattr(self, "_gripper_command_margin", GRIPPER_ENDPOINT_MARGIN)
+        grip = np.clip(
+            raw[self._n],
+            margin,
+            1.0 - margin,
+        )
+        raw[self._n] = _denormalize(grip, self._g_closed, self._g_open)
         kp = self._robot._kp.copy()
         kd = self._robot._kd.copy()
         kp[:self._n] = 0

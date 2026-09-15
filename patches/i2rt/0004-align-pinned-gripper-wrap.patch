@@ -1,0 +1,80 @@
+diff --git a/i2rt/robots/get_robot.py b/i2rt/robots/get_robot.py
+index 4ef5b8f..e589fba 100644
+--- a/i2rt/robots/get_robot.py
++++ b/i2rt/robots/get_robot.py
+@@ -39,6 +39,25 @@ def _apply_arm_motor_wrap_offsets(
+             motor_offsets[idx] += 2 * np.pi
+ 
+ 
++def _align_gripper_limits_to_motor_position(
++    gripper_limits: np.ndarray,
++    motor_position: float,
++) -> np.ndarray:
++    """Move saved hard stops together into the encoder's current 2π turn.
++
++    DM4310 absolute position can return an equivalent angle one full turn away
++    after a controller restart. The calibrated span and open/closed ordering are
++    unchanged, so shift both endpoints together instead of changing motor offset.
++    """
++    limits = np.asarray(gripper_limits, dtype=np.float64)
++    if limits.shape != (2,) or not np.isfinite(limits).all():
++        raise ValueError("gripper limits must contain two finite endpoints")
++    if not np.isfinite(motor_position):
++        raise ValueError("gripper motor position must be finite")
++    turns = np.rint((motor_position - float(np.mean(limits))) / (2 * np.pi))
++    return limits + turns * (2 * np.pi)
++
++
+ def _load_joint_limits_from_xml(*xml_paths: str) -> np.ndarray:
+     """Parse joint limits (range attributes) from one or more XML files.
+ 
+@@ -282,6 +301,12 @@ def get_yam_robot(
+     logging.info(f"current_pos: {motor_positions.tolist()}")
+     _apply_arm_motor_wrap_offsets(motor_chain.motor_offset, motor_positions, n_arm_joints)
+ 
++    if with_gripper and gripper_limits is not None:
++        gripper_limits = _align_gripper_limits_to_motor_position(
++            gripper_limits, motor_positions[n_arm_joints]
++        )
++        logging.info(f"turn-aligned gripper_limits: {gripper_limits.tolist()}")
++
+     logging.info(f"adjusted motor_offsets: {motor_chain.motor_offset.tolist()}")
+ 
+     # Start the control thread with corrected offsets.
+diff --git a/i2rt/robots/tests/test_get_robot.py b/i2rt/robots/tests/test_get_robot.py
+index 1e760a3..3905c17 100644
+--- a/i2rt/robots/tests/test_get_robot.py
++++ b/i2rt/robots/tests/test_get_robot.py
+@@ -1,6 +1,9 @@
+ import numpy as np
+ 
+-from i2rt.robots.get_robot import _apply_arm_motor_wrap_offsets
++from i2rt.robots.get_robot import (
++    _align_gripper_limits_to_motor_position,
++    _apply_arm_motor_wrap_offsets,
++)
+ 
+ 
+ def test_wrap_offsets_apply_only_to_arm_motors() -> None:
+@@ -23,3 +26,21 @@ def test_wrap_offsets_apply_only_to_arm_motors() -> None:
+         motor_offsets,
+         np.array([2 * np.pi, -2 * np.pi, 0.0, 0.0, 0.0, 0.0, 0.0]),
+     )
++
++
++def test_saved_gripper_limits_follow_equivalent_encoder_turn() -> None:
++    saved = np.array([0.62123, -5.04368])
++
++    np.testing.assert_allclose(
++        _align_gripper_limits_to_motor_position(saved, -5.04),
++        saved,
++    )
++    np.testing.assert_allclose(
++        _align_gripper_limits_to_motor_position(saved, -5.04 + 2 * np.pi),
++        saved + 2 * np.pi,
++    )
++    np.testing.assert_allclose(
++        _align_gripper_limits_to_motor_position(saved, 0.62 - 2 * np.pi),
++        saved - 2 * np.pi,
++    )
++    assert np.ptp(_align_gripper_limits_to_motor_position(saved, 1.24)) == np.ptp(saved)

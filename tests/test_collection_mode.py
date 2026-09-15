@@ -52,12 +52,16 @@ def test_idle_collection_creates_no_episode_and_mode_boundaries_are_ordered(tmp_
     rec.close()
     assert not list(rec.path.glob("episode_*"))
     rec = RecordingSession(tmp_path / "switch", mode="hil")
+    assert not rec.recording
+    rec.start_episode()
     assert rec.submit({"mode": "hil"}, {})
     rec.set_mode("collect")
     assert rec.submit({"mode": "idle"}, {})
     rec.start_episode()
     assert rec.submit({"mode": "collect"}, {})
     rec.set_mode("teleop", "success")
+    assert not rec.recording
+    rec.start_episode()
     assert rec.submit({"mode": "teleop"}, {})
     rec.close()
     rows = [next(read_rows(p)) for p in sorted(rec.path.glob("episode_*"))]

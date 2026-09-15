@@ -209,6 +209,34 @@ def test_i2rt_hil_snapshot_copies_one_published_state_without_lock():
     assert 0 <= age < 0.1
 
 
+def test_yam_gripper_commands_stay_inside_calibrated_hard_stops():
+    from yam_abc_reproduce.robot import yam_adapter as adapter
+
+    class Robot:
+        use_gravity_comp = True
+        _kp = np.ones(7)
+        _kd = np.ones(7)
+        _grav_comp_kd = np.ones(7)
+
+        def command_joint_pos(self, value):
+            self.position = np.asarray(value).copy()
+
+        def command_joint_state(self, value):
+            self.state = value
+
+    robot = adapter.YamRobot.__new__(adapter.YamRobot)
+    robot._robot, robot._n = Robot(), 6
+    robot._g_closed, robot._g_open = 0.0, 1.0
+    robot._gripper_command_margin = adapter.GRIPPER_ENDPOINT_MARGIN
+
+    robot.command_joint_pos(np.r_[np.zeros(6), 0.0])
+    assert robot._robot.position[-1] == adapter.GRIPPER_ENDPOINT_MARGIN
+    robot.command_joint_pos(np.r_[np.zeros(6), 1.0])
+    assert robot._robot.position[-1] == 1.0 - adapter.GRIPPER_ENDPOINT_MARGIN
+    robot.gravity_compensate(np.r_[np.zeros(6), 0.0])
+    assert robot._robot.state["pos"][-1] == adapter.GRIPPER_ENDPOINT_MARGIN
+
+
 def test_partial_motor_failure_attempts_station_hold():
     cfg = StationConfig()
     io = StationIO(build_arm_units(cfg, mock=True), mock=True)

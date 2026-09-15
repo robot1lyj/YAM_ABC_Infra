@@ -16,6 +16,7 @@ from yam_abc_reproduce.config import build_station_config, load_yaml
 from yam_abc_reproduce.hil.observation import Observations
 from yam_abc_reproduce.hil.recording import RecordingSession
 from yam_abc_reproduce.hil.storage import read_rows
+from yam_abc_reproduce.hil.video import select_backend
 from yam_abc_reproduce.runtime import build_cameras_from_config
 
 
@@ -55,12 +56,26 @@ def main() -> int:
     recorder = None
     submitted = 0
     invalid = 0
+    first_write_elapsed = None
+    record_started = None
+    encoder_queue_peak = 0
     try:
         for driver in drivers:
             worker = CameraWorker(driver)
             worker.start()
             workers.append(worker)
         time.sleep(args.warmup_seconds)
+
+        first_frame = workers[0].read()
+        if first_frame is None or "rgb" not in first_frame.images:
+            raise RuntimeError("camera first frame unavailable for encoder backend probe")
+        probe_started = time.monotonic()
+        backend = (
+            "libx264"
+            if args.mock
+            else select_backend(first_frame.images["rgb"], int(cfg.control_hz))
+        )
+        backend_probe_elapsed = time.monotonic() - probe_started
 
         observations = Observations(
             workers,
@@ -73,6 +88,7 @@ def main() -> int:
             mode="collect",
             fps=cfg.control_hz,
             segment_seconds=args.segment_seconds,
+            video_backend=backend,
             metadata={
                 "mock": args.mock,
                 "camera_only_test": True,
@@ -80,6 +96,7 @@ def main() -> int:
             },
         )
         recorder.start_episode()
+        record_started = time.monotonic()
         deadline = time.monotonic() + args.seconds
         tick = 0
         while time.monotonic() < deadline:
@@ -115,12 +132,18 @@ def main() -> int:
                 if not recorder.submit(record, images):
                     raise RuntimeError(recorder.error or "record submit failed")
                 submitted += 1
+            if first_write_elapsed is None and recorder.written > 0:
+                first_write_elapsed = time.monotonic() - record_started
+            encoder_queue_peak = max(encoder_queue_peak, recorder.metrics["encoder_queue"])
             tick += 1
             time.sleep(max(0.0, 1 / cfg.control_hz - (time.monotonic() - started)))
 
         recorder.stop_episode("success")
         wait_deadline = time.monotonic() + 35
         while not recorder.episodes and not recorder.error and time.monotonic() < wait_deadline:
+            if first_write_elapsed is None and recorder.written > 0:
+                first_write_elapsed = time.monotonic() - record_started
+            encoder_queue_peak = max(encoder_queue_peak, recorder.metrics["encoder_queue"])
             time.sleep(0.05)
         recorder.close("success")
         if recorder.error:
@@ -138,6 +161,11 @@ def main() -> int:
             "seconds": args.seconds,
             "warmup_seconds": args.warmup_seconds,
             "segment_seconds": args.segment_seconds,
+            "video_backend": backend,
+            "backend_probe_elapsed_s": backend_probe_elapsed,
+            "first_write_elapsed_s": first_write_elapsed,
+            "first_write_poll_resolution_s": 0.05,
+            "encoder_queue_peak": encoder_queue_peak,
             "submitted": submitted,
             "invalid_snapshots": invalid,
             "rows_read": len(rows),

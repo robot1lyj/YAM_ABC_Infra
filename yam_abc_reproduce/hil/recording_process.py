@@ -13,6 +13,8 @@ import numpy as np
 from ..resource_qos import place_on_cpus
 from .storage import SegmentWriter
 
+SAVE_STALL_SECONDS = 120
+
 
 def parent_death_guard():
     """Linux: do not leave a writer/converter orphaned after its owner is killed."""
@@ -37,6 +39,7 @@ def encode(
     result,
     written,
     write_max_ms,
+    last_progress_at,
     video_backend,
 ):
     writer = None
@@ -44,14 +47,13 @@ def encode(
         parent_death_guard()
         # Three FFmpeg/MPP subprocesses inherit this writer process's CPU mask.
         place_on_cpus("ENCODER")
-        writer = SegmentWriter(
-            path, fps, metadata, seconds, reserve, video_backend=video_backend
-        )
+        writer = SegmentWriter(path, fps, metadata, seconds, reserve, video_backend=video_backend)
         views = {r: np.frombuffer(b, dtype=np.uint8).reshape(shapes[r]) for r, b in buffers.items()}
         while True:
             item = incoming.get()
             if item[0] == "close":
                 writer.close(item[1], item[2])
+                last_progress_at.value = time.monotonic()
                 result.put({"error": None, "segments": len(writer.segments)})
                 return
             _, slot, row, roles = item
@@ -60,6 +62,7 @@ def encode(
                 writer.append(row, {r: views[r][slot] for r in roles})
                 write_max_ms.value = max(write_max_ms.value, (time.monotonic() - started) * 1000)
                 written.value = writer.written
+                last_progress_at.value = time.monotonic()
             finally:
                 free.put(slot)
     except BaseException:
@@ -74,9 +77,7 @@ def encode(
 
 
 class EncoderProcess:
-    def __init__(
-        self, path, fps, metadata, images, capacity, seconds, reserve, video_backend=None
-    ):
+    def __init__(self, path, fps, metadata, images, capacity, seconds, reserve, video_backend=None):
         ctx = mp.get_context("spawn")
         self.incoming, self.free, self.result = (
             ctx.Queue(capacity),
@@ -85,6 +86,7 @@ class EncoderProcess:
         )
         self.written = ctx.Value("q", 0)
         self.write_max_ms = ctx.Value("d", 0)
+        self.last_progress_at = ctx.Value("d", time.monotonic())
         shapes = {r: (capacity, *im.shape) for r, im in images.items()}
         self.buffers = {r: ctx.RawArray("B", int(np.prod(shape))) for r, shape in shapes.items()}
         self.views = {
@@ -107,6 +109,7 @@ class EncoderProcess:
                 self.result,
                 self.written,
                 self.write_max_ms,
+                self.last_progress_at,
                 video_backend,
             ),
             daemon=True,
@@ -142,17 +145,32 @@ class EncoderProcess:
         try:
             if not self.process.is_alive():
                 raise RuntimeError(self.failure())
-            deadline = time.monotonic() + 25
+            observed = self.last_progress_at.value
+            idle_since = time.monotonic()
+
+            def check_progress():
+                nonlocal observed, idle_since
+                current = self.last_progress_at.value
+                if current > observed:
+                    observed = current
+                    idle_since = time.monotonic()
+                elif time.monotonic() - idle_since > SAVE_STALL_SECONDS:
+                    raise RuntimeError(
+                        f"encoder made no save progress for {SAVE_STALL_SECONDS} seconds"
+                    )
+
             while True:
                 try:
                     self.incoming.put(("close", outcome, metadata), timeout=0.1)
                     break
                 except queue.Full:
-                    if not self.process.is_alive() or time.monotonic() > deadline:
-                        raise RuntimeError("encoder close queue stalled")
-            self.process.join(max(0, deadline - time.monotonic()))
-            if self.process.is_alive():
-                raise RuntimeError("encoder close timed out; unfinished segment retained")
+                    if not self.process.is_alive():
+                        raise RuntimeError(self.failure())
+                    check_progress()
+            while self.process.is_alive():
+                self.process.join(0.5)
+                if self.process.is_alive():
+                    check_progress()
             status = self.result.get(timeout=1)
             if status["error"]:
                 raise RuntimeError(status["error"])

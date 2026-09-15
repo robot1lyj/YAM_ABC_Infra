@@ -12,6 +12,22 @@ import numpy as np
 
 from ..resource_qos import place_on_cpus
 
+SAVE_STALL_SECONDS = 120
+
+
+def wait_for_save(thread, progress_at, label):
+    """Allow an arbitrarily long drain while writes advance; detect a stuck writer."""
+    observed = progress_at()
+    idle_since = time.monotonic()
+    while thread.is_alive():
+        thread.join(0.5)
+        current = progress_at()
+        if current > observed:
+            observed = current
+            idle_since = time.monotonic()
+        elif thread.is_alive() and time.monotonic() - idle_since > SAVE_STALL_SECONDS:
+            raise RuntimeError(f"{label} made no save progress for {SAVE_STALL_SECONDS} seconds")
+
 
 def json_value(value):
     if isinstance(value, np.ndarray):
@@ -46,8 +62,17 @@ class Recorder:
         self.metrics = {"queue_peak": 0, "bridge_max_ms": 0}
         self.outcome = "unknown"
         self._stop = threading.Event()
+        self._bridge_progress_at = time.monotonic()
+        self._encoder = None
         self._thread = threading.Thread(target=self._run, daemon=True, name="hil-recorder")
         self._thread.start()
+
+    def save_progress_at(self):
+        encoder = self._encoder
+        return max(
+            self._bridge_progress_at,
+            encoder.last_progress_at.value if encoder is not None else 0,
+        )
 
     def submit(self, record, images):
         # Arrays are owned immutable camera snapshots. No large copies here.
@@ -87,6 +112,7 @@ class Recorder:
                         self.min_free_bytes,
                         self.video_backend,
                     )
+                    self._encoder = encoder
                     for old in pending:
                         encoder.submit(old, {})
                     pending.clear()
@@ -103,12 +129,14 @@ class Recorder:
                 self.metrics["bridge_max_ms"] = max(
                     self.metrics["bridge_max_ms"], (time.monotonic() - started) * 1000
                 )
+                self._bridge_progress_at = time.monotonic()
         except Exception as exc:
             self.error = f"{type(exc).__name__}: {exc}"
         finally:
             try:
                 if encoder:
                     result = encoder.close("aborted" if self.error else self.outcome, self.metadata)
+                    self._bridge_progress_at = time.monotonic()
                     self.written = encoder.written.value
                     self.metrics["write_max_ms"] = encoder.write_max_ms.value
                     self.metrics.update(result)
@@ -131,9 +159,7 @@ class Recorder:
     def close(self, outcome="unknown"):
         self.outcome = outcome
         self._stop.set()
-        self._thread.join(30)
-        if self._thread.is_alive():
-            raise RuntimeError("recorder did not finish within 30 seconds")
+        wait_for_save(self._thread, self.save_progress_at, "episode recorder")
 
 
 class RecordingSession:
@@ -178,6 +204,7 @@ class RecordingSession:
         self._abort_requested = threading.Event()
         self.episodes = []
         self._stop = threading.Event()
+        self._session_progress_at = time.monotonic()
         self._thread = threading.Thread(target=self._run, daemon=True, name="episode-session")
         self._write_manifest()
         self._thread.start()
@@ -199,6 +226,13 @@ class RecordingSession:
             "encoder_queue": active.queue.qsize() if active else 0,
             "encoder": dict(active.metrics) if active else {},
         }
+
+    def save_progress_at(self):
+        active = self._active
+        return max(
+            self._session_progress_at,
+            active.save_progress_at() if active is not None else 0,
+        )
 
     def _put(self, item):
         if self.error or self._stop.is_set():
@@ -248,6 +282,7 @@ class RecordingSession:
             active.metadata.update(self.metadata)
             active.close(outcome)
             self._completed_steps += active.written
+            self._session_progress_at = time.monotonic()
             self._active = None
             entry = {
                 "path": active.path.name,
@@ -304,6 +339,7 @@ class RecordingSession:
                             break
                         except queue.Full:
                             continue
+                self._session_progress_at = time.monotonic()
             finish("aborted" if self.error else self.outcome)
         except Exception as exc:
             self.error = f"{type(exc).__name__}: {exc}"
@@ -348,6 +384,4 @@ class RecordingSession:
         self.outcome = outcome
         self.recording = False
         self._stop.set()
-        self._thread.join(35)
-        if self._thread.is_alive():
-            raise RuntimeError("session writer did not finish within 35 seconds")
+        wait_for_save(self._thread, self.save_progress_at, "recording session")

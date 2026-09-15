@@ -58,6 +58,7 @@ class Workbench:
         self._camera_generation = 0
         self.task = None
         self.initializing = False
+        self.validating = False
         self._session_task = None
         self._initialization = {"preflight": None, "accepted": None}
         self._initialization_path = Path("data/workstation") / (
@@ -250,6 +251,7 @@ class Workbench:
             else None,
             "home_reason": "请先示教并保存四台机械臂的准备位",
             "initializing": self.initializing,
+            "validating": self.validating,
             "initialization": {**self._initialization, "inventory": self._station_inventory()},
         }
 
@@ -372,8 +374,6 @@ class Workbench:
         with self._lock:
             if self.thread and self.thread.is_alive():
                 raise ValueError("设备正在连接、运行或整理数据，请等待")
-            if self.selected_task is None and not initialize:
-                raise ValueError("请先创建或选择采集任务，再连接机械臂")
             if (
                 not initialize
                 and self.selected_task is not None
@@ -389,12 +389,14 @@ class Workbench:
                 if url and (parsed.scheme not in ("ws", "wss") or not parsed.hostname):
                     raise ValueError("Thor地址应为 ws://主机:端口 或 wss://主机:端口")
                 self.args.url = url or None
-            if not initialize and self.mode in ("hil", "inference") and not (
+            validating = self.selected_task is None and not initialize
+            if not initialize and not validating and self.mode in ("hil", "inference") and not (
                 self.args.mock or self.args.url
             ):
                 raise ValueError("请先填写Thor模型服务地址")
             # Freeze task identity for the entire arm/recording session.
             self.initializing = bool(initialize)
+            self.validating = validating
             self._session_task = (
                 {
                     "id": "device-initialization",
@@ -403,6 +405,13 @@ class Workbench:
                     "task": "Initialize and validate the robot station.",
                 }
                 if initialize
+                else {
+                    "id": "daily-teleop-check",
+                    "name": "每日遥操作晨检",
+                    "instruction": "只验证双臂、夹爪和 Leader 按钮，不保存采集数据。",
+                    "task": "Validate daily bimanual teleoperation hardware without recording.",
+                }
+                if validating
                 else dict(self.selected_task)
             )
             self.task = self._session_task["task"]
@@ -416,6 +425,8 @@ class Workbench:
             self.log(
                 "正在按初始化流程连接四台机械臂；连接后保持，不自动回零"
                 if initialize
+                else "正在连接四台机械臂进行每日遥操作晨检；本会话禁止录制"
+                if validating
                 else "正在独立连接四台机械臂；连接后保持，等待开始"
             )
             self.thread = threading.Thread(target=self._run, daemon=True, name="workstation-owner")
@@ -428,7 +439,7 @@ class Workbench:
             "--station",
             self.args.station,
             "--mode",
-            "collect" if self.initializing else self.mode,
+            "collect" if self.initializing else "teleop" if self.validating else self.mode,
             "--segment-seconds",
             str(getattr(self.args, "segment_seconds", 60)),
             "--min-free-gb",
@@ -446,6 +457,8 @@ class Workbench:
             base = Path(self.args.output or build_station_config(self.args.station).save_root)
             if self.initializing:
                 base = Path("data/workstation/initialization_sessions")
+            elif self.validating:
+                base = Path("data/workstation/validation_sessions")
             output = (
                 base
                 / self._session_task["id"]
@@ -461,9 +474,11 @@ class Workbench:
             self._previews = {}
             self.state = "fault" if self.error or self.cleanup_error else "disconnected"
             self.initializing = False
+            self.validating = False
             self.log("设备会话已结束" if not self.error else "请处理故障后重新连接")
 
     def attach(self, runtime, output):
+        runtime.recording_allowed = not (self.initializing or self.validating)
         runtime.prompt = self.task
         runtime.recorder.metadata["operator_task"] = self.task
         runtime.recorder.metadata["task"] = self.task
@@ -483,7 +498,11 @@ class Workbench:
         self.state = "connected"
         if self._closing.is_set():
             runtime.event("quit")
-        self.log("机械臂已连接，当前保持；相机就绪后可开始任务")
+        self.log(
+            "机械臂已连接，当前保持；可开始每日遥操作晨检"
+            if self.validating
+            else "机械臂已连接，当前保持；相机就绪后可开始任务"
+        )
 
     def saved(self):
         self.runtime = None
@@ -513,13 +532,18 @@ class Workbench:
                     return
         if self.runtime is None or self.state != "connected":
             raise ValueError("请先连接设备")
-        if event in ("start", "record", "resume_policy") and not (
-            event == "record" and self.runtime.status.get("recording")
-        ):
+        runtime_mode = self.runtime.status.get("mode", self.mode)
+        if event in ("record", "discard") and runtime_mode != "collect":
+            raise ValueError("遥操作仅用于设备验证，不提供录制功能；请切换到数据采集模式")
+        needs_collection_context = (
+            event in ("record", "resume_policy")
+            or (event == "start" and runtime_mode != "teleop")
+        ) and not (event == "record" and self.runtime.status.get("recording"))
+        if needs_collection_context:
             if self.selected_task is None:
-                raise ValueError("请先选择任务")
+                raise ValueError("每日晨检不录制；请断开机械臂并选择采集任务")
             if self.camera_state != "connected":
-                raise ValueError("请先连接三路相机；机械臂调试可在保持状态进行")
+                raise ValueError("开始录制或模型执行前请先连接三路相机")
         updated = self.runtime.status.get("updated_at", 0)
         if event not in ("stop", "hold", "quit") and time.monotonic() - updated > 0.5:
             raise ValueError("控制状态尚未就绪或已过期，请先检查设备")

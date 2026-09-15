@@ -49,8 +49,6 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
         assert predicate(), service.status
 
     try:
-        with pytest.raises(ValueError, match="任务"):
-            service.connect()
         task = service.create_task("乐高分拣", "按颜色分拣乐高", "Sort the LEGO bricks by color.")
         service.connect()
         wait(lambda: service.runtime is not None and service.status.get("tick", 0) > 2)
@@ -99,6 +97,96 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
         service.disconnect_cameras()
         wait(lambda: service.camera_state == "disconnected")
     finally:
+        service.close()
+
+
+def test_taskless_daily_check_can_teleoperate_but_never_record(tmp_path):
+    service = Workbench(
+        SimpleNamespace(
+            mode="hil",
+            mock=True,
+            url=None,
+            station="configs/station_hil.yaml",
+            output=tmp_path / "sessions",
+            task_root=tmp_path / "tasks",
+            baseline=False,
+            raw_only=True,
+        )
+    )
+    service.preview_enabled = False
+
+    def wait(predicate, timeout=15):
+        deadline = time.monotonic() + timeout
+        while not predicate() and time.monotonic() < deadline:
+            service.heartbeat()
+            time.sleep(0.05)
+        assert predicate(), service.status
+
+    try:
+        service.connect()
+        wait(lambda: service.runtime is not None and service.status.get("tick", 0) > 2)
+        assert service.validating
+        assert service.status["mode"] == "teleop"
+        assert service.output.parent.name == "daily-teleop-check"
+        assert "validation_sessions" in service.output.parts
+        assert service.camera_state == "disconnected"
+
+        service.event("start")
+        wait(lambda: service.status.get("phase") == "human")
+        with pytest.raises(ValueError, match="不提供录制"):
+            service.event("record")
+        with pytest.raises(ValueError, match="does not record"):
+            service.runtime.event("record")
+        assert not service.status.get("recording")
+
+        output = service.output
+        service.disconnect(supported=True)
+        wait(lambda: not service.thread.is_alive(), 30)
+        session = json.loads((output / "session.json").read_text())
+        assert session["episodes"] == []
+        assert session["collection_task"]["id"] == "daily-teleop-check"
+    finally:
+        service.close()
+
+
+def test_teleop_mode_never_records_even_with_a_selected_task(tmp_path):
+    service = Workbench(
+        SimpleNamespace(
+            mode="teleop",
+            mock=True,
+            url=None,
+            station="configs/station_hil.yaml",
+            output=tmp_path / "sessions",
+            task_root=tmp_path / "tasks",
+            baseline=False,
+            raw_only=True,
+        )
+    )
+    service.preview_enabled = False
+
+    def wait(predicate, timeout=15):
+        deadline = time.monotonic() + timeout
+        while not predicate() and time.monotonic() < deadline:
+            service.heartbeat()
+            time.sleep(0.05)
+        assert predicate(), service.status
+
+    try:
+        service.create_task("仅遥操作", "不采集数据", "Validate teleoperation only.")
+        service.connect()
+        wait(lambda: service.runtime is not None and service.status.get("tick", 0) > 2)
+        service.event("start")
+        wait(lambda: service.status.get("phase") == "human")
+        time.sleep(0.15)
+        with pytest.raises(ValueError, match="不提供录制"):
+            service.event("record")
+        assert not service.status.get("recording")
+        assert service.runtime.recorder.episodes == []
+    finally:
+        if service.runtime is not None:
+            service.disconnect(supported=True)
+            if service.thread:
+                service.thread.join(10)
         service.close()
 
 

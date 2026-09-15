@@ -154,6 +154,7 @@ class Runtime:
         self.maintenance = Maintenance()
         self.operator_error = None
         self._record_started = None
+        self.recording_allowed = True
 
     def event(self, event):
         allowed = {
@@ -178,6 +179,8 @@ class Runtime:
         }
         if event not in allowed:
             raise ValueError("unknown event")
+        if event in ("record", "discard") and not self.recording_allowed:
+            raise ValueError("daily teleoperation check does not record data")
         if self.maintenance.latched and event not in ("stop", "hold", "quit", "reset_stop"):
             raise ValueError("紧急暂停已锁存，请先检查现场并解除锁存")
         if event in ("home", "capture_home", "gravity"):
@@ -189,8 +192,8 @@ class Runtime:
                 raise ValueError("尚未保存准备位")
         if event in ("mode:inference", "mode:hil") and self.worker is None:
             raise ValueError("restart with --url to enable local policy inference")
-        if event in ("record", "discard") and self.status.get("mode") not in ("collect", "teleop"):
-            raise ValueError("record control requires collection or teleop mode")
+        if event in ("record", "discard") and self.status.get("mode") != "collect":
+            raise ValueError("record control is only available in data collection mode")
         if (
             event == "record"
             and not getattr(self.recorder, "recording", False)
@@ -256,6 +259,8 @@ class Runtime:
                 button_event = self.handle_buttons.read(
                     buttons, now=now, mode=a.mode, phase=a.phase
                 )
+                if button_event in ("record", "discard") and not self.recording_allowed:
+                    button_event = None
                 try:
                     hold_time = self.holding.get_nowait()
                 except queue.Empty:
@@ -463,14 +468,15 @@ class Runtime:
                     if (
                         original_event == "start"
                         and a.phase != Phase.HOLD
-                        and a.mode != Mode.COLLECT
+                        and a.mode in (Mode.HIL, Mode.INFERENCE)
+                        and self.recording_allowed
                     ):
                         self.recorder.start_episode()
                     previous_mode = self.recorder.mode
                     self.recorder.set_mode(a.mode.value, self.outcome)
                     if previous_mode != a.mode.value:
                         self.outcome = "unknown"
-                    if a.mode in (Mode.COLLECT, Mode.TELEOP):
+                    if a.mode == Mode.COLLECT:
                         if recording_event == "discard":
                             self.recorder.stop_episode("discarded")
                         elif event == "hold" or a.phase == Phase.FAULT:

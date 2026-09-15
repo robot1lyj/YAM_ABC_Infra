@@ -248,7 +248,7 @@
                   ><span>预览 5 Hz · 原始采集独立运行</span>
                 </div>
               </section>
-              <section class="panel session-panel">
+              <section class="panel session-panel" id="session-summary">
                 <div class="panel-heading">
                   <h2>当前会话</h2>
                   <span id="record-badge" class="pill">未录制</span>
@@ -273,7 +273,7 @@
                   逐集保存 MP4＋HDF5 · 可上传服务器后独立转换
                 </div>
               </section>
-              <section class="panel recent-panel">
+              <section class="panel recent-panel" id="recent-episodes">
                 <div class="panel-heading">
                   <h2>最近采集</h2>
                   <span class="muted">当前连接会话</span>
@@ -286,7 +286,7 @@
             <aside class="right-column">
               <section class="panel control-panel">
                 <div class="panel-heading">
-                  <h2>采集控制</h2>
+                  <h2 id="control-title">采集控制</h2>
                   <span class="pill" id="phase">未连接</span>
                 </div>
                 <div class="control-visual">
@@ -317,29 +317,31 @@
                 <button class="button wide" id="hold" data-event="hold">
                   Ⅱ 暂停运动 <kbd>SPACE</kbd>
                 </button>
-                <div class="record-divider">本集录制</div>
-                <div class="session-actions">
-                  <button
-                    class="button primary"
-                    id="record"
-                    data-event="record"
-                  >
-                    ● 开始录制</button
-                  ><button class="button" id="discard">放弃当前集</button
-                  ><span class="vertical-divider"></span
-                  ><button
-                    class="button subtle"
-                    id="success"
-                    data-event="success"
-                  >
-                    ✓ 标记成功</button
-                  ><button
-                    class="button subtle"
-                    id="failure"
-                    data-event="failure"
-                  >
-                    标记失败
-                  </button>
+                <div id="recording-controls">
+                  <div class="record-divider">本集录制</div>
+                  <div class="session-actions">
+                    <button
+                      class="button primary"
+                      id="record"
+                      data-event="record"
+                    >
+                      ● 开始录制</button
+                    ><button class="button" id="discard">放弃当前集</button
+                    ><span class="vertical-divider"></span
+                    ><button
+                      class="button subtle"
+                      id="success"
+                      data-event="success"
+                    >
+                      ✓ 标记成功</button
+                    ><button
+                      class="button subtle"
+                      id="failure"
+                      data-event="failure"
+                    >
+                      标记失败
+                    </button>
+                  </div>
                 </div>
                 <div id="ownership" class="ownership">控制权：保持</div>
                 <div class="handle-hint" id="handle-hint">
@@ -417,7 +419,7 @@
           <div class="device-layout">
             <section class="panel">
               <div class="panel-heading">
-                <h2>机械臂连接</h2>
+                <h2>机械臂状态</h2>
                 <span class="muted">2 LEADERS + 2 FOLLOWERS</span>
               </div>
               <div id="device-cards" class="device-cards"></div>
@@ -535,8 +537,7 @@
         <div class="eyebrow">CONNECT ROBOT</div>
         <h2>连接机械臂</h2>
         <p>
-          连接两台 Leader 和两台
-          Follower。相机由独立按钮管理，机械臂连接后先保持。
+          连接两台 Leader 和两台 Follower，连接后先保持。每日遥操作晨检无需采集任务或相机；只有录制数据和模型执行需要完整采集上下文。
         </p>
         <div id="connect-task-summary" class="connect-task-summary"></div>
         <label

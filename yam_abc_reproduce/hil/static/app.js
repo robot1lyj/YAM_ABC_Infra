@@ -80,10 +80,19 @@ function render() {
     latched = !!state.stop_latched,
     maint = state.maintenance || "idle",
     paused = state.phase === "hold",
-    mode = state.mode || "collect",
+    reportedMode = state.mode || "collect",
+    mode = !state.selected_task && !state.initializing ? "teleop" : reportedMode,
     recording = !!state.recording;
-  const canRun =
-      connected && !state.initializing && !latched && camerasConnected() && !!state.selected_task,
+  const teleopView = mode === "teleop" || !state.selected_task,
+    collectionReady = camerasConnected() && !!state.selected_task,
+    canRun =
+      connected && !state.initializing && !latched && (mode === "teleop" || collectionReady),
+    canRecord =
+      connected &&
+      !state.initializing &&
+      !latched &&
+      collectionReady &&
+      mode === "collect",
     canMaintain = connected && !latched && paused && !recording,
     idle = maint === "idle";
   text("environment", state.mock ? "模拟工作站" : "真实设备");
@@ -106,15 +115,13 @@ function render() {
     state.connection,
   );
   $("connect").disabled =
-    !online ||
-    transitional ||
-    (!state.selected_task?.task && state.connection !== "connected");
+    !online || transitional;
   $("connect").title =
     state.connection === "connected"
       ? "断开机械臂并保存当前会话"
-      : !state.selected_task?.task
-        ? "正式采集连接需要先创建或选择任务；新设备测试请进入“设备与调试”，使用初始化向导第 3 步。"
-        : "连接当前任务的四台机械臂；连接后先保持";
+      : state.selected_task?.task
+        ? "连接当前任务的四台机械臂；连接后先保持"
+        : "无需采集任务，直接连接四臂进行每日遥操作晨检";
   renderTask(transitional || state.connection === "connected");
   const cameraBusy = ["connecting", "disconnecting"].includes(
     state.camera_connection,
@@ -124,7 +131,9 @@ function render() {
     ? "相机处理中…"
     : camerasConnected()
       ? "断开相机"
-      : "连接相机";
+      : teleopView
+        ? "连接相机（可选）"
+        : "连接相机";
   $("connect").querySelector("span").textContent = transitional
     ? cNames[state.connection]
     : state.connection === "connected"
@@ -135,12 +144,30 @@ function render() {
     b.querySelector(".mode-state").textContent =
       b.dataset.mode === mode ? "● 当前模式" : "选择模式 →";
     b.disabled =
-      !online || transitional || !!state.initializing || latched || state.phase === "fault";
+      !online ||
+      transitional ||
+      !!state.initializing ||
+      latched ||
+      state.phase === "fault" ||
+      (!state.selected_task && b.dataset.mode !== "teleop");
   });
+  $("workspace-page").classList.toggle("teleop-view", teleopView);
+  $("recording-controls").hidden = teleopView || mode !== "collect";
+  $("session-summary").hidden = teleopView;
+  $("recent-episodes").hidden = teleopView;
+  text("control-title", teleopView ? "遥操作控制" : "采集控制");
+  text(
+    "heading",
+    page === "workspace"
+      ? teleopView
+        ? "每日遥操作晨检"
+        : "采集工作台"
+      : "设备与调试",
+  );
   text("mode-name", names[mode]);
   $("takeover").parentElement.hidden = mode !== "hil";
   $("task-instruction").title =
-    state.selected_task?.instruction || "先选择任务";
+    state.selected_task?.instruction || "每日遥操作晨检无需任务；录制前再选择任务";
   text(
     "phase",
     latched
@@ -188,7 +215,9 @@ function render() {
   $("resume").disabled = !(canRun && mode === "hil" && state.phase === "human");
   text(
     "handle-hint",
-    mode === "collect"
+    teleopView
+      ? "每日晨检不录制　\nLeader 按钮仅做输入状态检查"
+      : mode === "collect"
       ? "手柄① 开始 / 结束录制　\n手柄② 放弃当前集"
       : mode === "hil"
         ? "键盘 I 冻结并接管　\n手柄① 交还模型 · ② 无功能"
@@ -212,20 +241,20 @@ function render() {
                   : "Thor 模型"),
   );
   $("record").disabled = !(
-    canRun &&
+    canRecord &&
     ["collect", "teleop"].includes(mode) &&
     (recording || state.phase === "human")
   );
   text("record", recording ? "■ 结束当前录制" : "● 开始录制");
   $("discard").disabled = !(
-    canRun &&
+    canRecord &&
     recording &&
     ["collect", "teleop"].includes(mode)
   );
   text("success", state.outcome === "success" ? "✓ 已标记成功" : "✓ 标记成功");
   text("failure", state.outcome === "failure" ? "已标记失败" : "标记失败");
-  $("success").disabled = !canRun || !recording;
-  $("failure").disabled = !canRun || !recording;
+  $("success").disabled = !canRecord || !recording;
+  $("failure").disabled = !canRecord || !recording;
   text(
     "record-badge",
     recording
@@ -314,22 +343,24 @@ function render() {
     camerasConnected() ? `${healthy} / 3 在线` : "未连接",
     camerasConnected() && healthy === 3,
   );
-  healthRow(
-    "Thor 模型",
-    state.policy_configured
-      ? state.mock
-        ? "模拟策略"
-        : state.source === "policy" && connected
-          ? "策略执行中"
-          : "已配置 / 待验证"
-      : "未配置",
-    state.source === "policy" && connected,
-  );
-  healthRow(
-    "录制队列",
-    connected ? `${state.record_queue || 0} 帧等待` : "未启动",
-    connected && !state.error,
-  );
+  if (!teleopView) {
+    healthRow(
+      "Thor 模型",
+      state.policy_configured
+        ? state.mock
+          ? "模拟策略"
+          : state.source === "policy" && connected
+            ? "策略执行中"
+            : "已配置 / 待验证"
+        : "未配置",
+      state.source === "policy" && connected,
+    );
+    healthRow(
+      "录制队列",
+      connected ? `${state.record_queue || 0} 帧等待` : "未启动",
+      connected && !state.error,
+    );
+  }
   const errors = [
     !online ? "界面连接中断。工作台心跳超时将请求暂停；请检查现场状态。" : null,
     state.connection_error,
@@ -569,7 +600,7 @@ function switchPage(next) {
   text(
     "subtitle",
     next === "workspace"
-      ? "选择任务，连接设备，让每一段示范都有清晰的归属。"
+      ? "无需任务即可进行每日遥操作晨检；选择任务后才开放数据录制。"
       : "查看四臂状态，示教准备位，完成采集前的设备调试。",
   );
 }
@@ -701,7 +732,9 @@ $("connect").onclick = () => {
   } else {
     text(
       "connect-task-summary",
-      "当前任务：" + (state.selected_task?.name || "请先选择任务"),
+      state.selected_task
+        ? "当前采集任务：" + state.selected_task.name
+        : "当前用途：每日遥操作晨检 · 不录制数据",
     );
     $("real-warning").hidden = !!state.mock;
     $("connect-dialog").showModal();
@@ -782,42 +815,44 @@ poll();
 function renderTask(locked) {
   const task = state.selected_task;
   text("task-library-count", `${(state.tasks || []).length} 个任务`);
-  text("task-badge", task ? "当前任务" : "尚未选择");
+  text("task-badge", task ? "当前任务" : "每日晨检");
   text("task-category", "任务 / DATASET TASK");
-  text("task-name", task?.name || "从一个采集任务开始");
+  text("task-name", task?.name || "无需任务，直接验证机械臂");
   text(
     "task-instruction",
-    task?.instruction || "例如创建“乐高分拣”，为示范数据设置明确的任务指令。",
+    task?.instruction || "连接后可进行双臂遥操作晨检；需要录制数据时再选择采集任务。",
   );
   text(
     "task-identity",
     task
       ? `任务 ID · ${task.id.slice(0, 8)}`
-      : "任务名称与指令会随数据一起保存",
+      : "晨检会话禁止录制，不会混入训练数据",
   );
   text(
     "task-session-tip",
     locked
-      ? "任务已锁定 · 断开机械臂并完成保存后可切换"
+      ? task
+        ? "任务已锁定 · 断开机械臂并完成保存后可切换"
+        : "每日晨检会话 · 断开后可选择采集任务"
       : "同一任务的每次采集会话独立保存",
   );
   $("create-task").disabled = !online || locked;
   $("edit-task").disabled = !online || locked || !task;
   text(
     "task-english",
-    "task: " + (task?.task || "待补填英文 task，请点击编辑任务"),
+    task ? "task: " + (task.task || "待补填英文 task，请点击编辑任务") : "不写入训练数据",
   );
   $("choose-task").disabled = !online || locked || !state.tasks?.length;
   $("step-task").classList.toggle("done", !!task);
   $("step-devices").classList.toggle(
     "done",
-    activeDevice() && camerasConnected(),
+    activeDevice() && (!task || camerasConnected()),
   );
   $("step-record").classList.toggle("done", !!state.recording);
   text(
     "workflow-tip",
     !task
-      ? "先创建或选择任务"
+      ? "可直接连接机械臂晨检 · 录制前请选择任务"
       : !task.task
         ? "请在任务详情中编辑并补填英文 task"
         : !camerasConnected()

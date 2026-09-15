@@ -411,23 +411,45 @@ function render() {
     const title = document.createElement("h3"),
       meta = document.createElement("span"),
       dot = document.createElement("i"),
-      ok = connected && Number.isFinite(ages[i]) && ages[i] < 0.25;
+      ok = connected && Number.isFinite(ages[i]) && ages[i] < 0.25,
+      pose = name.includes("Follower")
+        ? state.follower_state || []
+        : state.leader_state || [],
+      poseOffset = name.startsWith("左") ? 0 : 7,
+      angles = document.createElement("div");
     dot.className = "led" + (ok ? " ok" : "");
     title.append(dot, document.createTextNode(name));
     meta.textContent = connected
-      ? `反馈 ${ages[i] == null ? "—" : Math.round(ages[i] * 1000)} ms · ${name.includes("Leader") ? "官方 YAM Leader" : "标准平行夹爪"}`
+      ? `反馈 ${ages[i] == null ? "—" : Math.round(ages[i] * 1000)} ms`
       : "设备未连接";
-    card.append(title, meta);
+    angles.className = "arm-angles";
+    for (let joint = 0; joint < 6; joint++) {
+      const item = document.createElement("div"),
+        label = document.createElement("small"),
+        value = document.createElement("strong"),
+        radians = pose[poseOffset + joint];
+      label.textContent = `J${joint + 1}`;
+      value.textContent =
+        connected && Number.isFinite(radians)
+          ? `${((radians * 180) / Math.PI).toFixed(1)}°`
+          : "—";
+      item.append(label, value);
+      angles.append(item);
+    }
+    card.append(title, meta, angles);
     $("device-cards").append(card);
   }
   const q = state.follower_state || [],
     offset = arm === "left" ? 0 : 7;
   document.querySelectorAll("[data-joint-value]").forEach((el) => {
     const value = q[offset + Number(el.dataset.jointValue)];
+    const degrees = value == null ? null : (value * 180) / Math.PI;
     el.textContent =
-      connected && value != null
-        ? ((value * 180) / Math.PI).toFixed(1) + "°"
-        : "—";
+      connected && degrees != null ? degrees.toFixed(1) + "°" : "—";
+    const slider = document.querySelector(
+      `[data-joint-slider="${el.dataset.jointValue}"]`,
+    );
+    if (slider) slider.value = connected && degrees != null ? degrees : 0;
   });
   document
     .querySelectorAll(".jog-button")
@@ -610,7 +632,7 @@ function switchPage(next) {
 for (let j = 0; j < 6; j++) {
   const el = document.createElement("div");
   el.className = "joint";
-  el.innerHTML = `<div class="joint-head"><span>关节 J${j + 1}</span><strong data-joint-value="${j}">—</strong></div><div class="joint-buttons"><button class="button jog-button" data-joint="${j}" data-delta="-1">−</button><button class="button jog-button" data-joint="${j}" data-delta="1">＋</button></div>`;
+  el.innerHTML = `<div class="joint-head"><span>关节 J${j + 1}</span><strong data-joint-value="${j}">—</strong></div><div class="joint-control-line"><button class="button jog-button" data-joint="${j}" data-delta="-1" aria-label="关节 J${j + 1} 减小">−</button><input class="joint-slider" type="range" min="-180" max="180" step="0.1" value="0" data-joint-slider="${j}" tabindex="-1" aria-label="关节 J${j + 1} 当前角度" /><button class="button jog-button" data-joint="${j}" data-delta="1" aria-label="关节 J${j + 1} 增大">＋</button></div>`;
   $("joint-controls").append(el);
 }
 document

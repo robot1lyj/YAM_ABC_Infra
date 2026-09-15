@@ -1732,78 +1732,58 @@ textarea::placeholder {
 
   #devices-page {
     display: grid;
-    grid-template-columns: 0.8fr 1.05fr 1.35fr;
-    grid-template-rows: auto auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(210px, 0.72fr) minmax(310px, 1.28fr);
     gap: 10px;
-    align-content: start;
-    align-items: start;
   }
   #devices-page > .initialization-panel {
-    grid-column: 1 / -1;
     margin-bottom: 0;
   }
   .initialization-panel .panel-heading {
-    padding: 8px 14px 5px;
+    padding: 8px 14px;
   }
   .initialization-heading .eyebrow {
     display: none;
   }
   .initialization-intro {
-    margin: 0 14px 6px;
-    font-size: 12px;
-    line-height: 1.35;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: none;
   }
   .init-inventory {
-    flex-wrap: nowrap;
-    gap: 4px;
-    margin: 0 14px 6px;
-    overflow: hidden;
-  }
-  .init-inventory span {
-    flex: 0 0 auto;
-    padding: 3px 6px;
-    font-size: 10px;
+    display: none;
   }
   .init-steps {
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 6px;
-    padding: 0 14px 8px;
+    gap: 8px;
+    padding: 0 14px 10px;
   }
   .init-step,
   #init-step-gravity {
-    grid-template-columns: 23px minmax(0, 1fr);
-    align-content: start;
-    gap: 5px 7px;
-    min-height: 88px;
-    padding: 7px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    align-content: center;
+    gap: 6px 9px;
+    min-height: 78px;
+    padding: 9px;
   }
   .init-number {
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
+    font-size: 13px;
   }
   .init-step > div {
     gap: 1px;
     min-width: 0;
   }
   .init-step strong {
-    font-size: 12px;
+    font-size: 13px;
   }
   .init-step small {
-    display: -webkit-box;
-    overflow: hidden;
-    font-size: 10px;
-    line-height: 1.25;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    display: none;
   }
   .init-step > .button {
     grid-column: 1 / -1;
-    min-height: 28px;
-    padding: 4px 7px;
-    font-size: 11px;
+    min-height: 32px;
+    padding: 5px 8px;
+    font-size: 12px;
   }
   .init-check {
     grid-column: 1 / -1;
@@ -1814,50 +1794,49 @@ textarea::placeholder {
     display: none;
   }
   #devices-page .device-layout {
-    display: contents;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr);
+    gap: 10px;
   }
   #devices-page .device-layout > .panel,
   #devices-page > .jog-panel {
     grid-column: auto;
     min-height: 0;
+    height: 100%;
     margin-bottom: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
   .device-cards {
+    flex: 1;
+    min-height: 0;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    padding: 0 10px 8px;
-  }
-  .device-card {
-    padding: 8px 10px;
-  }
-  .device-card h3 {
-    margin-bottom: 1px;
-    font-size: 12px;
+    grid-template-rows: 1fr 1fr;
+    gap: 8px;
+    padding: 0 12px 12px;
   }
   #devices-page .device-layout > .panel:first-child .panel-heading .muted {
     display: none;
   }
-  .device-note,
-  .maintenance-intro,
-  .maintenance-note {
-    padding: 6px 10px;
-    font-size: 11px;
-    line-height: 1.35;
-  }
   .maintenance-status {
-    margin: 0 10px;
-    padding: 7px 9px;
+    margin: 0 12px;
+    padding: 8px 10px;
   }
   .maintenance-status p {
-    font-size: 12px;
+    font-size: 13px;
   }
   .maintenance-groups {
-    grid-template-columns: 1fr;
-    gap: 6px;
-    padding: 0 10px;
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 0 12px 12px;
   }
   .maintenance-groups > section {
-    padding: 8px;
+    min-height: 0;
+    padding: 0;
   }
   .maintenance-groups h3 {
     font-size: 13px;
@@ -1871,13 +1850,16 @@ textarea::placeholder {
     display: none;
   }
   .maintenance-buttons {
-    grid-template-columns: 1fr 1fr;
-    gap: 5px;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 6px;
+    height: calc(100% - 22px);
   }
   .maintenance-action {
-    min-height: 36px;
-    padding: 6px 8px;
-    gap: 5px;
+    min-height: 38px;
+    height: 100%;
+    padding: 9px 10px;
+    gap: 7px;
   }
   .maintenance-action svg,
   .maintenance-pause {
@@ -1886,46 +1868,36 @@ textarea::placeholder {
     font-size: 16px;
   }
   .maintenance-action strong {
-    font-size: 11px;
+    font-size: 13px;
   }
   .jog-toolbar {
-    padding: 0 10px 4px;
+    padding: 0 14px 7px;
   }
   .jog-toolbar > span {
     display: none;
   }
   .jog-toolbar .segmented button {
-    padding: 5px 10px;
+    min-height: 34px;
+    padding: 6px 14px;
   }
   .jog-panel > .device-note {
     display: none;
   }
   #joint-controls {
-    gap: 5px;
-    padding: 0 10px 8px;
-  }
-  .joint {
-    padding: 7px;
-  }
-  .joint-head {
-    margin-bottom: 4px;
-    font-size: 11px;
-  }
-  .joint-buttons {
-    gap: 4px;
-  }
-  .joint-buttons .button {
-    min-height: 28px;
-    padding: 2px 5px;
-    font-size: 15px;
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+    gap: 9px;
+    padding: 0 14px 9px;
   }
   .gripper-control {
-    gap: 6px;
-    padding: 2px 10px;
+    gap: 10px;
+    padding: 7px 14px 12px;
   }
   .gripper-control .button {
-    min-height: 30px;
-    padding: 4px 8px;
+    min-height: 38px;
+    padding: 6px 12px;
   }
 
   /* Device controls keep the workstation's original panel language. */
@@ -1934,8 +1906,13 @@ textarea::placeholder {
     display: none;
   }
   #devices-page .device-card {
-    min-height: 52px;
-    padding: 9px 10px;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto 1fr;
+    align-items: start;
+    gap: 6px 10px;
+    padding: 10px 11px;
     border-color: #e6e6eb;
     background: #fafafb;
   }
@@ -1943,18 +1920,51 @@ textarea::placeholder {
     display: flex;
     align-items: center;
     gap: 7px;
-    font-size: 12px;
+    margin: 0;
+    font-size: 13px;
+    white-space: nowrap;
   }
   #devices-page .device-card .led {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
+  }
+  #devices-page .device-card span {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  #devices-page .arm-angles {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px;
+    align-self: end;
+  }
+  #devices-page .arm-angles > div {
+    min-width: 0;
+    padding: 5px 2px;
+    border-radius: 6px;
+    background: #f0f1f4;
+    text-align: center;
+  }
+  #devices-page .arm-angles small {
+    display: block;
+    color: #8b8b94;
+    font-size: 9px;
+  }
+  #devices-page .arm-angles strong {
+    display: block;
+    overflow: hidden;
+    color: #292930;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
   }
   #devices-page .maintenance-status {
     border: 0;
     background: #f1f3f6;
   }
   #devices-page .maintenance-groups {
-    gap: 9px;
+    gap: 10px;
     margin-top: 10px;
   }
   #devices-page .maintenance-groups > section {
@@ -1963,61 +1973,93 @@ textarea::placeholder {
     border-radius: 0;
   }
   #devices-page .maintenance-groups > section + section {
-    padding-top: 9px;
-    border-top: 1px solid #e8e8ed;
+    padding: 0 0 0 10px;
+    border-top: 0;
+    border-left: 1px solid #e8e8ed;
   }
   #devices-page .maintenance-groups h3 {
     margin-bottom: 6px;
     color: #4f4f57;
-    font-size: 12px;
+    font-size: 13px;
   }
   #devices-page .maintenance-buttons {
     gap: 7px;
   }
   #devices-page .maintenance-action {
-    min-height: 42px;
+    min-height: 38px;
     padding: 7px 9px;
     gap: 7px;
     border-radius: 9px;
   }
   #devices-page .maintenance-action strong {
-    font-size: 12px;
+    font-size: 13px;
   }
   #devices-page #joint-controls {
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
+    gap: 9px;
   }
   #devices-page .joint {
-    min-height: 43px;
+    min-height: 0;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 66px;
+    grid-template-columns: 92px minmax(0, 1fr);
     align-items: center;
-    gap: 7px;
-    padding: 6px 8px;
+    gap: 14px;
+    padding: 9px 12px;
     border-color: #e6e6eb;
     border-radius: 9px;
     background: #fafafb;
   }
   #devices-page .joint-head {
     display: grid;
-    gap: 0;
+    gap: 3px;
     margin: 0;
   }
   #devices-page .joint-head strong {
-    font-size: 11px;
+    font-size: 18px;
   }
-  #devices-page .joint-buttons {
-    gap: 4px;
+  #devices-page .joint-head span {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
   }
-  #devices-page .joint-buttons .button {
-    width: 31px;
-    min-height: 31px;
-    border-radius: 7px;
+  #devices-page .joint-control-line {
+    display: grid;
+    grid-template-columns: 38px minmax(80px, 1fr) 38px;
+    align-items: center;
+    gap: 10px;
+  }
+  #devices-page .joint-control-line .button {
+    width: 38px;
+    min-height: 38px;
+    padding: 0;
+    border-radius: 9px;
     background: #fff;
+    font-size: 18px;
+  }
+  #devices-page .joint-slider {
+    width: 100%;
+    height: 22px;
+    margin: 0;
+    accent-color: var(--blue);
+    pointer-events: none;
+  }
+  #devices-page .joint-slider::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #d7dbe2, #b8cde4);
+  }
+  #devices-page .joint-slider::-webkit-slider-thumb {
+    width: 16px;
+    height: 16px;
+    margin-top: -5px;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    background: var(--blue);
+    box-shadow: 0 1px 4px #0003;
+    -webkit-appearance: none;
   }
   #devices-page .gripper-control {
-    margin: 0 10px 8px;
-    padding: 8px 10px;
+    margin: 0 14px 12px;
+    padding: 10px 12px;
     border: 0;
     border-radius: 9px;
     background: #f1f3f6;
@@ -2025,25 +2067,35 @@ textarea::placeholder {
 }
 @media (min-width: 681px) and (max-height: 800px) {
   #devices-page {
-    grid-template-rows: auto minmax(0, 1fr);
-    align-content: stretch;
-    align-items: stretch;
+    grid-template-rows: auto minmax(150px, 0.62fr) minmax(220px, 1.38fr);
+  }
+  .init-step,
+  #init-step-gravity {
+    min-height: 64px;
   }
   #devices-page #joint-controls {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: 1fr 1fr;
   }
   #devices-page .joint {
-    min-height: 0;
-    display: block;
-    padding: 6px;
+    grid-template-columns: 70px minmax(0, 1fr);
+    gap: 7px;
+    padding: 5px 7px;
   }
   #devices-page .joint-head {
-    display: flex;
-    margin-bottom: 3px;
+    display: grid;
   }
-  #devices-page .joint-buttons .button {
-    width: auto;
-    min-height: 26px;
+  #devices-page .joint-head strong {
+    font-size: 14px;
+  }
+  #devices-page .joint-control-line {
+    grid-template-columns: 30px minmax(55px, 1fr) 30px;
+    gap: 6px;
+  }
+  #devices-page .joint-control-line .button {
+    width: 30px;
+    min-height: 30px;
+    font-size: 15px;
   }
   #devices-page .gripper-control {
     padding-top: 5px;

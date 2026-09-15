@@ -85,6 +85,14 @@ RK3588上的原三路串行libx264录制无法持续30Hz；放大或自动调节
 
 ## 待核验
 
+### 2026-09-15 四臂重连无应答（USB重插后恢复）
+
+此前四臂曾在三相机在线时连接并保持成功，随后录制首秒因`episode queue full`独立故障退出。下一次四臂重连在`can_left`电机6、`can_right`电机5及双Leader部分设备上陆续报告`fail to communicate`；2026-09-15 13:29的保持态重试更早在`can_left`电机1的官方`motor_on`阶段失败，尚未进入遥操作或录制。四个USB-CAN设备保持原固定Hub下联口枚举，接口能UP到1 Mbit/s；内核无USB断连记录。用户现场确认四台控制器供电和实体急停均正常。
+
+对照：不再例行执行`reset_all_can.sh`而按官方正常命令直接拉起四口，仍失败；绕过本项目工作台、用IPC固定的i2rt`get_yam_robot(channel="can_left", gripper_type=linear_4310, gripper_limits_override=已保存范围)`只初始化左Follower，电机1仍无应答；随后显式运行官方`reset_all_can.sh`并复测，结果相同。断开三相机再单臂复测亦失败，`can_left`发送丢弃计数从15增至25；以上单臂测试未运行夹爪标定、遥操作、Home或改动电机参数，不能据此定性电机损坏。用户重插USB后，左Follower相同官方单臂初始化立即成功，关闭时力矩置零；随后从工作台连接四臂成功，保持十余秒，四臂反馈龄均为数毫秒，`can_left`收发均达65104包、无丢包或错误。当前工作台四臂已连接并保持，三相机未连接；遥操作和录制尚未在恢复后复测。此对照说明故障与USB-CAN链路状态相关，但不能仅凭重插恢复定位到适配器、Hub或控制器的具体部件；若复发，应检查这些实际连接与供电，不以软件速度/超时限制掩盖链路故障。
+
+证据来自IPC `journalctl --user -u yam-workstation.service`（12:59与13:29窗口）、`journalctl -k`、`ip -details -statistics link show can_left`、`lsusb -t`、官方单臂命令标准错误及同步`candump -L can_left`；连接状态通过工作台页面核对。内核在13:35:20记录左CANable所在`usb 5-2.3`断开（device 11），13:35:22重新枚举（device 13）并由`gs_usb`重建`can_left`；其他口没有同期重新枚举。内核另在13:34与13:37对右Follower和右Leader记录`Unexpected unused echo id`，表明这两口某些回显未匹配主机发送上下文，但不能据此确定左口故障机理。软件假设“每次CAN重置导致当前无应答”已被不重置对照否定，保留正常拉起优化但不称为硬件修复。
+
 - 接线/P0已由用户确认；2026-09-14 用户进一步确认两台 Follower 均为标准夹爪，对应固定 i2rt 的 `linear_4310`（标准 DM4310 直线夹爪），已写入 `configs/station_hil.yaml`。后续在P3仍需检查实际总线通信与端接、夹爪行程和关节方向。USB下联口到四个稳定CAN名已应用，板载bcan不用于该接线；Hub型号可按需补充，不单独阻断开发或重复要求本体S/N。
 - 相机流兼容性、采集性能/时间戳、标定，以及机械安装、电源、急停、零位、关节方向与夹爪端点；底层控制电脑已确定为下节 RK3588 IPC。
 - 2026-09-14 已完成四臂1–6号电机逐个通讯/OFF及两follower官方零重力初始化；左右

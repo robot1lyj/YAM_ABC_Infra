@@ -527,7 +527,9 @@ class Workbench:
             if self.initializing:
                 base = Path("data/workstation/initialization_sessions")
             elif self.taskless_teleop:
-                base = Path("data/workstation/teleop_sessions")
+                # Keep the unrecorded session on the task output's filesystem
+                # so the first task binding can atomically rename it.
+                base = base.parent / "workstation" / "teleop_sessions"
             output = (
                 base
                 / self._session_task["id"]

@@ -179,6 +179,7 @@ def test_taskless_teleop_can_bind_collection_task_without_reconnecting_arms(tmp_
         wait(lambda: service.runtime is not None and service.status.get("tick", 0) > 2)
         runtime, owner, standalone_output = service.runtime, service.thread, service.output
         assert service.taskless_teleop and not runtime.recording_allowed
+        assert standalone_output.parents[3] == tmp_path
         service.event("start")
         wait(lambda: service.status.get("phase") == "human")
         with pytest.raises(ValueError, match="暂停遥操作"):

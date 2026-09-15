@@ -152,18 +152,14 @@ class Runtime:
         self._record_started = None
         self.recording_allowed = True
 
-    def _recording_failed(self, state, reason):
-        """Abort the episode without turning a storage fault into a motor fault."""
+    def _recording_failed(self, reason):
+        """Abort the episode, leaving unrelated motion control untouched."""
         if self.recording_error is not None:
             return
         self.recording_error = str(reason)
         self.outcome = "aborted"
         self.recorder.metadata["recording_error"] = self.recording_error
         self.recorder.abort_episode()
-        self.session.arbiter.hold(state)
-        hold_errors = self.io.hold()
-        if hold_errors:
-            raise RuntimeError("hold after recording failure: " + "; ".join(hold_errors))
 
     def event(self, event):
         allowed = {
@@ -268,7 +264,7 @@ class Runtime:
                 snapshot = self.observations.snapshot(now, self.prompt)
                 observation_done = time.monotonic()
                 if isinstance(self.recorder, RecordingSession) and self.recorder.error:
-                    self._recording_failed(q, self.recorder.error)
+                    self._recording_failed(self.recorder.error)
                 try:
                     event, requested_at = self.events.get_nowait()
                 except queue.Empty:
@@ -278,6 +274,10 @@ class Runtime:
                     buttons, now=now, mode=a.mode, phase=a.phase
                 )
                 if button_event in ("record", "discard") and not self.recording_allowed:
+                    button_event = None
+                if self.recording_error and button_event in (
+                    "record", "discard", "success", "failure"
+                ):
                     button_event = None
                 try:
                     hold_time = self.holding.get_nowait()
@@ -319,7 +319,8 @@ class Runtime:
                     and event is not None
                     and event not in ("stop", "hold", "reset_stop", "mode:teleop")
                 ):
-                    event, requested_at = "hold", now
+                    # An old collection command must not interrupt live teleoperation.
+                    event, requested_at = None, None
                 obs_id, observed_at, obs, images, quality = (
                     (0, None, None, {}, {}) if snapshot is None else snapshot
                 )
@@ -523,7 +524,7 @@ class Runtime:
                 row["observation_valid"] = snapshot is not None
                 if not self.recorder.submit(row, images or last_record_images):
                     if isinstance(self.recorder, RecordingSession):
-                        self._recording_failed(q, self.recorder.error or "recorder unavailable")
+                        self._recording_failed(self.recorder.error or "recorder unavailable")
                     else:
                         raise RuntimeError(self.recorder.error or "recorder unavailable")
                 submitted_done = time.monotonic()

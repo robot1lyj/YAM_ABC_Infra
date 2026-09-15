@@ -195,7 +195,7 @@ function render() {
             ? "手动摆放机械臂 · 结束后保持"
             : paused
               ? state.recording_error
-                ? "录制失败，已保持；可切换为不录制的遥操作或断开"
+                ? "录制失败；可继续不录制的遥操作或断开"
                 : "等待开始指令"
               : state.phase === "human"
                 ? "Leader 正在控制 Follower"
@@ -264,7 +264,7 @@ function render() {
     "record-badge",
     recording
       ? "● 录制中 " + Math.floor(state.episode_elapsed_s || 0) + "s"
-      : state.recording_error ? "录制中断 · 已保持"
+      : state.recording_error ? "录制中断 · 遥操作可继续"
       : state.recording_saving ? "正在保存本集" : state.connection === "finalizing"
         ? "正在整理"
         : "未录制",
@@ -312,8 +312,13 @@ function render() {
       cam && camerasConnected()
         ? `${cam.fps?.toFixed(0) || "—"} fps　 ·　帧龄 ${Math.round(cam.age_s * 1000)} ms`
         : "— fps　 ·　帧龄 —";
-    if (!valid) {
-      el.querySelector("img").hidden = true;
+    const img = el.querySelector("img");
+    const previewStale =
+      Date.now() - Number(img.dataset.lastGoodAt || 0) > 2000 ||
+      (state.preview_age_s != null && state.preview_age_s > 2);
+    if (!valid &&
+        (!camerasConnected() || state.preview_enabled === false || previewStale)) {
+      img.hidden = true;
       el.querySelector(".camera-empty").hidden = false;
       el.querySelector(".camera-empty span").textContent =
         state.preview_enabled === false
@@ -811,16 +816,10 @@ document.addEventListener("keydown", (e) => {
 });
 for (const img of document.querySelectorAll(".camera img")) {
   img.onload = () => {
-    delete img.dataset.loading;
     if (camerasConnected() && state.preview_enabled !== false) {
       img.hidden = false;
       img.nextElementSibling.hidden = true;
     }
-  };
-  img.onerror = () => {
-    delete img.dataset.loading;
-    img.hidden = true;
-    img.nextElementSibling.hidden = false;
   };
 }
 setInterval(() => {
@@ -834,7 +833,16 @@ setInterval(() => {
   for (const img of document.querySelectorAll(".camera img")) {
     if (!img.dataset.loading) {
       img.dataset.loading = "1";
-      img.src =
+      const next = new Image();
+      next.onload = () => {
+        delete img.dataset.loading;
+        if (!camerasConnected() || state.preview_enabled === false) return;
+        img.dataset.lastGoodAt = String(Date.now());
+        // Keep the old JPEG visible if the next request fails or is still loading.
+        img.src = next.src;
+      };
+      next.onerror = () => { delete img.dataset.loading; };
+      next.src =
         "/camera/" + img.parentElement.dataset.camera + ".jpg?t=" + Date.now();
     }
   }

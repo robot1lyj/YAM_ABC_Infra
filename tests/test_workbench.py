@@ -427,7 +427,7 @@ def test_gravity_retains_entry_gripper_target_when_feedback_drifts(tmp_path):
         rec.close()
 
 
-def test_recording_failure_holds_arms_without_faulting_session(tmp_path, monkeypatch):
+def test_recording_failure_aborts_data_without_interrupting_teleop(tmp_path, monkeypatch):
     from yam_abc_reproduce.hil.recording import RecordingSession
     from yam_abc_reproduce.hil.run import Runtime
 
@@ -477,11 +477,11 @@ def test_recording_failure_holds_arms_without_faulting_session(tmp_path, monkeyp
         rec.start_episode()
         runtime.event("start")
         runtime.run(duration=0.2)
-        assert runtime.status["phase"] == "hold"
+        assert runtime.status["phase"] == "human"
         assert runtime.status["recording_error"] == "episode queue full"
         assert runtime.status["error"] is None
         assert not rec.recording
-        assert io.holds >= 2
+        assert io.holds == 1  # Only the normal shutdown hold, not a data-fault hold.
         assert io.commands >= 5  # Control keeps ticking after the writer fails.
         with pytest.raises(ValueError, match="录制已中断"):
             runtime.event("record")

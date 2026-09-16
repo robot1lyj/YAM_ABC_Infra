@@ -91,6 +91,35 @@ def test_factory_zero_home_full_offline_trajectory_and_stop():
     assert m.step(q, leader, now=20.3, dt=dt) is None
 
 
+def test_factory_zero_time_trajectory_crosses_motor_deadband_and_stops_if_blocked():
+    m = Maintenance(factory_zero=True)
+    q = np.zeros(14)
+    q[0] = 0.4
+    q[[6, 13]] = [0.8, 0.9]
+    leader = q.copy()
+    m.command("home", q, leader, now=0, paused=True)
+    # Model a 0.01 rad motor deadband: targets smaller than this do not move.
+    # A feedback-relative trajectory would remain stuck forever at 0.004 rad.
+    first_target = None
+    for tick in range(1, 20):
+        target, lead_target = m.step(q, leader, now=tick / 30, dt=1 / 30)
+        if first_target is None:
+            first_target = target.copy()
+        if abs(target[0] - q[0]) > 0.01:
+            q, leader = target, lead_target
+            break
+    assert first_target[0] == pytest.approx(0.396)
+    assert q[0] < 0.4
+    np.testing.assert_array_equal(q[[6, 13]], [0.8, 0.9])
+
+    blocked = Maintenance(factory_zero=True)
+    q[0] = 0.4
+    blocked.command("home", q, leader, now=0, paused=True)
+    assert blocked.step(q, leader, now=1.5, dt=1 / 30) is None
+    assert blocked.state == "idle"
+    assert "未跟随" in blocked.error
+
+
 def test_stop_freezes_four_arms_and_reset_never_resumes():
     m = Maintenance()
     q, h = np.zeros(14), np.full(14, 0.2)

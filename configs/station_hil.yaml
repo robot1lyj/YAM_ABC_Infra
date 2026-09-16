@@ -26,10 +26,11 @@ hil:
   # Follower factory home is six zero arm joints, not encoder recalibration.
   # Leaders stay manual; retain both follower grippers.
   factory_zero_home: true
-  # KAI0-style naive_async: use the newest timestamp-aligned chunk directly.
-  # Do not average predictions from different observations; arm and grippers
-  # execute the same plan. Existing joint limits and trajectory filter remain.
-  policy_fusion: raw
+  # KAI0-style two-chunk seam: blend only the first four aligned joint targets
+  # (about 100 ms), then follow the newest chunk directly. Do not ensemble
+  # several full plans; grippers always use the newest chunk without blending.
+  policy_fusion: smooth
+  smooth_steps: 4
   max_frame_age: 0.5
   max_frame_skew: 0.12
   warn_frame_skew: 0.04

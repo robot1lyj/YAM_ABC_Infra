@@ -146,6 +146,20 @@ def test_action_dt_cli_override_is_checked_without_model_or_motors(capsys):
     assert json.loads(capsys.readouterr().out)["action_dt"] == pytest.approx(0.05)
 
 
+def test_station_defaults_to_short_two_chunk_seam_without_hardware(capsys):
+    import json
+    from pathlib import Path
+
+    import yaml
+
+    from yam_abc_reproduce.hil.run import main
+
+    station = yaml.safe_load((Path(__file__).parents[1] / "configs/station_hil.yaml").read_text())
+    assert station["hil"]["smooth_steps"] == 4
+    main(["--mock", "--mode", "inference", "--check"])
+    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "smooth"
+
+
 def test_smooth_window_interpolates_same_target_time_and_not_grippers():
     q = np.zeros(14)
     arbiter = Arbiter(
@@ -155,6 +169,7 @@ def test_smooth_window_interpolates_same_target_time_and_not_grippers():
     arbiter.start(q)
     policy(arbiter, chunk(0, 0.2), observed_at=1, sent_at=1, received_at=1.01)
     policy(arbiter, chunk(1, 0.8), observed_at=1.2, sent_at=1.21, received_at=1.25)
+    assert len(arbiter.action_buffer.chunks) == 1
     for now, joint in ((1.25, 0), (1.35, 0.5), (1.45, 1)):
         decision = arbiter.step(q, q, now=now, dt=0.03, leader_ready=True)
         assert decision.policy_action[0] == pytest.approx(joint)

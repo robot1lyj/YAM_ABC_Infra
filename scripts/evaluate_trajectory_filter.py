@@ -30,6 +30,7 @@ def evaluate(
     acceleration: float,
     frequency: float,
     policy_fusion: str = "recorded",
+    smooth_steps: int = 8,
 ):
     with h5py.File(path, "r") as source:
         times = source["time"][:]
@@ -43,7 +44,7 @@ def evaluate(
         buffer = ActionBuffer(
             1 / 30,
             fusion=policy_fusion,
-            smooth_steps=8,
+            smooth_steps=smooth_steps,
             ensemble_chunks=3,
             ensemble_decay=0.01,
             max_action_age=1.5,
@@ -99,6 +100,7 @@ def evaluate(
         "max_joint_acceleration_rad_s2": acceleration,
         "natural_frequency_rad_s": frequency,
         "policy_fusion": policy_fusion,
+        "smooth_steps": smooth_steps if policy_fusion == "smooth" else None,
         "direction_reversals_over_0_15_rad_s": int(np.sum(reversals)),
         "absolute_joint_velocity_rad_s": percentile(np.abs(velocity)),
         "absolute_joint_acceleration_rad_s2": percentile(np.abs(joint_acceleration)),
@@ -121,6 +123,7 @@ def main():
         default="recorded",
         help="reconstruct policy targets from recorded replies before filtering",
     )
+    parser.add_argument("--smooth-steps", type=int, default=8)
     args = parser.parse_args()
     if any(
         value <= 0 or not np.isfinite(value)
@@ -132,6 +135,8 @@ def main():
         )
     ):
         parser.error("all trajectory parameters must be finite and positive")
+    if not 1 <= args.smooth_steps <= 50:
+        parser.error("smooth-steps must be 1-50")
     print(
         json.dumps(
             evaluate(
@@ -141,6 +146,7 @@ def main():
                 acceleration=args.max_joint_acceleration,
                 frequency=args.natural_frequency,
                 policy_fusion=args.policy_fusion,
+                smooth_steps=args.smooth_steps,
             ),
             indent=2,
         )

@@ -162,16 +162,16 @@ Thor已反馈关节输出是rad绝对目标、夹爪0关/1开，Thor完成反归
 
 ## 非RTC异步推理
 
-当前`configs/station_hil.yaml`默认`policy_fusion: raw`，即本项目的KAI0 `naive_async` 对照：后台单在途请求新块，到达后按观测时刻裁掉过期前缀，以最新有效块替换旧块；手臂和夹爪使用同一块，不做跨块融合。预取时机仍由固定重规划周期和实测延迟预算共同决定。`smooth`和`ensemble`实现保留供显式对照，不是本站默认；`--baseline`则连预取也关闭，保留普通分块基准。切换融合方式不改变Thor模型或50×14绝对动作协议。
+当前`configs/station_hil.yaml`默认`policy_fusion: smooth`、`smooth_steps: 4`：后台单在途请求新块，到达后按观测时刻裁掉过期前缀，仅在新旧两个块的接缝处对前4个30Hz关节目标做旧100%→新100%线性过渡，之后直接执行最新块。这对齐KAI0 `temporal_smooth`的两块交接思路，不是多个块持续temporal ensembling；夹爪始终取新块，不参加关节过渡。`raw`保留KAI0 `naive_async`单块对照，`ensemble`仅供显式对照，`--baseline`连预取也关闭。预取时机仍由固定重规划周期和实测延迟预算共同决定；切换方式不改变Thor模型或50×14绝对动作协议。
 
-高频轨迹整形可用`policy_trajectory_hz`显式开关；`0`保持原30Hz直接路径，本站当前实验配置为100Hz、3rad/s、30rad/s²、临界阻尼10rad/s。它只在策略拥有控制权时启动唯一Follower写线程；进入HOLD、急停、接管、遥操作、维护或重力补偿前先停止并join该线程，再恢复原直接IO，不能并行保留第二个电机写入者。页面控制权会明确显示`Thor 模型 / 100 Hz 轨迹`。离线比较命令为`python scripts/evaluate_trajectory_filter.py <samples.h5> --hz 100 --max-joint-speed 3 --max-joint-acceleration 30 --natural-frequency 10 --policy-fusion raw`。从ensemble切到raw可能增加块边界目标跳变，短集真机验收须重点观察接缝、跟踪误差和夹爪闭合时序；尚不能把离线通过写成真机通过。
+高频轨迹整形可用`policy_trajectory_hz`显式开关；`0`保持原30Hz直接路径，本站当前实验配置为100Hz、3rad/s、30rad/s²、临界阻尼10rad/s。它只在策略拥有控制权时启动唯一Follower写线程；进入HOLD、急停、接管、遥操作、维护或重力补偿前先停止并join该线程，再恢复原直接IO，不能并行保留第二个电机写入者。页面控制权会明确显示`Thor 模型 / 100 Hz 轨迹`。2026-09-16的82秒raw录制离线重放：4步交接使换块后4帧内关节目标最大单帧跳变的95%值从0.373降到0.140rad；8步为0.061rad但对新raw目标的95%最大关节偏差增至0.228rad，故先选4步以减少到位滞后。来源为IPC `session_20260916_164308_bb674f/episode_000001`，只证明目标曲线变化，尚不是真机效果验收。用`python scripts/evaluate_trajectory_filter.py <samples.h5> --policy-fusion smooth --smooth-steps 4`重放滤波目标；短集应重点观察接缝、下降到位和夹爪闭合时序。
 
 推理录制的`segment_*/samples.h5`每行`details`现记录`policy_selection`：同目标时刻`joint_sources`列出融合来源、权重、观测时刻和模型小数索引，`gripper_source`给出实际夹爪来源；`smooth`模式的旧行可能已有融合，不能还原原始关节来源，此时`joint_sources=null`。`bounded_action/bounded_at`是30Hz安全包络后的目标；`policy_write_trace.samples`是两次30Hz读取间100Hz写线程的独立流水，包含目标更新时间、滤波目标和速度、逐臂SDK调用起止、调用后提交目标及序号，`lost`表示64项有界环溢出。`submitted_at`仅是30Hz控制读取快照；所有本机monotonic时间只在同一设备会话内比较，SDK调用返回不代表电机运动完成，必须与后续`measured_state`反馈对齐。以上字段不会改变策略动作，也不是RTC。
 
 离线无设备检查与模拟延迟测试：
 
 ```bash
-uv run --no-sync yam-workstation --mock --mode inference --policy-fusion raw --check
+uv run --no-sync yam-workstation --mock --mode inference --check
 uv run --no-sync pytest -q tests/test_async_inference.py
 CONDAPI_ROOT=/home/wuyan-lyj/condapi uv run --no-sync pytest -q tests/test_condapi_wire.py
 ```

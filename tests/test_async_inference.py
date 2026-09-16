@@ -33,8 +33,8 @@ def test_latency_trim_uses_observation_clock_and_drops_expired_prefix():
     rows = chunk()
     rows[:, 0] = np.arange(50) / 100
     policy(arbiter, rows, observed_at=1.0, sent_at=1.02, received_at=1.36)
-    assert arbiter.action_buffer.chunks[-1].first_index == 3
-    assert len(arbiter.action_buffer.chunks[-1].actions) == 47
+    assert arbiter.action_buffer.chunk.first_index == 3
+    assert len(arbiter.action_buffer.chunk.actions) == 47
     decision = arbiter.step(q, q, now=1.36, dt=0.03, leader_ready=True)
     assert decision.action_index == 3
     assert decision.policy_action[0] == pytest.approx(0.03)
@@ -54,8 +54,7 @@ def test_naive_async_replaces_old_chunk_for_joints_and_grippers():
     token = arbiter.request(2, 1.25, observed_at=1.24)
     assert token is not None
     assert arbiter.accept(token, new, 1.55)
-    assert len(arbiter.action_buffer.chunks) == 1
-    assert arbiter.action_buffer.chunks[0].first_index == 3
+    assert arbiter.action_buffer.chunk.first_index == 3
     decision = arbiter.step(q, q, now=1.55, dt=0.03, leader_ready=True)
     assert decision.policy_action[0] == pytest.approx(0.8)
     assert decision.policy_action[[6, 13]].tolist() == [1.0, 1.0]
@@ -131,7 +130,7 @@ def test_deadline_prefetch_can_override_long_freshness_interval():
     assert arbiter.observed_observation_to_ready_p95 == pytest.approx(0.381, abs=0.01)
     assert arbiter.policy_latency_budget > 0.42
     # The latest observation's old prefix (four 100ms steps) was not executed.
-    assert arbiter.action_buffer.chunks[-1].first_index == 4
+    assert arbiter.action_buffer.chunk.first_index == 4
     assert arbiter.request(4, 2.3, observed_at=2.3) is None
     third = arbiter.request(5, 2.35, observed_at=2.35)
     assert third is not None and arbiter.last_request_reason == "deadline"
@@ -169,7 +168,7 @@ def test_smooth_window_interpolates_same_target_time_and_not_grippers():
     arbiter.start(q)
     policy(arbiter, chunk(0, 0.2), observed_at=1, sent_at=1, received_at=1.01)
     policy(arbiter, chunk(1, 0.8), observed_at=1.2, sent_at=1.21, received_at=1.25)
-    assert len(arbiter.action_buffer.chunks) == 1
+    assert arbiter.action_buffer.chunk is not None
     for now, joint in ((1.25, 0), (1.35, 0.5), (1.45, 1)):
         decision = arbiter.step(q, q, now=now, dt=0.03, leader_ready=True)
         assert decision.policy_action[0] == pytest.approx(joint)
@@ -250,66 +249,9 @@ def test_kai0_single_step_overlap_keeps_old_joint_but_latest_gripper():
     assert decision.policy_action[6] == pytest.approx(0.8)
 
 
-def test_ensemble_fuses_same_target_time_and_keeps_oldest_valid_gripper_plan():
-    q = np.zeros(14)
-    arbiter = Arbiter(
-        Mode.INFERENCE, streaming=True, action_dt=0.1,
-        policy_fusion="ensemble", ensemble_chunks=2, ensemble_decay=0.5,
-        max_action_age=3,
-    )
-    arbiter.start(q)
-    policy(arbiter, chunk(0, 0.1), observed_at=1, sent_at=1, received_at=1.01)
-    policy(arbiter, chunk(2, 0.9), observed_at=1.2, sent_at=1.21, received_at=1.25)
-    decision = arbiter.step(q, q, now=1.35, dt=0.03, leader_ready=True)
-    expected = 2 * np.exp(-0.5) / (1 + np.exp(-0.5))
-    assert decision.action_index == 1
-    assert decision.policy_action[0] == pytest.approx(expected)
-    assert decision.policy_action[6] == pytest.approx(0.1)
-    selection = decision.policy_selection
-    assert selection["target_at"] == pytest.approx(1.3)
-    assert [s["observed_at"] for s in selection["joint_sources"]] == [1.2, 1]
-    assert [s["model_index"] for s in selection["joint_sources"]] == pytest.approx([1, 3])
-    assert sum(s["weight"] for s in selection["joint_sources"]) == pytest.approx(1)
-    assert selection["gripper_source"]["observed_at"] == 1
-
-    policy(arbiter, chunk(3, 0.7), observed_at=1.44, sent_at=1.45, received_at=1.46)
-    decision = arbiter.step(q, q, now=1.46, dt=0.03, leader_ready=True)
-    expected = np.average([2, 3], weights=[1, np.exp(-0.5)])
-    assert decision.policy_action[0] == pytest.approx(expected)
-    assert decision.policy_action[6] == pytest.approx(0.9)
-    assert decision.policy_selection["gripper_source"]["observed_at"] == 1.2
-
-
-def test_kai0_oldest_first_weights_three_matching_joint_predictions():
-    q = np.zeros(14)
-    arbiter = Arbiter(
-        Mode.INFERENCE, streaming=True, action_dt=0.1,
-        policy_fusion="ensemble", ensemble_chunks=3,
-        ensemble_decay=0.5, max_action_age=3,
-    )
-    arbiter.start(q)
-    for joint, grip, origin in ((0, 0.1, 1), (1, 0.4, 1.2), (2, 0.9, 1.4)):
-        policy(arbiter, chunk(joint, grip), observed_at=origin,
-               sent_at=origin + 0.01, received_at=origin + 0.02)
-    decision = arbiter.step(q, q, now=1.52, dt=0.03, leader_ready=True)
-    weights = np.exp(-0.5 * np.arange(3))
-    expected = np.average([0, 1, 2], weights=weights)
-    assert decision.policy_action[0] == pytest.approx(expected)
-    assert decision.policy_action[6] == pytest.approx(0.1)
-
-
-def test_ensemble_does_not_reuse_an_expired_older_prediction():
-    q = np.zeros(14)
-    arbiter = Arbiter(
-        Mode.INFERENCE, streaming=True, action_dt=0.1,
-        policy_fusion="ensemble", ensemble_chunks=2,
-        max_action_age=0.35,
-    )
-    arbiter.start(q)
-    policy(arbiter, chunk(0), observed_at=1, sent_at=1, received_at=1.01)
-    policy(arbiter, chunk(2), observed_at=1.3, sent_at=1.31, received_at=1.32)
-    decision = arbiter.step(q, q, now=1.41, dt=0.03, leader_ready=True)
-    assert decision.policy_action[0] == pytest.approx(2)
+def test_retired_multi_chunk_mode_is_rejected():
+    with pytest.raises(ValueError, match="raw or smooth"):
+        Arbiter(Mode.INFERENCE, streaming=True, policy_fusion="ensemble")
 
 
 def test_slow_thor_does_not_block_control_or_queue_intermediate_observations():

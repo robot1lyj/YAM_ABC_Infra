@@ -8,7 +8,7 @@ time. No previously executed prefix or held last action is replayed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import exp, floor
+from math import floor
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -33,14 +33,7 @@ class TimedChunk:
 
 
 class ActionBuffer:
-    """Small, bounded history of chunks with observation-clock alignment.
-
-    ``raw`` and ``smooth`` execute the newest chunk. ``ensemble`` combines up
-    to ``ensemble_chunks`` recent predictions for a matching target time.
-    Grippers are never averaged. In ensemble mode they use the oldest still
-    valid prediction for the same target time, so rolling replans cannot keep
-    postponing a close/open transition into the tail of every new chunk.
-    """
+    """One current chunk, optionally smoothed against the previous chunk at handoff."""
 
     def __init__(
         self,
@@ -48,33 +41,25 @@ class ActionBuffer:
         *,
         fusion: str = "raw",
         smooth_steps: int = 8,
-        ensemble_chunks: int = 3,
-        ensemble_decay: float = 0.01,
         max_action_age: float = 1.0,
     ):
-        if fusion not in ("raw", "smooth", "ensemble"):
-            raise ValueError("policy fusion must be raw, smooth or ensemble")
+        if fusion not in ("raw", "smooth"):
+            raise ValueError("policy fusion must be raw or smooth")
         if not isinstance(smooth_steps, int) or not 1 <= smooth_steps <= 50:
             raise ValueError("smooth_steps must be 1-50")
-        if not isinstance(ensemble_chunks, int) or not 2 <= ensemble_chunks <= 5:
-            raise ValueError("ensemble_chunks must be 2-5")
-        if not np.isfinite(ensemble_decay) or ensemble_decay <= 0:
-            raise ValueError("ensemble_decay must be finite and positive")
         if not np.isfinite(max_action_age) or max_action_age <= 0:
             raise ValueError("max_action_age must be finite and positive")
         self.action_dt = action_dt
         self.fusion = fusion
         self.smooth_steps = smooth_steps
-        self.ensemble_chunks = ensemble_chunks
-        self.ensemble_decay = ensemble_decay
         self.max_action_age = max_action_age
-        self.chunks: list[TimedChunk] = []
+        self.chunk: TimedChunk | None = None
         self.last_trimmed_steps: int | None = None
         self.last_seam_max_rad: float | None = None
         self.last_selection: dict | None = None
 
     def clear(self):
-        self.chunks.clear()
+        self.chunk = None
         self.last_trimmed_steps = None
         self.last_seam_max_rad = None
         self.last_selection = None
@@ -116,15 +101,15 @@ class ActionBuffer:
         rows = actions[first:].copy()
         self.last_trimmed_steps = first
         self.last_seam_max_rad = None
-        if self.chunks and now - self.chunks[-1].origin <= self.max_action_age:
-            old = self.chunks[-1]
+        if self.chunk is not None and now - self.chunk.origin <= self.max_action_age:
+            old = self.chunk
             seam_prior = self._at_target(old, origin + first * self.action_dt)
             if seam_prior is not None:
                 self.last_seam_max_rad = float(
                     np.max(np.abs(actions[first, list(JOINTS)] - seam_prior[list(JOINTS)]))
                 )
-        if self.fusion == "smooth" and self.chunks and now - self.chunks[-1].origin <= self.max_action_age:
-            old = self.chunks[-1]
+        if self.fusion == "smooth" and self.chunk is not None and now - self.chunk.origin <= self.max_action_age:
+            old = self.chunk
             matched = 0
             for index in range(first, min(len(actions), first + self.smooth_steps)):
                 prior = self._at_target(old, origin + index * self.action_dt)
@@ -139,84 +124,43 @@ class ActionBuffer:
                 rows[offset] = old_weight * prior + (1.0 - old_weight) * rows[offset]
                 rows[offset, list(GRIPPERS)] = actions[index, list(GRIPPERS)]
                 matched += 1
-        chunk = TimedChunk(token, origin, first, rows)
-        if self.fusion == "ensemble":
-            self.chunks.append(chunk)
-            del self.chunks[:-self.ensemble_chunks]
-        else:
-            self.chunks = [chunk]
+        self.chunk = TimedChunk(token, origin, first, rows)
         return True
 
     def current(self, now: float) -> tuple[np.ndarray, int, Request] | None:
         self.last_selection = None
-        if not self.chunks:
+        if self.chunk is None:
             return None
-        newest = self.chunks[-1]
+        newest = self.chunk
         index = self._index_at(newest, now)
         if index < newest.first_index or index >= newest.first_index + len(newest.actions):
             return None
         action = newest.actions[index - newest.first_index].copy()
-        sources = [newest]
-        weights = [1.0]
-        gripper = newest
-        if self.fusion == "ensemble":
-            target = newest.target(index, self.action_dt)
-            candidates = [action]
-            for older in reversed(self.chunks[:-1]):
-                if now - older.origin > self.max_action_age:
-                    continue
-                prior = self._at_target(older, target)
-                if prior is not None:
-                    candidates.append(prior)
-                    sources.append(older)
-            if len(candidates) > 1:
-                # Kai0 ACT-style aggregation gives the oldest matching prediction
-                # weight 1 and exponentially discounts newer joint predictions.
-                # candidates are stored newest-first here.
-                weights = [
-                    exp(-self.ensemble_decay * (len(candidates) - 1 - rank))
-                    for rank in range(len(candidates))
-                ]
-                action[list(JOINTS)] = np.average(
-                    np.stack([row[list(JOINTS)] for row in candidates]),
-                    axis=0,
-                    weights=weights,
-                )
-                # ``candidates`` is newest-first.  Keep the oldest prediction
-                # that still covers this exact target time for the two
-                # continuous gripper dimensions.  This is deliberately not a
-                # threshold and not an average: native YAM/ABC use [0,1]
-                # continuous targets, while the stable older plan prevents a
-                # tail transition being shifted forever by frequent replans.
-                action[list(GRIPPERS)] = candidates[-1][list(GRIPPERS)]
-                gripper = sources[-1]
         target_at = newest.target(index, self.action_dt)
-        total_weight = sum(weights)
         self.last_selection = {
             "fusion": self.fusion,
             "target_at": target_at,
             # Smooth mode has already blended rows during integrate; the old
             # chunk may itself be smoothed, so it has no simple raw provenance.
             "joint_sources": None if self.fusion == "smooth" else [
-                {"epoch": chunk.token.epoch, "request_id": chunk.token.request_id,
-                 "observed_at": chunk.origin,
-                 "model_index": (target_at - chunk.origin) / self.action_dt,
-                 "weight": weight / total_weight}
-                for chunk, weight in zip(sources, weights, strict=True)
+                {"epoch": newest.token.epoch, "request_id": newest.token.request_id,
+                 "observed_at": newest.origin,
+                 "model_index": (target_at - newest.origin) / self.action_dt,
+                 "weight": 1.0}
             ],
             "gripper_source": {
-                "epoch": gripper.token.epoch,
-                "request_id": gripper.token.request_id,
-                "observed_at": gripper.origin,
-                "model_index": (target_at - gripper.origin) / self.action_dt,
+                "epoch": newest.token.epoch,
+                "request_id": newest.token.request_id,
+                "observed_at": newest.origin,
+                "model_index": (target_at - newest.origin) / self.action_dt,
             },
         }
         return action, index, newest.token
 
     def remaining(self, now: float) -> int:
-        if not self.chunks:
+        if self.chunk is None:
             return 0
-        newest = self.chunks[-1]
+        newest = self.chunk
         return max(
             0,
             newest.first_index + len(newest.actions)
@@ -225,9 +169,9 @@ class ActionBuffer:
 
     def seconds_to_expiry(self, now: float) -> float:
         """Usable horizon, limited by both H50 and the existing action-age guard."""
-        if not self.chunks:
+        if self.chunk is None:
             return 0.0
-        newest = self.chunks[-1]
+        newest = self.chunk
         index = self._index_at(newest, now)
         if index < newest.first_index or index >= newest.first_index + len(newest.actions):
             return 0.0

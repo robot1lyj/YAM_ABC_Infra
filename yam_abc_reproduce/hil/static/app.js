@@ -273,7 +273,7 @@ function render() {
                 : state.source === "human"
                   ? "Leader 遥操作"
                   : state.policy_trajectory_active
-                    ? `Thor 模型 / ${state.policy_trajectory_hz} Hz ${state.policy_trajectory_mode === "linear" ? "线性插值（旧进程）" : "二阶轨迹"}`
+                    ? `Thor 模型 / ${state.policy_trajectory_hz} Hz 二阶轨迹`
                     : "Thor 模型"),
   );
   $("record").disabled = !(

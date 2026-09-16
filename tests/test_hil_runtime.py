@@ -127,7 +127,7 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
     try:
         for c in cameras:
             c.start()
-        run = Runtime(io, cameras, worker, rec, settings={"policy_fusion": "ensemble"})
+        run = Runtime(io, cameras, worker, rec, settings={"policy_fusion": "raw"})
         run.event("success")
         assert run.outcome == "unknown"  # consumed in the control owner
         result = run.run(duration=2.5, auto_start=True, demo=True)

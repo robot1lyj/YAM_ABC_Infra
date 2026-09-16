@@ -124,8 +124,6 @@ class Runtime:
                 prefetch_margin=settings.get("prefetch_margin", 2 / 30),
                 policy_fusion=settings.get("policy_fusion", "raw"),
                 smooth_steps=settings.get("smooth_steps", 8),
-                ensemble_chunks=settings.get("ensemble_chunks", 3),
-                ensemble_decay=settings.get("ensemble_decay", 0.01),
             ),
             worker,
         )
@@ -758,12 +756,10 @@ def main(argv=None, *, service=None):
     p.add_argument("--baseline", action="store_true", help="ordinary non-prefetch baseline")
     p.add_argument(
         "--policy-fusion",
-        choices=("raw", "smooth", "ensemble"),
+        choices=("raw", "smooth"),
         help="non-RTC timestamped chunk fusion; default comes from station config",
     )
     p.add_argument("--smooth-steps", type=int, help="short matching-time smoothing window (1-50)")
-    p.add_argument("--ensemble-chunks", type=int, help="recent matching-time chunks (2-5)")
-    p.add_argument("--ensemble-decay", type=float, help="newest-first exponential weight decay")
     p.add_argument("--action-dt", type=float, help="model action target spacing in seconds")
     p.add_argument(
         "--expected-policy-latency", type=float, help="initial total Thor RPC estimate in seconds"
@@ -846,8 +842,6 @@ def main(argv=None, *, service=None):
     for key, option in (
         ("policy_fusion", args.policy_fusion),
         ("smooth_steps", args.smooth_steps),
-        ("ensemble_chunks", args.ensemble_chunks),
-        ("ensemble_decay", args.ensemble_decay),
         ("expected_policy_latency", args.expected_policy_latency),
         ("prefetch_margin", args.prefetch_margin),
     ):
@@ -869,8 +863,6 @@ def main(argv=None, *, service=None):
             action_dt,
             fusion=hil_cfg.get("policy_fusion", "raw"),
             smooth_steps=hil_cfg.get("smooth_steps", 8),
-            ensemble_chunks=hil_cfg.get("ensemble_chunks", 3),
-            ensemble_decay=hil_cfg.get("ensemble_decay", 0.01),
         )
     except ValueError as exc:
         p.error(str(exc))
@@ -928,8 +920,6 @@ def main(argv=None, *, service=None):
             "action_dt": action_dt,
             "policy_fusion": hil_cfg.get("policy_fusion", "raw"),
             "smooth_steps": hil_cfg.get("smooth_steps", 8),
-            "ensemble_chunks": hil_cfg.get("ensemble_chunks", 3),
-            "ensemble_decay": hil_cfg.get("ensemble_decay", 0.01),
             "expected_policy_latency": hil_cfg.get("expected_policy_latency", 0.2),
             "prefetch_margin": hil_cfg.get("prefetch_margin", 2 / 30),
         },

@@ -163,9 +163,9 @@ Thor已反馈关节输出是rad绝对目标、夹爪0关/1开，Thor完成反归
 
 ## 非RTC异步推理
 
-页面在模型执行时用设备进程状态区分`100 Hz 二阶轨迹`与`100 Hz 线性插值（旧进程）`；不能由浏览器缓存或磁盘文件推断运行算法。
+页面在模型执行时显示设备进程报告的100Hz策略轨迹状态；不能由浏览器缓存或磁盘文件推断运行算法。实验性纯线性轨迹已删除，历史失败证据保留在[验收](acceptance.md#2026-09-16-线性插值推理短测与回退)。
 
-当前`configs/station_hil.yaml`默认`policy_fusion: smooth`、`smooth_steps: 4`：后台单在途请求新块，到达后按观测时刻裁掉过期前缀，仅在新旧两个块的接缝处对前4个30Hz关节目标做旧100%→新100%线性过渡，之后直接执行最新块。这对齐KAI0 `temporal_smooth`的两块交接思路，不是多个块持续temporal ensembling；夹爪始终取新块，不参加关节过渡。`raw`保留KAI0 `naive_async`单块对照，`ensemble`仅供显式对照，`--baseline`连预取也关闭。预取时机仍由固定重规划周期和实测延迟预算共同决定；切换方式不改变Thor模型或50×14绝对动作协议。
+当前`configs/station_hil.yaml`默认`policy_fusion: smooth`、`smooth_steps: 4`：后台单在途请求新块，到达后按观测时刻裁掉过期前缀，仅在新旧两个块的接缝处对前4个30Hz关节目标做旧100%→新100%线性过渡，之后直接执行最新块。这参考KAI0 `temporal_smooth`的两块交接思路，不是多个块持续融合；夹爪始终取新块，不参加关节过渡。`raw`保留KAI0 `naive_async`单块对照；`--baseline`连预取也关闭。历史多块`ensemble`已退役。预取时机仍由固定重规划周期和实测延迟预算共同决定；切换方式不改变Thor模型或50×14绝对动作协议。
 
 实现并不逐项复制KAI0的ARX示例：其`temporal_smooth`用已消费步数裁新块前缀（最多`latency_k=8`），把旧块剩余段与新块整个重叠段从旧100%线性混到新100%，旧段不足时复制尾值补到`min_smooth_steps=10`；14D（含夹爪）一起混合，并在发布前按ARX夹爪量纲做二值化。本机按观测时间戳和`action_dt`裁过期前缀，只融合相同物理目标时刻的短窗口关节动作，夹爪取最新块且按YAM的[0,1]合同限幅。这些差异意味着相同的“4步/10步”数字不代表同一种动作轨迹，也不能证明KAI0窗口在YAM上更好。
 
@@ -196,7 +196,7 @@ uv run --no-sync yam-workstation --station configs/station_hil.yaml \
   --web-port 8766 --web-host 192.168.110.140
 ```
 
-获准并验证raw后，可改`--policy-fusion smooth --smooth-steps 6`，或`--policy-fusion ensemble --ensemble-chunks 3 --ensemble-decay 0.01`做运动对照。3588以`configs/station_hil.yaml`的`action_dt`或命令行`--action-dt 0.03333333333333333`配置动作间隔，固定认为动作第0步对应本机observation参考时刻；这是动作时间轴，不是触发下一次推理的时间偏移。换模型时如动作间隔/单位不同，先更新配置并做无电机回放，不要求模型名称或指纹匹配。请求超过`request_timeout`、缓冲耗尽或动作超过`action_timeout`会保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。
+获准并验证raw后，可改`--policy-fusion smooth --smooth-steps 6`做接缝对照。3588以`configs/station_hil.yaml`的`action_dt`或命令行`--action-dt 0.03333333333333333`配置动作间隔，固定认为动作第0步对应本机observation参考时刻；这是动作时间轴，不是触发下一次推理的时间偏移。换模型时如动作间隔/单位不同，先更新配置并做无电机回放，不要求模型名称或指纹匹配。请求超过`request_timeout`、缓冲耗尽或动作超过`action_timeout`会保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。
 
 正常重规划间隔为333ms，即约执行10个30Hz动作后取最新观测发起下一次请求；若缓冲剩余时间已接近“最近16个有效回复的观测参考时刻→动作可用p95（初始0.2s）+67ms余量”，会动态提前。单在途期间不排队旧观测。状态接口同时报告缓冲秒数、请求RTT、端到端观测延迟、动作索引、裁掉步数、块边界原始差值和3rad/s反馈相对目标包络是否正在介入。
 

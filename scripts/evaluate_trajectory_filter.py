@@ -45,8 +45,6 @@ def evaluate(
             1 / 30,
             fusion=policy_fusion,
             smooth_steps=smooth_steps,
-            ensemble_chunks=3,
-            ensemble_decay=0.01,
             max_action_age=1.5,
         )
         reconstructed = []
@@ -119,7 +117,7 @@ def main():
     parser.add_argument("--natural-frequency", type=float, default=10.0)
     parser.add_argument(
         "--policy-fusion",
-        choices=("recorded", "raw", "smooth", "ensemble"),
+        choices=("recorded", "raw", "smooth"),
         default="recorded",
         help="reconstruct policy targets from recorded replies before filtering",
     )

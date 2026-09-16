@@ -560,8 +560,6 @@ class Workbench:
         for option, value in (
             ("--policy-fusion", getattr(self.args, "policy_fusion", None)),
             ("--smooth-steps", getattr(self.args, "smooth_steps", None)),
-            ("--ensemble-chunks", getattr(self.args, "ensemble_chunks", None)),
-            ("--ensemble-decay", getattr(self.args, "ensemble_decay", None)),
             ("--action-dt", getattr(self.args, "action_dt", None)),
             ("--expected-policy-latency", getattr(self.args, "expected_policy_latency", None)),
             ("--prefetch-margin", getattr(self.args, "prefetch_margin", None)),

@@ -96,8 +96,6 @@ class Arbiter:
         tick_timeout: float = 0.1,
         policy_fusion: str = "raw",
         smooth_steps: int = 8,
-        ensemble_chunks: int = 3,
-        ensemble_decay: float = 0.01,
         expected_policy_latency: float = 0.2,
         prefetch_margin: float = 2 / 30,
     ):
@@ -148,8 +146,6 @@ class Arbiter:
             action_dt,
             fusion=policy_fusion if streaming else "raw",
             smooth_steps=smooth_steps,
-            ensemble_chunks=ensemble_chunks,
-            ensemble_decay=ensemble_decay,
             max_action_age=max_action_age,
         )
         self.mode = Mode(mode)
@@ -358,7 +354,7 @@ class Arbiter:
                     selected[dim] = target
             self._previous_grip = vector(leader)[[6, 13]]
         elif self.phase in (Phase.RESUME, Phase.POLICY) and (
-            self.action_buffer.chunks if self.streaming else self._chunk is not None
+            (self.action_buffer.chunk is not None) if self.streaming else (self._chunk is not None)
         ):
             current = self.action_buffer.current(now) if self.streaming else None
             if self.streaming and current is None:

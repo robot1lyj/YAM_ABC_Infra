@@ -75,6 +75,14 @@ class DeviceClient:
     def event(self, event):
         return self._request("POST", f"/event/{quote(event, safe=':')}")
 
+    def configure_policy(self, *, fusion, smooth_steps):
+        return self._request(
+            "POST", "/policy/settings", {"fusion": fusion, "smooth_steps": smooth_steps}
+        )
+
+    def restart_policy(self):
+        return self._request("POST", "/policy/restart")
+
     def heartbeat(self):
         return self._request("POST", "/heartbeat")
 

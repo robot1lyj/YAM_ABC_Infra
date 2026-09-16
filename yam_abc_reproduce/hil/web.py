@@ -3,6 +3,7 @@
 import queue
 import threading
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -42,6 +43,12 @@ class InitializationComplete(BaseModel):
     model_config = ConfigDict(extra="forbid")
     gravity_checked: bool
     leader_checked: bool
+
+
+class PolicySettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    fusion: Literal["raw", "smooth"]
+    smooth_steps: int = Field(strict=True, ge=1, le=12)
 
 
 def create_app(runtime):
@@ -94,6 +101,16 @@ def create_app(runtime):
         if hasattr(runtime, "heartbeat"):
             runtime.heartbeat()
         return {"ok": True}
+
+    @app.post("/policy/settings")
+    def policy_settings(body: PolicySettings):
+        invoke(runtime.configure_policy, **body.model_dump())
+        return {"queued": "policy_settings"}
+
+    @app.post("/policy/restart")
+    def policy_restart():
+        invoke(runtime.restart_policy)
+        return {"queued": "policy_restart"}
 
     @app.post("/tasks")
     def create_task(body: TaskCreate):

@@ -13,6 +13,8 @@ class FakeDeviceOwner:
         self.args = SimpleNamespace(web_host="127.0.0.1", web_allowed_host=[])
         self.events = []
         self.heartbeats = 0
+        self.policy_settings = []
+        self.policy_restarts = 0
 
     @property
     def status(self):
@@ -23,6 +25,12 @@ class FakeDeviceOwner:
 
     def heartbeat(self):
         self.heartbeats += 1
+
+    def configure_policy(self, **settings):
+        self.policy_settings.append(settings)
+
+    def restart_policy(self):
+        self.policy_restarts += 1
 
     def preview(self, role):
         return b"jpeg" if role == "top" else None
@@ -55,6 +63,10 @@ def test_unix_proxy_restart_holds_without_closing_device_owner(tmp_path):
         assert second_web.preview("top") == b"jpeg"
         second_web.heartbeat()
         assert owner.heartbeats == 1
+        second_web.configure_policy(fusion="smooth", smooth_steps=4)
+        second_web.restart_policy()
+        assert owner.policy_settings == [{"fusion": "smooth", "smooth_steps": 4}]
+        assert owner.policy_restarts == 1
     finally:
         server.should_exit = True
         thread.join(timeout=3)

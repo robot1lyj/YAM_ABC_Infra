@@ -11,6 +11,7 @@ Environment=PYTHONUNBUFFERED=1
 # bridge/encoder threads and their FFmpeg children move to the efficiency cores.
 Environment=YAM_ABC_RECORDING_CPUS=0,1,2,3
 Environment=YAM_ABC_ENCODER_CPUS=0,1,2,3
+Environment=YAM_ABC_POLICY_CPUS=0,1,2,3
 # The device owner keeps the previously validated A76 mask.  Web/API work is
 # isolated onto cores 0-3 by yam-workstation.service.
 CPUAffinity=4 5 6 7

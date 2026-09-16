@@ -685,6 +685,18 @@ class Workbench:
             raise ValueError("操作台心跳已断开")
         self.runtime.request_jog(arm, joint, delta)
 
+    def configure_policy(self, *, fusion, smooth_steps):
+        if self.runtime is None or self.state != "connected" or self.initializing:
+            raise ValueError("请先连接设备并退出初始化向导")
+        self.runtime.configure_policy(fusion=fusion, smooth_steps=smooth_steps)
+        self.log(f"推理接缝设置已提交：{fusion} / {smooth_steps} 步")
+
+    def restart_policy(self):
+        if self.runtime is None or self.state != "connected" or self.initializing:
+            raise ValueError("请先连接设备并退出初始化向导")
+        self.runtime.restart_policy()
+        self.log("已请求重载推理通信子进程；机械臂保持连接")
+
     def disconnect(self, *, supported=False):
         if not self.args.mock and supported is not True:
             raise ValueError("断开可能结束力矩控制；请先支撑四台机械臂")

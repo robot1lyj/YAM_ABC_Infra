@@ -36,12 +36,19 @@ class PolicyWorker:
         self._replies = queue.Queue(maxsize=1)
         self._busy = threading.Event()
         self._stop = threading.Event()
+        self._restart = threading.Event()
+        self._ready = threading.Event()
+        self.restart_error = None
+        if hasattr(client, "restart"):
+            self._restart.set()
+        else:
+            self._ready.set()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def submit(self, token: Request, observation: dict[str, Any]) -> bool:
         # Called only by the single control owner; snapshots must be immutable.
-        if self._busy.is_set() or self._stop.is_set():
+        if self._busy.is_set() or self._stop.is_set() or not self._ready.is_set():
             return False
         self._busy.set()
         self._requests.put_nowait((token, observation))
@@ -55,9 +62,28 @@ class PolicyWorker:
         self._busy.clear()
         return reply
 
+    def request_restart(self):
+        """Restart the network owner off the control thread; old tokens remain epoch-checked."""
+        if not hasattr(self.client, "restart"):
+            raise ValueError("policy client does not support independent restart")
+        self._ready.clear()
+        self._restart.set()
+
+    @property
+    def ready(self):
+        return self._ready.is_set()
+
     def _run(self):
         try:
             while not self._stop.is_set():
+                if self._restart.is_set():
+                    self._restart.clear()
+                    try:
+                        self.client.restart()
+                        self.restart_error = None
+                        self._ready.set()
+                    except Exception as exc:
+                        self.restart_error = str(exc)
                 try:
                     token, observation = self._requests.get(timeout=0.05)
                 except queue.Empty:

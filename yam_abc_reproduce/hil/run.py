@@ -35,7 +35,8 @@ from .jog import Jog
 from .maintenance import Maintenance
 from .metrics import Latencies
 from .observation import Observations
-from .policy import PlainPolicyClient, PolicyWorker
+from .policy import PolicyWorker
+from .policy_process import ProcessPolicyClient
 from .recording import RecordingSession
 from .recording_service import RemoteRecordingSession
 from .session import Session
@@ -77,25 +78,6 @@ def prepare_station_can(cfg) -> str:
             + ". Check the USB-CAN adapters or use the explicit Reset CAN recovery action."
         )
     return "CAN ready without reset: " + ", ".join(needed)
-
-
-class LocalEdgePolicy:
-    def __init__(self, url, timeout=1.5):
-        self.url, self.client = url, None
-        self.timeout = timeout
-
-    def infer(self, obs):
-        if self.client is None:
-            self.client = PlainPolicyClient(self.url, timeout=self.timeout)
-        return self.client.infer(obs)
-
-    @property
-    def last_timing(self):
-        return None if self.client is None else self.client.last_timing
-
-    def close(self):
-        if self.client:
-            self.client.close()
 
 
 class Runtime:
@@ -148,6 +130,7 @@ class Runtime:
             worker,
         )
         self.events = queue.Queue(maxsize=16)
+        self.policy_commands = queue.Queue(maxsize=4)
         self.takeovers = queue.Queue(maxsize=1)
         self.intervention_id = 0
         self.stopping = threading.Event()
@@ -270,6 +253,20 @@ class Runtime:
             raise ValueError("录制或紧急暂停时不可点动")
         self.jog.request(arm, joint, delta)
 
+    def configure_policy(self, *, fusion: str, smooth_steps: int):
+        if fusion not in ("raw", "smooth") or type(smooth_steps) is not int or not 1 <= smooth_steps <= 12:
+            raise ValueError("推理接缝模式需为 raw/smooth，步数需为 1–12")
+        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
+            raise ValueError("请先暂停模型并结束本集录制")
+        self.policy_commands.put_nowait(("configure", fusion, smooth_steps))
+
+    def restart_policy(self):
+        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
+            raise ValueError("请先暂停模型并结束本集录制")
+        if self.worker is None or not hasattr(self.worker.client, "restart"):
+            raise ValueError("当前策略不支持独立重载")
+        self.policy_commands.put_nowait(("restart",))
+
     def run(self, *, duration=None, auto_start=False, demo=False):
         period = 1 / self.hz
         start = last = deadline = time.monotonic()
@@ -300,6 +297,22 @@ class Runtime:
                 except queue.Empty:
                     event, requested_at = None, None
                 a = self.session.arbiter
+                try:
+                    policy_command = self.policy_commands.get_nowait()
+                except queue.Empty:
+                    policy_command = None
+                if policy_command is not None:
+                    if a.phase != Phase.HOLD or getattr(self.recorder, "recording", False):
+                        self.operator_error = "推理设置未应用：设备已离开保持状态"
+                    else:
+                        a._transition(Phase.HOLD, q)  # Invalidate any old policy reply.
+                        if policy_command[0] == "configure":
+                            a.action_buffer.fusion = policy_command[1]
+                            a.action_buffer.smooth_steps = policy_command[2]
+                            self.operator_error = None
+                        else:
+                            self.worker.request_restart()
+                            self.operator_error = None
                 button_event = self.handle_buttons.read(
                     buttons, now=now, mode=a.mode, phase=a.phase
                 )
@@ -629,6 +642,11 @@ class Runtime:
                     "phase": a.phase.value,
                     "source": decision.source,
                     "policy_fusion": a.action_buffer.fusion,
+                    "policy_ready": self.worker.ready if self.worker else False,
+                    "policy_restart_error": self.worker.restart_error if self.worker else None,
+                    "policy_smooth_steps": a.action_buffer.smooth_steps,
+                    "policy_joint_speed_rad_s": a.max_joint_speed,
+                    "policy_replan_period_s": a.replan_period,
                     "policy_buffer_remaining": a.action_buffer.remaining(now),
                     "policy_buffer_seconds": a.action_buffer.seconds_to_expiry(now),
                     "policy_observed_rtt_p95_s": a.observed_policy_rtt_p95,
@@ -950,7 +968,7 @@ def main(argv=None, *, service=None):
         client = (
             MockPolicy()
             if args.mock
-            else LocalEdgePolicy(args.url, timeout=hil_cfg.get("request_timeout", 1.5))
+            else ProcessPolicyClient(args.url, timeout=hil_cfg.get("request_timeout", 1.5))
             if args.url
             else None
         )

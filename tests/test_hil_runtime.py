@@ -160,6 +160,36 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
             rec.close("aborted")
 
 
+def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path):
+    cfg = StationConfig()
+    io = StationIO(build_arm_units(cfg, mock=True), mock=True)
+    recorder = Recorder(tmp_path / "policy-settings")
+    worker = PolicyWorker(MockPolicy())
+    cameras = [CameraWorker(MockCamera(role, role, width=32, height=32))
+               for role in ("top", "left", "right")]
+    runtime = Runtime(io, cameras, worker, recorder, mode="inference", settings={"policy_fusion": "raw"})
+    try:
+        for camera in cameras:
+            camera.start()
+        old_epoch = runtime.session.arbiter.epoch
+        runtime.configure_policy(fusion="smooth", smooth_steps=4)
+        with pytest.raises(ValueError, match="1–12"):
+            runtime.configure_policy(fusion="smooth", smooth_steps=0)
+        result = runtime.run(duration=0.15)
+        assert result["policy_fusion"] == "smooth"
+        assert result["policy_smooth_steps"] == 4
+        assert runtime.session.arbiter.epoch > old_epoch
+        runtime.status["phase"] = "policy"
+        with pytest.raises(ValueError, match="暂停"):
+            runtime.configure_policy(fusion="raw", smooth_steps=4)
+    finally:
+        for camera in cameras:
+            camera.stop()
+        worker.close()
+        io.close()
+        recorder.close("aborted")
+
+
 def test_policy_trajectory_has_one_writer_and_stops_before_hold_direct_io():
     cfg = StationConfig()
     io = StationIO(

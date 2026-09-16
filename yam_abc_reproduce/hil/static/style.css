@@ -661,6 +661,17 @@ main {
 .control-panel {
   padding: 0 16px 14px;
 }
+.policy-panel { padding: 0 16px 12px; }
+.policy-panel .panel-heading { padding: 12px 0 9px; }
+.policy-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.policy-metrics > div { background: #f5f6f8; border-radius: 8px; padding: 8px 10px; }
+.policy-metrics span { display: block; color: #606066; font-size: 11px; }
+.policy-metrics strong { display: block; margin-top: 3px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.policy-settings { display: grid; grid-template-columns: 1fr 76px auto; align-items: end; gap: 7px; margin-top: 10px; }
+.policy-settings label { color: #606066; font-size: 11px; }
+.policy-settings select, .policy-settings input { width: 100%; height: 34px; margin-top: 4px; padding: 4px 7px; border: 1px solid #dcdce2; border-radius: 6px; background: white; color: #202027; }
+.policy-settings .button { height: 34px; padding: 0 12px; }
+.policy-restart { margin-top: 7px; font-size: 12px; }
 .control-panel .panel-heading {
   padding: 16px 0;
 }

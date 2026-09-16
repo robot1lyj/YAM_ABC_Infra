@@ -91,7 +91,8 @@ function render() {
       !state.recording_error,
     canRun =
       connected && !state.initializing && !latched &&
-      (mode === "teleop" || (collectionReady && !state.recording_error)),
+      (mode === "teleop" || (collectionReady && !state.recording_error &&
+        (!["inference", "hil"].includes(mode) || state.policy_ready))),
     canRecord =
       connected &&
       !state.initializing &&
@@ -165,6 +166,19 @@ function render() {
   });
   $("workspace-page").classList.toggle("teleop-view", teleopView);
   $("recording-controls").hidden = teleopView || mode !== "collect";
+  $("policy-panel").hidden = !["inference", "hil"].includes(mode);
+  text("policy-mode", state.policy_fusion === "smooth" ? "两块过渡" : "原始异步");
+  text("policy-rtt", state.policy_observed_rtt_p95_s == null ? "—" : `${Math.round(state.policy_observed_rtt_p95_s * 1000)} ms`);
+  text("policy-buffer", state.policy_buffer_seconds == null ? "—" : `${Math.max(0, state.policy_buffer_seconds).toFixed(2)} s`);
+  text("policy-trim", state.policy_trimmed_steps == null ? "—" : `${state.policy_trimmed_steps} 步`);
+  text("policy-speed", state.policy_joint_speed_rad_s == null ? "—" : `${state.policy_joint_speed_rad_s.toFixed(1)} rad/s`);
+  if (document.activeElement !== $("policy-fusion")) $("policy-fusion").value = state.policy_fusion || "smooth";
+  if (document.activeElement !== $("policy-steps") && state.policy_smooth_steps != null) $("policy-steps").value = state.policy_smooth_steps;
+  const policyEditable = connected && paused && !latched && !recording && maint === "idle";
+  $("policy-fusion").disabled = !policyEditable;
+  $("policy-steps").disabled = !policyEditable;
+  $("policy-apply").disabled = !policyEditable;
+  $("policy-restart").disabled = !policyEditable || !!state.mock;
   $("session-summary").hidden = teleopView;
   $("recent-episodes").hidden = teleopView;
   text("control-title", teleopView ? "遥操作控制" : "采集控制");
@@ -217,6 +231,8 @@ function render() {
       : "▶ 开始模型执行",
   );
   $("start").disabled = !(canRun && paused && idle);
+  $("start").title = ["inference", "hil"].includes(mode) && !state.policy_ready
+    ? "推理通信尚未就绪；可在保持状态重载推理通信" : "";
   $("header-stop").disabled =
     !online || state.connection !== "connected" || latched;
   $("header-reset").hidden = !latched;
@@ -371,8 +387,12 @@ function render() {
       state.policy_configured
         ? state.mock
           ? "模拟策略"
-          : state.source === "policy" && connected
-            ? "策略执行中"
+          : state.policy_restart_error
+            ? "推理通信故障"
+            : state.source === "policy" && connected
+              ? "策略执行中"
+            : state.policy_ready
+              ? "推理通信就绪"
             : "已配置 / 待验证"
         : "未配置",
       state.source === "policy" && connected,
@@ -399,6 +419,7 @@ function render() {
     state.cleanup_error,
     maint !== "idle" ? state.maintenance_error : null,
     state.operator_error,
+    ["inference", "hil"].includes(mode) ? state.policy_restart_error : null,
     state.operator_lost
       ? "操作台失联已触发暂停；重新连接不会自动恢复运动。"
       : null,
@@ -1053,6 +1074,20 @@ $("edit-task").onclick = () => {
   $("task-dialog").showModal();
 };
 
+$("policy-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const smooth_steps = Number($("policy-steps").value);
+  if (!Number.isInteger(smooth_steps) || smooth_steps < 1 || smooth_steps > 12) {
+    toast("接缝步数请输入 1–12 的整数");
+    return;
+  }
+  if (await action("/policy/settings", { fusion: $("policy-fusion").value, smooth_steps })) {
+    toast("设置已提交；保持状态下生效，下次模型执行使用新值");
+  }
+};
+$("policy-restart").onclick = async () => {
+  if (await action("/policy/restart")) toast("推理通信子进程正在重载；机械臂保持连接");
+};
 $("fullscreen").onclick = async () => {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();

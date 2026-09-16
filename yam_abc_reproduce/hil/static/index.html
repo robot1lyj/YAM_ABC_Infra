@@ -348,6 +348,25 @@
                   手柄① 开始 / 结束录制<br />手柄② 放弃当前集
                 </div>
               </section>
+              <section class="panel policy-panel" id="policy-panel" hidden>
+                <div class="panel-heading"><h2>推理执行</h2><span class="pill" id="policy-mode">—</span></div>
+                <div class="policy-metrics">
+                  <div><span>往返 p95</span><strong id="policy-rtt">—</strong></div>
+                  <div><span>缓冲余量</span><strong id="policy-buffer">—</strong></div>
+                  <div><span>过期裁剪</span><strong id="policy-trim">—</strong></div>
+                  <div><span>关节限速</span><strong id="policy-speed">—</strong></div>
+                </div>
+                <form id="policy-form" class="policy-settings">
+                  <label>接缝模式
+                    <select id="policy-fusion"><option value="raw">原始异步</option><option value="smooth">两块接缝过渡</option></select>
+                  </label>
+                  <label>过渡步数
+                    <input id="policy-steps" type="number" min="1" max="12" step="1" value="4" />
+                  </label>
+                  <button class="button primary" id="policy-apply" type="submit">应用</button>
+                </form>
+                <button class="button subtle policy-restart" id="policy-restart" type="button">重载推理通信</button>
+              </section>
               <section class="panel health-panel">
                 <div class="panel-heading">
                   <h2>

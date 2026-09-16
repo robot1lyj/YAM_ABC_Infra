@@ -10,6 +10,7 @@ import pytest
 from yam_abc_reproduce.hil.lerobot_export import export_session
 from yam_abc_reproduce.hil.recording import RecordingSession
 from yam_abc_reproduce.hil.recording_process import EncoderProcess
+from yam_abc_reproduce.hil.recording_service import RemoteRecordingSession
 from yam_abc_reproduce.hil.recovery import recover
 from yam_abc_reproduce.hil.storage import ROLES, Samples, SegmentWriter, h5_rows, read_rows
 from yam_abc_reproduce.hil.video import PyAvVideo
@@ -120,8 +121,7 @@ def test_disk_spool_drains_full_resolution_three_camera_burst(tmp_path):
         path, 30, {"mock": True}, seconds=60, reserve=0, video_backend="libx264"
     )
     camera_frames = {
-        role: np.full((480, 640, 3), 64 + index, dtype=np.uint8)
-        for index, role in enumerate(ROLES)
+        role: np.full((480, 640, 3), 64 + index, dtype=np.uint8) for index, role in enumerate(ROLES)
     }
     for i in range(90):
         encoder.submit(row(i), camera_frames)
@@ -133,6 +133,71 @@ def test_disk_spool_drains_full_resolution_three_camera_burst(tmp_path):
     for role in ROLES:
         with av.open(str(path / "segment_000000" / f"{role}.mp4")) as video:
             assert sum(1 for _ in video.decode(video=0)) == 90
+
+
+def test_separate_recording_owner_preserves_order_and_finalizes(tmp_path):
+    session = RemoteRecordingSession(
+        tmp_path / "remote-session",
+        mode="inference",
+        fps=30,
+        metadata={"mock": True},
+        min_free_bytes=0,
+        video_backend="libx264",
+    )
+    try:
+        camera_frames = {
+            role: np.full((480, 640, 3), 64 + index, dtype=np.uint8)
+            for index, role in enumerate(ROLES)
+        }
+        session.start_episode()
+        for i in range(90):
+            assert session.submit(row(i), camera_frames)
+        session.stop_episode("success")
+        session.close("success")
+        assert session.error is None
+        assert session.episodes[0]["steps"] == 90
+        assert [item["tick"] for item in read_rows(session.path / "episode_000001")] == list(
+            range(90)
+        )
+        for role in ROLES:
+            with av.open(
+                str(session.path / "episode_000001/segment_000000" / f"{role}.mp4")
+            ) as video:
+                assert sum(1 for _ in video.decode(video=0)) == 90
+    finally:
+        session.close("aborted")
+
+
+def test_recording_owner_failure_is_visible_without_killing_control(tmp_path):
+    session = RemoteRecordingSession(tmp_path / "failed-owner", mode="collect")
+    session.start_episode()
+    try:
+        session.process.terminate()
+        session.process.join(2)
+        assert session.error is not None
+        assert not session.submit(row(0), images(0))
+        with pytest.raises(RuntimeError, match="recording process"):
+            session.close("aborted")
+    finally:
+        if session.process.is_alive():
+            session.process.terminate()
+            session.process.join(2)
+
+
+def test_separate_recording_owner_can_bind_task_without_reopening_arms(tmp_path):
+    target = tmp_path / "task" / "session"
+    session = RemoteRecordingSession(
+        tmp_path / "teleop" / "session", mode="teleop", metadata={"task": "teleop"}
+    )
+    try:
+        session.bind_task(target, {"task": "sort objects"})
+        assert session.path == target
+        assert session.metadata["task"] == "sort objects"
+        session.close("success")
+        assert not (tmp_path / "teleop" / "session").exists()
+        assert json.loads((target / "session.json").read_text())["task"] == "sort objects"
+    finally:
+        session.close("aborted")
 
 
 def test_segment_boundaries_preserve_one_episode_and_exact_decoded_pixels(tmp_path):

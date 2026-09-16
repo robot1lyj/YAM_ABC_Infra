@@ -685,3 +685,50 @@ def test_full_episode_queue_aborts_in_writer_without_blocking_control(tmp_path, 
         gate.set()
         rec.close("aborted")
     assert rec.episodes[0]["outcome"] == "aborted"
+
+
+def test_separate_recording_process_loss_holds_but_control_keeps_ticking(tmp_path):
+    from yam_abc_reproduce.hil.recording_service import RemoteRecordingSession
+    from yam_abc_reproduce.hil.run import Runtime
+
+    class IO:
+        mock = True
+
+        def __init__(self):
+            self.holds = 0
+            self.commands = 0
+
+        def read(self):
+            q = np.zeros(14)
+            return q, q.copy(), [[False, False]] * 2, [0.0] * 4
+
+        def apply(self, decision, q, leader, **kwargs):
+            self.commands += 1
+            return decision.action.copy(), {}
+
+        def hold(self):
+            self.holds += 1
+            return []
+
+    recorder = RemoteRecordingSession(tmp_path / "lost-recorder", mode="collect")
+    io = IO()
+    cameras = [SimpleNamespace(role=role, history=lambda: []) for role in ("top", "left", "right")]
+    runtime = Runtime(io, cameras, None, recorder, mode="collect")
+    try:
+        recorder.start_episode()
+        thread = threading.Thread(target=runtime.run, kwargs={"duration": 0.4})
+        thread.start()
+        time.sleep(0.1)
+        recorder.process.terminate()
+        recorder.process.join(2)
+        thread.join(2)
+        assert not thread.is_alive()
+        assert runtime.status["phase"] == "hold"
+        assert "recording process" in runtime.status["recording_error"]
+        assert runtime.status["error"] is None
+        assert io.holds >= 2
+        assert io.commands >= 8
+    finally:
+        if recorder.process.is_alive():
+            recorder.process.terminate()
+            recorder.process.join(2)

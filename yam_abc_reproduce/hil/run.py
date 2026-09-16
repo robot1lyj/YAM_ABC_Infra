@@ -37,6 +37,7 @@ from .metrics import Latencies
 from .observation import Observations
 from .policy import PlainPolicyClient, PolicyWorker
 from .recording import RecordingSession
+from .recording_service import RemoteRecordingSession
 from .session import Session
 from .station import StationIO
 
@@ -47,6 +48,9 @@ class MockPolicy:
         actions = np.tile(obs["observation.state"], (50, 1))
         actions[:, [0, 7]] += 0.04 * np.sin(np.arange(50)[:, None] / 15)
         return {"actions": actions}
+
+
+RECORDING_SESSIONS = (RecordingSession, RemoteRecordingSession)
 
 
 def station_can_channels(cfg) -> list[str]:
@@ -289,7 +293,7 @@ class Runtime:
                 self.observations.add_state(now, q)
                 snapshot = self.observations.snapshot(now, self.prompt)
                 observation_done = time.monotonic()
-                if isinstance(self.recorder, RecordingSession) and self.recorder.error:
+                if isinstance(self.recorder, RECORDING_SESSIONS) and self.recorder.error:
                     self._recording_failed(q, self.recorder.error)
                 try:
                     event, requested_at = self.events.get_nowait()
@@ -395,7 +399,7 @@ class Runtime:
                 elif event is not None:
                     self.operator_error = None
                 if event in ("stop", "home", "gravity", "capture_home", "reset_stop", "hold"):
-                    if isinstance(self.recorder, RecordingSession):
+                    if isinstance(self.recorder, RECORDING_SESSIONS):
                         self.recorder.stop_episode(
                             "aborted"
                             if event == "stop"
@@ -539,7 +543,7 @@ class Runtime:
                     "action_index": decision.action_index,
                     "submitted_at": stamps,
                 }
-                if isinstance(self.recorder, RecordingSession):
+                if isinstance(self.recorder, RECORDING_SESSIONS):
                     if (
                         original_event == "start"
                         and a.phase != Phase.HOLD
@@ -569,7 +573,7 @@ class Runtime:
                     last_record_images = images
                 row["observation_valid"] = snapshot is not None
                 if not self.recorder.submit(row, images or last_record_images):
-                    if isinstance(self.recorder, RecordingSession):
+                    if isinstance(self.recorder, RECORDING_SESSIONS):
                         self._recording_failed(q, self.recorder.error or "recorder unavailable")
                     else:
                         raise RuntimeError(self.recorder.error or "recorder unavailable")
@@ -641,7 +645,9 @@ class Runtime:
                     "frame_age_s": quality.get("age_s"),
                     "arrival_skew_s": quality.get("arrival_skew_s"),
                     "deadline_misses": missed,
-                    "record_queue": self.recorder.queue.qsize(),
+                    "record_queue": getattr(
+                        self.recorder, "queue_depth", self.recorder.queue.qsize()
+                    ),
                     "recorded_steps": self.recorder.written,
                     "intervention_id": self.intervention_id,
                     "recording": getattr(self.recorder, "recording", True),
@@ -668,7 +674,7 @@ class Runtime:
             hold_errors = self.io.hold()
             if hold_errors:
                 self.status = dict(self.status, hold_errors=hold_errors)
-            if isinstance(self.recorder, RecordingSession) and self.recorder.mode == "collect":
+            if isinstance(self.recorder, RECORDING_SESSIONS) and self.recorder.mode == "collect":
                 self.recorder.stop_episode("aborted")
             self.recorder.metadata["terminal_status"] = dict(self.status)
             # A hardware fault keeps gravity/hold active until explicit quit.
@@ -882,7 +888,8 @@ def main(argv=None, *, service=None):
     # any arm or recording worker; Workbench does the same in its owner thread.
     place_on_cpus("CONTROL")
     output = args.output or Path(cfg.save_root) / time.strftime("hil_%Y%m%d_%H%M%S")
-    recorder = RecordingSession(
+    recorder_type = RemoteRecordingSession if service is not None else RecordingSession
+    recorder = recorder_type(
         output,
         mode=args.mode,
         segment_seconds=args.segment_seconds,

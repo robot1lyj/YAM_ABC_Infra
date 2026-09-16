@@ -77,8 +77,36 @@ def test_executor_is_latest_target_wins_and_stops_before_returning():
         while executor.latest()[0] <= 0 and time.monotonic() < deadline:
             time.sleep(0.005)
         assert executor.latest()[0] > 0
+        trace = executor.drain_trace()
+        assert trace["lost"] == 0 and trace["samples"]
+        assert executor.drain_trace() == {"samples": [], "lost": 0}
+        assert [r["seq"] for r in trace["samples"]] == sorted(r["seq"] for r in trace["samples"])
+        for row in trace["samples"]:
+            assert row["target_updated_at"] <= row["write_started_at"] <= row["write_completed_at"]
+            assert len(row["filtered"]) == len(row["submitted"]) == len(row["velocity"]) == 14
     finally:
         executor.close()
     count = len(writes)
     time.sleep(0.03)
     assert len(writes) == count
+
+
+def test_executor_bounded_trace_reports_loss_without_altering_writes():
+    writes = []
+
+    def write(target):
+        writes.append(target.copy())
+        return target.copy(), {"left": {"sdk_call_started_at": time.monotonic()}}
+
+    executor = TrajectoryExecutor(np.zeros(14), write, hz=1000)
+    try:
+        deadline = time.monotonic() + 1
+        while len(writes) <= 70 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        trace = executor.drain_trace()
+        assert trace["lost"] > 0
+        assert len(trace["samples"]) == 64
+        assert trace["samples"][-1]["arms"]["left"]["sdk_call_started_at"] > 0
+        assert len(writes) > 64
+    finally:
+        executor.close()

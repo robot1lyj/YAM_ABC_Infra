@@ -28,7 +28,7 @@ hil:
   factory_zero_home: true
   # Live raw chunks disagreed by up to 1.15 rad at 2026-09-16 replans.
   # Same-target-time short smoothing suppresses the discontinuity; grippers
-  # still take the newest prediction and their existing speed bound.
+  # take the oldest valid prediction at the same target time, not an average.
   policy_fusion: ensemble
   smooth_steps: 8
   ensemble_chunks: 3

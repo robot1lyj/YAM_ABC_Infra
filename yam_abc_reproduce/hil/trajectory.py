@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 
 import numpy as np
 
@@ -125,6 +126,9 @@ class TrajectoryExecutor:
         self._latest = self._target.copy()
         self._updated_at = time.monotonic()
         self._error = None
+        self._trace = deque(maxlen=64)
+        self._trace_seq = 0
+        self._trace_lost = 0
         self._stopping = False
         self._thread = threading.Thread(
             target=self._run,
@@ -145,6 +149,15 @@ class TrajectoryExecutor:
         with self._condition:
             self._raise_if_failed()
             return self._latest.copy()
+
+    def drain_trace(self):
+        """Bounded RAM handoff to the 30 Hz recorder; never write storage here."""
+        with self._condition:
+            rows = list(self._trace)
+            self._trace.clear()
+            lost = self._trace_lost
+            self._trace_lost = 0
+            return {"samples": rows, "lost": lost}
 
     def close(self):
         with self._condition:
@@ -169,7 +182,8 @@ class TrajectoryExecutor:
                     if self._stopping:
                         return
                     target = self._target.copy()
-                    target_age = time.monotonic() - self._updated_at
+                    updated_at = self._updated_at
+                    target_age = time.monotonic() - updated_at
                 if target_age > self.watchdog_s:
                     if not stale:
                         self.filter.reset(self._latest)
@@ -177,11 +191,30 @@ class TrajectoryExecutor:
                     target = self._latest
                 else:
                     stale = False
-                submitted = self.write(self.filter.step(target, self.period))
+                filtered = self.filter.step(target, self.period)
+                velocity = self.filter.velocity.copy()
+                started_at = time.monotonic()
+                result = self.write(filtered)
+                completed_at = time.monotonic()
+                submitted, arm_stamps = result if isinstance(result, tuple) else (result, None)
                 submitted = vector(submitted)
                 self.filter.position = submitted.copy()
                 with self._condition:
                     self._latest = submitted.copy()
+                    if len(self._trace) == self._trace.maxlen:
+                        self._trace_lost += 1
+                    self._trace_seq += 1
+                    self._trace.append({
+                        "seq": self._trace_seq,
+                        "target_updated_at": updated_at,
+                        "write_started_at": started_at,
+                        "write_completed_at": completed_at,
+                        "target": target.tolist(),
+                        "filtered": filtered.tolist(),
+                        "velocity": velocity.tolist(),
+                        "submitted": submitted.tolist(),
+                        "arms": arm_stamps,
+                    })
                 deadline += self.period
                 remaining = deadline - time.monotonic()
                 if remaining < 0:

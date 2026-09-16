@@ -228,12 +228,19 @@ def test_ensemble_fuses_same_target_time_and_keeps_oldest_valid_gripper_plan():
     assert decision.action_index == 1
     assert decision.policy_action[0] == pytest.approx(expected)
     assert decision.policy_action[6] == pytest.approx(0.1)
+    selection = decision.policy_selection
+    assert selection["target_at"] == pytest.approx(1.3)
+    assert [s["observed_at"] for s in selection["joint_sources"]] == [1.2, 1]
+    assert [s["model_index"] for s in selection["joint_sources"]] == pytest.approx([1, 3])
+    assert sum(s["weight"] for s in selection["joint_sources"]) == pytest.approx(1)
+    assert selection["gripper_source"]["observed_at"] == 1
 
     policy(arbiter, chunk(3, 0.7), observed_at=1.44, sent_at=1.45, received_at=1.46)
     decision = arbiter.step(q, q, now=1.46, dt=0.03, leader_ready=True)
     expected = np.average([2, 3], weights=[1, np.exp(-0.5)])
     assert decision.policy_action[0] == pytest.approx(expected)
     assert decision.policy_action[6] == pytest.approx(0.9)
+    assert decision.policy_selection["gripper_source"]["observed_at"] == 1.2
 
 
 def test_kai0_oldest_first_weights_three_matching_joint_predictions():

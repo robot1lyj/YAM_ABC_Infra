@@ -50,6 +50,7 @@ class StationIO:
         self.policy_joint_acceleration = float(policy_joint_acceleration)
         self.policy_natural_frequency = float(policy_natural_frequency)
         self._policy_trajectory = None
+        self._policy_trace = None
         self._mock_leaders = np.concatenate([u.robot.get_joint_pos() for u in self.units])
         self._manual = True
         self._mock_t = 0
@@ -121,6 +122,7 @@ class StationIO:
         self, decision, q, leader, *, dt, mirror=True, maintenance_leader=None, gravity=False
     ):
         target = vector(decision.action)
+        self._policy_trace = None
         # Validate/clamp both arms before sending any part of this tick.
         for i, limits in enumerate(self._limits):
             sl = slice(i * 7, i * 7 + 6)
@@ -130,6 +132,7 @@ class StationIO:
         )
         if not policy_trajectory and self._policy_trajectory is not None:
             self._policy_trajectory.close()
+            self._policy_trace = self._policy_trajectory.drain_trace()
             self._policy_trajectory = None
         manual = (decision.leader_manual or not mirror) and maintenance_leader is None
         leader_targets = []
@@ -161,7 +164,7 @@ class StationIO:
             if self._policy_trajectory is None:
                 self._policy_trajectory = TrajectoryExecutor(
                     q,
-                    self._write_followers,
+                    lambda command: self._write_followers(command, timing=True),
                     hz=self.policy_trajectory_hz,
                     max_joint_speed=self.policy_joint_speed,
                     max_joint_acceleration=self.policy_joint_acceleration,
@@ -169,6 +172,7 @@ class StationIO:
                 )
             self._policy_trajectory.submit(target)
             submitted = self._policy_trajectory.latest()
+            self._policy_trace = self._policy_trajectory.drain_trace()
             for u in self.units:
                 stamps[f"{u.name}_follower"] = time.monotonic()
         else:
@@ -177,16 +181,27 @@ class StationIO:
                 stamps[f"{u.name}_follower"] = time.monotonic()
         return submitted, stamps
 
-    def _write_followers(self, target, *, gravity=False):
+    def take_policy_trace(self):
+        trace, self._policy_trace = self._policy_trace, None
+        return trace
+
+    def _write_followers(self, target, *, gravity=False, timing=False):
         target = vector(target).copy()
+        arm_stamps = {} if timing else None
         for i, (u, limits) in enumerate(zip(self.units, self._limits, strict=True)):
             sl = slice(i * 7, i * 7 + 6)
             target[sl] = np.clip(target[sl], limits[:, 0], limits[:, 1])
+            started_at = time.monotonic() if timing else None
             if gravity and not self.mock:
                 u.robot.gravity_compensate(target[i * 7 : i * 7 + 7])
             elif not gravity:
                 u.robot.command_joint_pos(target[i * 7 : i * 7 + 7])
-        return target
+            if timing:
+                arm_stamps[u.name] = {
+                    "sdk_call_started_at": started_at,
+                    "sdk_call_returned_at": time.monotonic(),
+                }
+        return (target, arm_stamps) if timing else target
 
     def hold(self):
         errors = []

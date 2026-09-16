@@ -56,6 +56,7 @@ class Decision:
     request: Request | None = None
     action_index: int | None = None
     leader_freeze: bool = False
+    policy_selection: dict | None = None
 
 
 def vector(value) -> np.ndarray:
@@ -407,4 +408,5 @@ class Arbiter:
             self._active_request if policy is not None else None,
             action_index,
             self.phase == Phase.TAKEOVER,
+            self.action_buffer.last_selection if policy is not None and self.streaming else None,
         )

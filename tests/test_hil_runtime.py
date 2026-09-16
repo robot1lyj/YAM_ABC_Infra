@@ -117,7 +117,7 @@ def test_recording_backpressure_is_explicit(tmp_path, monkeypatch):
 
 def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
     cfg = StationConfig()
-    io = StationIO(build_arm_units(cfg, mock=True), mock=True)
+    io = StationIO(build_arm_units(cfg, mock=True), mock=True, policy_trajectory_hz=100)
     cameras = [
         CameraWorker(MockCamera(role, role, width=32, height=32))
         for role in ("top", "left", "right")
@@ -127,7 +127,7 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
     try:
         for c in cameras:
             c.start()
-        run = Runtime(io, cameras, worker, rec)
+        run = Runtime(io, cameras, worker, rec, settings={"policy_fusion": "ensemble"})
         run.event("success")
         assert run.outcome == "unknown"  # consumed in the control owner
         result = run.run(duration=2.5, auto_start=True, demo=True)
@@ -141,6 +141,16 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
         epochs = [r["epoch"] for r in rows]
         assert epochs == sorted(epochs)
         assert any(r.get("policy_reply") for r in rows)
+        policy_rows = [r for r in rows if r["source"] == "policy"]
+        assert any(r["policy_selection"] for r in policy_rows)
+        traces = [sample for r in rows for sample in (r.get("policy_write_trace") or {}).get("samples", [])]
+        assert traces
+        assert all(sample["arms"]["left"]["sdk_call_started_at"] <=
+                   sample["arms"]["left"]["sdk_call_returned_at"] <=
+                   sample["arms"]["right"]["sdk_call_started_at"] <=
+                   sample["arms"]["right"]["sdk_call_returned_at"] for sample in traces)
+        assert all(r["bounded_action"] is not None and r["bounded_at"] <= r["apply_returned_at"]
+                   for r in policy_rows)
     finally:
         for c in cameras:
             c.stop()

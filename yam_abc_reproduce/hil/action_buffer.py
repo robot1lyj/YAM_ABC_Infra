@@ -71,11 +71,13 @@ class ActionBuffer:
         self.chunks: list[TimedChunk] = []
         self.last_trimmed_steps: int | None = None
         self.last_seam_max_rad: float | None = None
+        self.last_selection: dict | None = None
 
     def clear(self):
         self.chunks.clear()
         self.last_trimmed_steps = None
         self.last_seam_max_rad = None
+        self.last_selection = None
 
     def _index_at(self, chunk: TimedChunk, now: float) -> int:
         # Treat a target exactly on the boundary as due, despite binary rounding.
@@ -146,6 +148,7 @@ class ActionBuffer:
         return True
 
     def current(self, now: float) -> tuple[np.ndarray, int, Request] | None:
+        self.last_selection = None
         if not self.chunks:
             return None
         newest = self.chunks[-1]
@@ -153,6 +156,9 @@ class ActionBuffer:
         if index < newest.first_index or index >= newest.first_index + len(newest.actions):
             return None
         action = newest.actions[index - newest.first_index].copy()
+        sources = [newest]
+        weights = [1.0]
+        gripper = newest
         if self.fusion == "ensemble":
             target = newest.target(index, self.action_dt)
             candidates = [action]
@@ -162,6 +168,7 @@ class ActionBuffer:
                 prior = self._at_target(older, target)
                 if prior is not None:
                     candidates.append(prior)
+                    sources.append(older)
             if len(candidates) > 1:
                 # Kai0 ACT-style aggregation gives the oldest matching prediction
                 # weight 1 and exponentially discounts newer joint predictions.
@@ -182,6 +189,28 @@ class ActionBuffer:
                 # continuous targets, while the stable older plan prevents a
                 # tail transition being shifted forever by frequent replans.
                 action[list(GRIPPERS)] = candidates[-1][list(GRIPPERS)]
+                gripper = sources[-1]
+        target_at = newest.target(index, self.action_dt)
+        total_weight = sum(weights)
+        self.last_selection = {
+            "fusion": self.fusion,
+            "target_at": target_at,
+            # Smooth mode has already blended rows during integrate; the old
+            # chunk may itself be smoothed, so it has no simple raw provenance.
+            "joint_sources": None if self.fusion == "smooth" else [
+                {"epoch": chunk.token.epoch, "request_id": chunk.token.request_id,
+                 "observed_at": chunk.origin,
+                 "model_index": (target_at - chunk.origin) / self.action_dt,
+                 "weight": weight / total_weight}
+                for chunk, weight in zip(sources, weights, strict=True)
+            ],
+            "gripper_source": {
+                "epoch": gripper.token.epoch,
+                "request_id": gripper.token.request_id,
+                "observed_at": gripper.origin,
+                "model_index": (target_at - gripper.origin) / self.action_dt,
+            },
+        }
         return action, index, newest.token
 
     def remaining(self, now: float) -> int:

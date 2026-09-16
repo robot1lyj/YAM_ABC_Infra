@@ -3,46 +3,7 @@ import time
 import numpy as np
 import pytest
 
-from yam_abc_reproduce.hil.trajectory import (
-    JOINTS,
-    LinearTrajectoryInterpolator,
-    TrajectoryExecutor,
-    TrajectoryFilter,
-)
-
-
-def test_linear_interpolation_reaches_target_without_second_order_tail():
-    follower = LinearTrajectoryInterpolator(
-        np.zeros(14), duration_s=1 / 30, max_joint_speed=3.0
-    )
-    target = np.zeros(14)
-    target[0] = 0.1
-    target[6] = 1.0
-    follower.set_target(target)
-    samples = np.array([follower.step(0.01) for _ in range(8)])
-    assert np.all(np.diff(samples[:, 0]) >= -1e-12)
-    assert np.max(np.diff(np.r_[0, samples[:, 0]])) <= 0.03 + 1e-12
-    assert samples[3, 0] == pytest.approx(0.1)
-    np.testing.assert_allclose(samples[4:, 0], 0.1)
-    np.testing.assert_allclose(samples[:, 6], 1.0)
-
-    # A new target starts from the last submitted pose, with no carried inertia.
-    follower.set_target(np.zeros(14))
-    reversed_step = follower.step(0.01)
-    assert 0.07 <= reversed_step[0] < 0.1
-    follower.reset(np.zeros(14))
-    assert follower.step(0.01)[0] == pytest.approx(0.0)
-
-
-def test_linear_interpolation_speed_guard_on_large_target_jump():
-    follower = LinearTrajectoryInterpolator(
-        np.zeros(14), duration_s=1 / 30, max_joint_speed=3.0
-    )
-    target = np.zeros(14)
-    target[0] = 1.0
-    follower.set_target(target)
-    samples = np.array([follower.step(0.01)[0] for _ in range(10)])
-    np.testing.assert_allclose(np.diff(np.r_[0, samples]), 0.03)
+from yam_abc_reproduce.hil.trajectory import JOINTS, TrajectoryExecutor, TrajectoryFilter
 
 
 def test_trajectory_bounds_joint_velocity_and_acceleration():

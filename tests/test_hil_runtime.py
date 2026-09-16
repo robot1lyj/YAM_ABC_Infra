@@ -197,7 +197,6 @@ def test_policy_trajectory_has_one_writer_and_stops_before_hold_direct_io():
         build_arm_units(cfg, mock=True),
         mock=True,
         policy_trajectory_hz=100,
-        policy_trajectory_mode="linear",
         policy_joint_speed=3,
         policy_joint_acceleration=30,
         policy_natural_frequency=10,
@@ -223,7 +222,6 @@ def test_policy_trajectory_has_one_writer_and_stops_before_hold_direct_io():
         while io._policy_trajectory.latest()[0] <= 0 and time.monotonic() < deadline:
             time.sleep(0.005)
         assert io._policy_trajectory.latest()[0] > 0
-        assert io._policy_trajectory.mode == "linear"
 
         submitted, _ = io.apply(hold, q, leader, dt=1 / 30)
         assert io._policy_trajectory is None

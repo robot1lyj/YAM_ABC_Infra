@@ -1,7 +1,7 @@
-"""Policy-only high-rate trajectory execution under the 30 Hz arbiter.
+"""Experimental high-rate trajectory shaping, independent of motor IO.
 
-The filters have no hardware access. TrajectoryExecutor owns one writer thread;
-StationIO joins it before HOLD, manual or maintenance writes resume.
+The 30 Hz arbiter remains authoritative. TrajectoryExecutor owns a single
+motor writer that is joined before HOLD, manual or maintenance writes resume.
 """
 
 from __future__ import annotations
@@ -93,54 +93,6 @@ class TrajectoryFilter:
         return self.position.copy()
 
 
-class LinearTrajectoryInterpolator:
-    """Causal 30 Hz target-to-100 Hz line segments without second-order lag."""
-
-    def __init__(self, initial, *, duration_s: float, max_joint_speed: float):
-        if not np.isfinite(duration_s) or duration_s <= 0:
-            raise ValueError("interpolation duration must be finite and positive")
-        if not np.isfinite(max_joint_speed) or max_joint_speed <= 0:
-            raise ValueError("interpolation joint speed must be finite and positive")
-        self.duration_s = float(duration_s)
-        self.max_joint_speed = float(max_joint_speed)
-        self.position = vector(initial).copy()
-        self.velocity = np.zeros(14)
-        self.start = self.position.copy()
-        self.target = self.position.copy()
-        self.elapsed_s = 0.0
-
-    def reset(self, position):
-        self.position = vector(position).copy()
-        self.start = self.position.copy()
-        self.target = self.position.copy()
-        self.elapsed_s = 0.0
-        self.velocity.fill(0)
-        return self.position.copy()
-
-    def set_target(self, target):
-        self.start = self.position.copy()
-        self.target = vector(target).copy()
-        self.elapsed_s = 0.0
-
-    def step(self, dt: float):
-        if not np.isfinite(dt) or dt <= 0:
-            raise ValueError("trajectory dt must be finite and positive")
-        self.elapsed_s += dt
-        alpha = min(1.0, self.elapsed_s / self.duration_s)
-        desired = self.start + alpha * (self.target - self.start)
-        previous = self.position.copy()
-        joints = list(JOINTS)
-        delta = np.clip(
-            desired[joints] - previous[joints],
-            -self.max_joint_speed * dt,
-            self.max_joint_speed * dt,
-        )
-        self.position[joints] += delta
-        self.position[list(GRIPPERS)] = self.target[list(GRIPPERS)]
-        self.velocity = (self.position - previous) / dt
-        return self.position.copy()
-
-
 class TrajectoryExecutor:
     """Latest-target-wins high-rate sampler with exactly one write thread."""
 
@@ -153,30 +105,19 @@ class TrajectoryExecutor:
         max_joint_speed: float = 3.0,
         max_joint_acceleration: float = 30.0,
         natural_frequency: float = 10.0,
-        mode: str = "second_order",
-        action_dt_s: float = 1 / 30,
         watchdog_s: float = 0.15,
     ):
         if not np.isfinite(hz) or hz <= 0 or not np.isfinite(watchdog_s) or watchdog_s <= 0:
             raise ValueError("trajectory executor timing must be finite and positive")
-        if mode not in ("second_order", "linear"):
-            raise ValueError("trajectory mode must be second_order or linear")
         self.period = 1.0 / float(hz)
         self.watchdog_s = float(watchdog_s)
         self.write = write
-        self.mode = mode
-        self.filter = (
-            LinearTrajectoryInterpolator(
-                initial, duration_s=action_dt_s, max_joint_speed=max_joint_speed
-            )
-            if mode == "linear"
-            else TrajectoryFilter(
-                initial,
-                max_joint_speed=max_joint_speed,
-                max_joint_acceleration=max_joint_acceleration,
-                natural_frequency=natural_frequency,
-                max_gripper_speed=None,
-            )
+        self.filter = TrajectoryFilter(
+            initial,
+            max_joint_speed=max_joint_speed,
+            max_joint_acceleration=max_joint_acceleration,
+            natural_frequency=natural_frequency,
+            max_gripper_speed=None,
         )
         self._condition = threading.Condition()
         self._target = vector(initial).copy()
@@ -233,7 +174,6 @@ class TrajectoryExecutor:
     def _run(self):
         deadline = time.monotonic()
         stale = False
-        last_target_update = None
         try:
             while True:
                 with self._condition:
@@ -249,13 +189,7 @@ class TrajectoryExecutor:
                     target = self._latest
                 else:
                     stale = False
-                if self.mode == "linear":
-                    if updated_at != last_target_update or stale:
-                        self.filter.set_target(target)
-                        last_target_update = updated_at
-                    filtered = self.filter.step(self.period)
-                else:
-                    filtered = self.filter.step(target, self.period)
+                filtered = self.filter.step(target, self.period)
                 velocity = self.filter.velocity.copy()
                 started_at = time.monotonic()
                 result = self.write(filtered)

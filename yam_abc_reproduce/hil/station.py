@@ -19,7 +19,6 @@ class StationIO:
         leader_gain=0.2,
         leader_speed=0.5,
         policy_trajectory_hz=0,
-        policy_trajectory_mode="second_order",
         policy_joint_speed=3.0,
         policy_joint_acceleration=30.0,
         policy_natural_frequency=10.0,
@@ -47,7 +46,6 @@ class StationIO:
         self.read_timings_s = {}
         self.leader_gain, self.leader_speed = leader_gain, leader_speed
         self.policy_trajectory_hz = float(policy_trajectory_hz or 0)
-        self.policy_trajectory_mode = policy_trajectory_mode
         self.policy_joint_speed = float(policy_joint_speed)
         self.policy_joint_acceleration = float(policy_joint_acceleration)
         self.policy_natural_frequency = float(policy_natural_frequency)
@@ -168,8 +166,6 @@ class StationIO:
                     q,
                     lambda command: self._write_followers(command, timing=True),
                     hz=self.policy_trajectory_hz,
-                    mode=self.policy_trajectory_mode,
-                    action_dt_s=dt,
                     max_joint_speed=self.policy_joint_speed,
                     max_joint_acceleration=self.policy_joint_acceleration,
                     natural_frequency=self.policy_natural_frequency,

@@ -1,14 +1,21 @@
-"""Spawned encoder with a fixed shared RGB ring; only small rows cross IPC."""
+"""Spawned encoder fed by an on-disk overflow spool.
+
+The recording bridge writes each immutable row to NVMe before notifying the
+encoder process. The encoder consumes files in order and deletes a segment's
+source files only after its MP4/HDF5 segment is committed. Thus a temporary
+encoder deficit grows on disk, not in the control process's RAM.
+"""
 
 import ctypes
 import multiprocessing as mp
 import os
+import pickle
 import queue
 import signal
+import shutil
 import time
 import traceback
-
-import numpy as np
+from pathlib import Path
 
 from ..resource_qos import place_on_cpus
 from .storage import SegmentWriter
@@ -32,39 +39,52 @@ def encode(
     metadata,
     seconds,
     reserve,
-    buffers,
-    shapes,
+    spool,
     incoming,
-    free,
     result,
     written,
     write_max_ms,
     last_progress_at,
+    spool_bytes,
     video_backend,
 ):
     writer = None
+    pending_segment = []
     try:
         parent_death_guard()
         # Three FFmpeg/MPP subprocesses inherit this writer process's CPU mask.
         place_on_cpus("ENCODER")
         writer = SegmentWriter(path, fps, metadata, seconds, reserve, video_backend=video_backend)
-        views = {r: np.frombuffer(b, dtype=np.uint8).reshape(shapes[r]) for r, b in buffers.items()}
+
+        def clear_committed_segment():
+            for source, size in pending_segment:
+                source.unlink()
+                with spool_bytes.get_lock():
+                    spool_bytes.value = max(0, spool_bytes.value - size)
+            pending_segment.clear()
+
         while True:
             item = incoming.get()
             if item[0] == "close":
                 writer.close(item[1], item[2])
+                clear_committed_segment()
                 last_progress_at.value = time.monotonic()
                 result.put({"error": None, "segments": len(writer.segments)})
                 return
-            _, slot, row, roles = item
-            try:
-                started = time.monotonic()
-                writer.append(row, {r: views[r][slot] for r in roles})
-                write_max_ms.value = max(write_max_ms.value, (time.monotonic() - started) * 1000)
-                written.value = writer.written
-                last_progress_at.value = time.monotonic()
-            finally:
-                free.put(slot)
+            _, filename = item
+            source = Path(spool) / filename
+            size = source.stat().st_size
+            with source.open("rb") as stream:
+                row, images = pickle.load(stream)
+            started = time.monotonic()
+            committed = len(writer.segments)
+            writer.append(row, images)
+            write_max_ms.value = max(write_max_ms.value, (time.monotonic() - started) * 1000)
+            written.value = writer.written
+            last_progress_at.value = time.monotonic()
+            pending_segment.append((source, size))
+            if len(writer.segments) > committed:
+                clear_committed_segment()
     except BaseException:
         error = traceback.format_exc(limit=4)
         if writer:
@@ -77,23 +97,18 @@ def encode(
 
 
 class EncoderProcess:
-    def __init__(self, path, fps, metadata, images, capacity, seconds, reserve, video_backend=None):
+    def __init__(self, path, fps, metadata, seconds, reserve, video_backend=None):
         ctx = mp.get_context("spawn")
-        self.incoming, self.free, self.result = (
-            ctx.Queue(capacity),
-            ctx.Queue(capacity),
-            ctx.Queue(1),
-        )
+        self.incoming, self.result = ctx.Queue(), ctx.Queue(1)
         self.written = ctx.Value("q", 0)
         self.write_max_ms = ctx.Value("d", 0)
         self.last_progress_at = ctx.Value("d", time.monotonic())
-        shapes = {r: (capacity, *im.shape) for r, im in images.items()}
-        self.buffers = {r: ctx.RawArray("B", int(np.prod(shape))) for r, shape in shapes.items()}
-        self.views = {
-            r: np.frombuffer(b, dtype=np.uint8).reshape(shapes[r]) for r, b in self.buffers.items()
-        }
-        for i in range(capacity):
-            self.free.put(i)
+        self.spool_bytes = ctx.Value("q", 0)
+        self.spool_peak_bytes = 0
+        self.reserve = int(reserve)
+        self.spool = Path(path) / ".recording-spool"
+        self.spool.mkdir(exist_ok=False)
+        self.sequence = 0
         self.process = ctx.Process(
             target=encode,
             args=(
@@ -102,14 +117,13 @@ class EncoderProcess:
                 metadata,
                 seconds,
                 reserve,
-                self.buffers,
-                shapes,
+                str(self.spool),
                 self.incoming,
-                self.free,
                 self.result,
                 self.written,
                 self.write_max_ms,
                 self.last_progress_at,
+                self.spool_bytes,
                 video_backend,
             ),
             daemon=True,
@@ -117,22 +131,34 @@ class EncoderProcess:
         self.process.start()
 
     def submit(self, row, images):
-        while self.process.is_alive():
-            try:
-                slot = self.free.get(timeout=0.1)
-                break
-            except queue.Empty:
-                continue
-        else:
+        if not self.process.is_alive():
             raise RuntimeError(self.failure())
+        # Check the filesystem that actually carries the temporary backlog.
+        # The normal episode reserve therefore also bounds the spool.
+        image_bytes = sum(image.nbytes for image in images.values())
+        if shutil.disk_usage(self.spool).free < self.reserve + image_bytes + 1024 * 1024:
+            raise OSError("recording stopped: low disk space for encoder backlog")
+        filename = f"{self.sequence:012d}.pkl"
+        self.sequence += 1
+        target = self.spool / filename
+        temporary = target.with_suffix(".tmp")
+        accounted = 0
         try:
-            for role, im in images.items():
-                if role not in self.views or self.views[role][slot].shape != im.shape:
-                    raise ValueError("camera layout changed after encoder startup")
-                np.copyto(self.views[role][slot], im, casting="no")
-            self.incoming.put(("row", slot, row, tuple(images)), timeout=1)
+            with temporary.open("wb", buffering=1024 * 1024) as stream:
+                pickle.dump((row, images), stream, protocol=pickle.HIGHEST_PROTOCOL)
+            temporary.rename(target)
+            size = target.stat().st_size
+            with self.spool_bytes.get_lock():
+                self.spool_bytes.value += size
+                accounted = size
+                self.spool_peak_bytes = max(self.spool_peak_bytes, self.spool_bytes.value)
+            self.incoming.put(("row", filename))
         except BaseException:
-            self.free.put(slot)
+            temporary.unlink(missing_ok=True)
+            target.unlink(missing_ok=True)
+            if accounted:
+                with self.spool_bytes.get_lock():
+                    self.spool_bytes.value = max(0, self.spool_bytes.value - accounted)
             raise
 
     def failure(self):
@@ -174,11 +200,14 @@ class EncoderProcess:
             status = self.result.get(timeout=1)
             if status["error"]:
                 raise RuntimeError(status["error"])
+            status["spool_peak_bytes"] = self.spool_peak_bytes
             return status
         finally:
             if self.process.is_alive():
                 self.process.terminate()
                 self.process.join(2)
-            for q in (self.incoming, self.free, self.result):
+            for q in (self.incoming, self.result):
                 q.cancel_join_thread()
                 q.close()
+            if self.spool.exists() and not any(self.spool.iterdir()):
+                self.spool.rmdir()

@@ -106,8 +106,6 @@ class Recorder:
                         self.path,
                         self.fps,
                         self.metadata,
-                        images,
-                        self.queue.maxsize,
                         self.segment_seconds,
                         self.min_free_bytes,
                         self.video_backend,
@@ -120,6 +118,8 @@ class Recorder:
                     encoder.submit(record, images)
                     self.written = encoder.written.value
                     self.metrics["write_max_ms"] = encoder.write_max_ms.value
+                    self.metrics["spool_bytes"] = encoder.spool_bytes.value
+                    self.metrics["spool_peak_bytes"] = encoder.spool_peak_bytes
                 else:
                     # Startup without images must remain bounded too.
                     if len(pending) >= self.queue.maxsize:
@@ -139,6 +139,8 @@ class Recorder:
                     self._bridge_progress_at = time.monotonic()
                     self.written = encoder.written.value
                     self.metrics["write_max_ms"] = encoder.write_max_ms.value
+                    self.metrics["spool_bytes"] = encoder.spool_bytes.value
+                    self.metrics["spool_peak_bytes"] = encoder.spool_peak_bytes
                     self.metrics.update(result)
                 else:
                     writer = SegmentWriter(

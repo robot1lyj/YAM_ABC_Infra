@@ -1,5 +1,7 @@
 """Stopping a long episode may drain longer than the old fixed close deadlines."""
 
+from pathlib import Path
+
 import pytest
 
 from yam_abc_reproduce.hil import recording, recording_process
@@ -99,8 +101,13 @@ def test_encoder_close_waits_for_long_progressing_drain(monkeypatch):
     encoder.last_progress_at = Value()
     encoder.process = Process(clock, encoder.last_progress_at)
     encoder.incoming = Queue()
-    encoder.free = Queue()
     encoder.result = Queue({"error": None, "segments": 2})
-    assert encoder.close("success", {}) == {"error": None, "segments": 2}
+    encoder.spool_peak_bytes = 123
+    encoder.spool = Path("/path/that/does/not/exist")
+    assert encoder.close("success", {}) == {
+        "error": None,
+        "segments": 2,
+        "spool_peak_bytes": 123,
+    }
     assert clock.now == 200
-    assert encoder.incoming.closed and encoder.free.closed and encoder.result.closed
+    assert encoder.incoming.closed and encoder.result.closed

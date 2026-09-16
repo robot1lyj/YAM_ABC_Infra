@@ -9,6 +9,7 @@ import pytest
 
 from yam_abc_reproduce.hil.lerobot_export import export_session
 from yam_abc_reproduce.hil.recording import RecordingSession
+from yam_abc_reproduce.hil.recording_process import EncoderProcess
 from yam_abc_reproduce.hil.recovery import recover
 from yam_abc_reproduce.hil.storage import ROLES, Samples, SegmentWriter, h5_rows, read_rows
 from yam_abc_reproduce.hil.video import PyAvVideo
@@ -84,6 +85,52 @@ def test_preselected_video_backend_skips_cold_probe(monkeypatch, tmp_path):
     writer.close("success")
     assert writer.written == 1
     assert writer.metadata["video_encoder"] == "libx264"
+
+
+def test_disk_spool_accepts_backlog_then_drains_in_order(tmp_path):
+    path = tmp_path / "spooled"
+    path.mkdir()
+    encoder = EncoderProcess(
+        path,
+        30,
+        {"mock": True},
+        seconds=60,
+        reserve=0,
+        video_backend="libx264",
+    )
+    for i in range(80):
+        encoder.submit(row(i), images(i % 20))
+    deadline = time.monotonic() + 5
+    while encoder.written.value < 80 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert encoder.written.value == 80
+    # The unsealed segment still needs its raw source if encoding is interrupted.
+    assert len(list((path / ".recording-spool").glob("*.pkl"))) == 80
+    result = encoder.close("success", {})
+    assert encoder.written.value == 80
+    assert result["spool_peak_bytes"] > 0
+    assert not (path / ".recording-spool").exists()
+    assert [item["tick"] for item in read_rows(path)] == list(range(80))
+
+
+def test_disk_spool_drains_full_resolution_three_camera_burst(tmp_path):
+    path = tmp_path / "camera-burst"
+    path.mkdir()
+    encoder = EncoderProcess(
+        path, 30, {"mock": True}, seconds=60, reserve=0, video_backend="libx264"
+    )
+    frame = np.full((480, 640, 3), 64, dtype=np.uint8)
+    camera_frames = {role: frame for role in ROLES}
+    for i in range(90):
+        encoder.submit(row(i), camera_frames)
+    result = encoder.close("success", {})
+    assert encoder.written.value == 90
+    assert result["spool_peak_bytes"] >= 3 * frame.nbytes
+    assert not (path / ".recording-spool").exists()
+    assert [item["tick"] for item in read_rows(path)] == list(range(90))
+    for role in ROLES:
+        with av.open(str(path / "segment_000000" / f"{role}.mp4")) as video:
+            assert sum(1 for _ in video.decode(video=0)) == 90
 
 
 def test_segment_boundaries_preserve_one_episode_and_exact_decoded_pixels(tmp_path):

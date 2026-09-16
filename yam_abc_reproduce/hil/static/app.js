@@ -379,7 +379,13 @@ function render() {
     );
     healthRow(
       "录制队列",
-      state.recording_error ? "录制中断" : connected ? `${state.record_queue || 0} 帧等待` : "未启动",
+      state.recording_error
+        ? "录制中断"
+        : state.recording_saving
+          ? `正在整理 · ${((state.record_metrics?.encoder?.spool_bytes || 0) / 1048576).toFixed(0)} MB 待编码`
+          : recording
+            ? `${state.record_queue || 0} 帧暂存 · ${((state.record_metrics?.encoder?.spool_bytes || 0) / 1048576).toFixed(0)} MB 待编码`
+            : "未录制",
       connected && !state.error && !state.recording_error,
     );
   }

@@ -543,6 +543,8 @@ class Runtime:
                     if (
                         original_event == "start"
                         and a.phase != Phase.HOLD
+                        # Inference rollout and HIL intervention both record
+                        # from motion start; collection remains explicit.
                         and a.mode in (Mode.HIL, Mode.INFERENCE)
                         and self.recording_allowed
                     ):

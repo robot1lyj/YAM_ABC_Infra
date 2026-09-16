@@ -19,6 +19,27 @@ def test_collection_uses_leader_without_policy_or_intervention():
     assert a.request(1, 1) is None
 
 
+def test_inference_records_rollout_from_motion_start(tmp_path):
+    from yam_abc_reproduce.hil import run
+
+    output = tmp_path / "inference"
+    run.main(
+        [
+            "--mock",
+            "--demo",
+            "--mode",
+            "inference",
+            "--duration",
+            ".3",
+            "--output",
+            str(output),
+        ]
+    )
+    session = json.loads((output / "session.json").read_text())
+    assert len(session["episodes"]) == 1
+    assert session["episodes"][0]["steps"] > 0
+
+
 def test_multiple_manual_episodes_exclude_idle_and_reset_video_indices(tmp_path):
     import av
 

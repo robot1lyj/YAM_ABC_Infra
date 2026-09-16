@@ -157,6 +157,11 @@ function render() {
       state.phase === "fault" ||
       (state.recording_error && b.dataset.mode !== "teleop") ||
       (!state.selected_task && b.dataset.mode !== "teleop");
+    b.title = state.initializing
+      ? "当前为设备初始化会话；完成或退出向导后开放工作模式"
+      : !state.selected_task && b.dataset.mode !== "teleop"
+        ? "请先新建或选择采集任务"
+        : "";
   });
   $("workspace-page").classList.toggle("teleop-view", teleopView);
   $("recording-controls").hidden = teleopView || mode !== "collect";
@@ -545,6 +550,9 @@ function renderInitialization(context) {
     armDone = context.connected && ages.length === 4 && ages.every((x) => x < 0.25),
     gravityDone = $("init-gravity-check").checked && $("init-leader-check").checked;
 
+  $("init-exit").hidden = !(state.initializing && context.connected);
+  $("init-exit").disabled = !(context.canMaintain && context.idle);
+
   const signature = JSON.stringify(inventory);
   if (signature !== initInventorySignature) {
     initInventorySignature = signature;
@@ -796,6 +804,16 @@ $("init-complete").onclick = async () => {
     toast(error.message);
   }
 };
+$("init-exit").onclick = async () => {
+  try {
+    await post("/initialize/exit");
+    await poll();
+    showPage("workspace");
+    toast("已进入普通工作台；可直接遥操作，或选择任务后切换模式");
+  } catch (error) {
+    toast(error.message);
+  }
+};
 $("discard").onclick = () =>
   confirmAction(
     "放弃当前这一集？",
@@ -913,7 +931,9 @@ function renderTask(locked) {
   );
   text(
     "task-session-tip",
-    locked
+    state.initializing
+      ? "当前为初始化会话 · 完成或退出向导后开放任务"
+      : locked
       ? task
         ? "任务已锁定 · 断开机械臂并完成保存后可切换"
         : "先暂停遥操作，保持机械臂连接即可选择任务"
@@ -922,6 +942,11 @@ function renderTask(locked) {
         : "同一任务的每次采集会话独立保存",
   );
   $("create-task").disabled = !online || locked;
+  $("create-task").title = state.initializing
+    ? "请先完成或退出设备初始化向导"
+    : locked
+      ? "请先暂停并结束当前操作"
+      : "";
   $("edit-task").disabled = !online || locked || !task;
   text(
     "task-english",
@@ -936,7 +961,9 @@ function renderTask(locked) {
   $("step-record").classList.toggle("done", !!state.recording);
   text(
     "workflow-tip",
-    !task
+    state.initializing
+      ? "设备初始化会话不会写入任务数据 · 完成或退出后进入工作台"
+      : !task
       ? state.taskless_teleop
         ? "暂停遥操作后选任务；不需断开机械臂"
         : "可直接连接机械臂遥操作 · 录制前请选择任务"

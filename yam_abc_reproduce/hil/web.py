@@ -132,6 +132,10 @@ def create_app(runtime):
     def initialize_complete(body: InitializationComplete):
         return invoke(runtime.complete_initialization, **body.model_dump())
 
+    @app.post("/initialize/exit")
+    def initialize_exit():
+        return invoke(runtime.exit_initialization)
+
     @app.post("/disconnect")
     def disconnect(body: Disconnect):
         if not hasattr(runtime, "disconnect"):

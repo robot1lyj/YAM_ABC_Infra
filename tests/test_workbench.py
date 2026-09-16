@@ -317,6 +317,18 @@ def test_initialization_connect_does_not_require_collection_task(tmp_path, monke
         saved = json.loads((tmp_path / "data/workstation/initialization_mock.json").read_text())
         assert saved["station_sha256"] == report["station_sha256"]
         assert len(saved["gripper_measurements"]) == 2
+        assert not service.initializing and service.taskless_teleop
+        deadline = time.monotonic() + 3
+        while service.runtime.status["mode"] != "teleop" and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert service.runtime.status["mode"] == "teleop"
+        task = service.create_task("分拣", "采集分拣示范", "sort the objects")
+        assert service.selected_task == task and not service.taskless_teleop
+        service.event("mode:collect")
+        deadline = time.monotonic() + 3
+        while service.runtime.status["mode"] != "collect" and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert service.runtime.status["mode"] == "collect"
         service.disconnect(supported=True)
     finally:
         service.close()

@@ -214,7 +214,41 @@ class Workbench:
         temp.replace(self._initialization_path)
         self._initialization["accepted"] = report
         self.log("设备初始化验收已保存，可用于迁移复核")
+        self.exit_initialization()
         return report
+
+    def exit_initialization(self):
+        """Continue on the powered session without claiming an acceptance result."""
+        with self._lock:
+            if not self.initializing or self.state != "connected" or self.runtime is None:
+                raise ValueError("当前不在已连接的设备初始化会话")
+            if (
+                self.runtime.status.get("phase") != "hold"
+                or self.runtime.status.get("maintenance") != "idle"
+                or self.runtime.status.get("stop_latched")
+                or self.runtime.recorder.recording
+            ):
+                raise ValueError("请先结束维护、解除锁存并保持机械臂")
+            session = {
+                "id": "standalone-teleop",
+                "name": "遥操作",
+                "instruction": "双臂遥操作，不保存采集数据。",
+                "task": "Operate the bimanual robot without recording.",
+            }
+            self.initializing = False
+            self.taskless_teleop = True
+            self.mode = "teleop"
+            self._session_task = session
+            self.task = session["task"]
+            self.runtime.recording_allowed = False
+            self.runtime.prompt = session["task"]
+            self.runtime.recorder.metadata["operator_task"] = session["task"]
+            self.runtime.recorder.metadata["task"] = session["task"]
+            self.runtime.recorder.metadata["collection_task"] = dict(session)
+            self.runtime.recorder.metadata["station"]["task_name"] = session["task"]
+            self.runtime.event("mode:teleop")
+            self.log("已退出初始化向导；机械臂保持连接，可选择任务或遥操作")
+            return {"mode": "teleop", "taskless_teleop": True}
 
     @property
     def status(self):

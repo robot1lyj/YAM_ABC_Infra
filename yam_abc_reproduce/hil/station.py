@@ -7,10 +7,22 @@ import numpy as np
 
 from ..resource_qos import place_on_cpus
 from .core import vector
+from .trajectory import TrajectoryExecutor
 
 
 class StationIO:
-    def __init__(self, units, *, mock=False, leader_gain=0.2, leader_speed=0.5):
+    def __init__(
+        self,
+        units,
+        *,
+        mock=False,
+        leader_gain=0.2,
+        leader_speed=0.5,
+        policy_trajectory_hz=0,
+        policy_joint_speed=3.0,
+        policy_joint_acceleration=30.0,
+        policy_natural_frequency=10.0,
+    ):
         by_name = {u.name: u for u in units}
         if set(by_name) != {"left", "right"} or len(units) != 2:
             raise ValueError("exactly left and right YAM followers required")
@@ -33,6 +45,11 @@ class StationIO:
         )
         self.read_timings_s = {}
         self.leader_gain, self.leader_speed = leader_gain, leader_speed
+        self.policy_trajectory_hz = float(policy_trajectory_hz or 0)
+        self.policy_joint_speed = float(policy_joint_speed)
+        self.policy_joint_acceleration = float(policy_joint_acceleration)
+        self.policy_natural_frequency = float(policy_natural_frequency)
+        self._policy_trajectory = None
         self._mock_leaders = np.concatenate([u.robot.get_joint_pos() for u in self.units])
         self._manual = True
         self._mock_t = 0
@@ -89,11 +106,15 @@ class StationIO:
         q = vector(np.concatenate([result[0] for result in followers]))
         leaders = [result[0] for result in leaders_read]
         buttons = [[bool(key) for key in result[1][:2]] for result in leaders_read]
-        ages = [age for pair in zip(
-            [result[1] for result in followers],
-            [result[2] for result in leaders_read],
-            strict=True,
-        ) for age in pair]
+        ages = [
+            age
+            for pair in zip(
+                [result[1] for result in followers],
+                [result[2] for result in leaders_read],
+                strict=True,
+            )
+            for age in pair
+        ]
         return q, vector(np.concatenate(leaders)), buttons, ages
 
     def apply(
@@ -104,6 +125,12 @@ class StationIO:
         for i, limits in enumerate(self._limits):
             sl = slice(i * 7, i * 7 + 6)
             target[sl] = np.clip(target[sl], limits[:, 0], limits[:, 1])
+        policy_trajectory = (
+            self.policy_trajectory_hz > 0 and decision.source == "policy" and not gravity
+        )
+        if not policy_trajectory and self._policy_trajectory is not None:
+            self._policy_trajectory.close()
+            self._policy_trajectory = None
         manual = (decision.leader_manual or not mirror) and maintenance_leader is None
         leader_targets = []
         for i, limits in enumerate(self._limits):
@@ -130,16 +157,45 @@ class StationIO:
                 )
             stamps[f"{u.name}_leader"] = time.monotonic()
         self._manual = manual
-        for i, u in enumerate(self.units):
+        if policy_trajectory:
+            if self._policy_trajectory is None:
+                self._policy_trajectory = TrajectoryExecutor(
+                    q,
+                    self._write_followers,
+                    hz=self.policy_trajectory_hz,
+                    max_joint_speed=self.policy_joint_speed,
+                    max_joint_acceleration=self.policy_joint_acceleration,
+                    natural_frequency=self.policy_natural_frequency,
+                )
+            self._policy_trajectory.submit(target)
+            submitted = self._policy_trajectory.latest()
+            for u in self.units:
+                stamps[f"{u.name}_follower"] = time.monotonic()
+        else:
+            submitted = self._write_followers(target, gravity=gravity)
+            for u in self.units:
+                stamps[f"{u.name}_follower"] = time.monotonic()
+        return submitted, stamps
+
+    def _write_followers(self, target, *, gravity=False):
+        target = vector(target).copy()
+        for i, (u, limits) in enumerate(zip(self.units, self._limits, strict=True)):
+            sl = slice(i * 7, i * 7 + 6)
+            target[sl] = np.clip(target[sl], limits[:, 0], limits[:, 1])
             if gravity and not self.mock:
                 u.robot.gravity_compensate(target[i * 7 : i * 7 + 7])
             elif not gravity:
                 u.robot.command_joint_pos(target[i * 7 : i * 7 + 7])
-            stamps[f"{u.name}_follower"] = time.monotonic()
-        return target, stamps
+        return target
 
     def hold(self):
         errors = []
+        if self._policy_trajectory is not None:
+            try:
+                self._policy_trajectory.close()
+            except Exception as exc:
+                errors.append(f"policy trajectory: {exc}")
+            self._policy_trajectory = None
         for u in self.units:
             try:
                 u.robot.command_joint_pos(u.robot.get_joint_pos())
@@ -153,6 +209,9 @@ class StationIO:
         return errors
 
     def close(self):
+        if self._policy_trajectory is not None:
+            self._policy_trajectory.close()
+            self._policy_trajectory = None
         if self._read_pool is not None:
             self._read_pool.shutdown(wait=True, cancel_futures=True)
             self._read_pool = None

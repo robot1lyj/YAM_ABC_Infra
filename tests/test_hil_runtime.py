@@ -150,6 +150,48 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
             rec.close("aborted")
 
 
+def test_policy_trajectory_has_one_writer_and_stops_before_hold_direct_io():
+    cfg = StationConfig()
+    io = StationIO(
+        build_arm_units(cfg, mock=True),
+        mock=True,
+        policy_trajectory_hz=100,
+        policy_joint_speed=3,
+        policy_joint_acceleration=30,
+        policy_natural_frequency=10,
+    )
+    q = np.zeros(14)
+    leader = np.zeros(14)
+    policy = SimpleNamespace(
+        action=np.r_[np.ones(6), 0.5, np.ones(6), 0.5],
+        source="policy",
+        leader_manual=True,
+        leader_freeze=False,
+    )
+    hold = SimpleNamespace(
+        action=q.copy(),
+        source="hold",
+        leader_manual=True,
+        leader_freeze=False,
+    )
+    try:
+        submitted, _ = io.apply(policy, q, leader, dt=1 / 30)
+        assert submitted[0] == pytest.approx(0)
+        deadline = time.monotonic() + 0.5
+        while io._policy_trajectory.latest()[0] <= 0 and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert io._policy_trajectory.latest()[0] > 0
+
+        submitted, _ = io.apply(hold, q, leader, dt=1 / 30)
+        assert io._policy_trajectory is None
+        np.testing.assert_array_equal(submitted, q)
+        np.testing.assert_array_equal(
+            np.concatenate([unit.robot.get_joint_pos() for unit in io.units]), q
+        )
+    finally:
+        io.close()
+
+
 def test_official_leader_switches_gains_and_clears_active_commands(monkeypatch):
     from yam_abc_reproduce.robot import yam_adapter as adapter
 

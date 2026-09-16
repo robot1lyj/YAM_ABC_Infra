@@ -29,7 +29,7 @@ hil:
   # Live raw chunks disagreed by up to 1.15 rad at 2026-09-16 replans.
   # Same-target-time short smoothing suppresses the discontinuity; grippers
   # still take the newest prediction and their existing speed bound.
-  policy_fusion: smooth
+  policy_fusion: ensemble
   smooth_steps: 8
   ensemble_chunks: 3
   ensemble_decay: 0.01
@@ -44,6 +44,11 @@ hil:
   # Policy/automatic joint target envelope. 3rad/s reduces prolonged catch-up;
   # this is still a feedback-relative tracking bound, not a velocity guarantee.
   max_joint_speed: 3.0
+  # Experimental policy-only high-rate trajectory writer. Leaving POLICY stops
+  # and joins this writer before HOLD/teleop/maintenance resumes direct IO.
+  policy_trajectory_hz: 100
+  policy_joint_acceleration: 30.0
+  policy_natural_frequency: 10.0
   handover_error: 0.2
   mirror_error: 0.5
   # Normal replanning cadence: execute about ten 30Hz targets between requests.

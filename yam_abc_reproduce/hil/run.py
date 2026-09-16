@@ -201,7 +201,8 @@ class Runtime:
         if event in ("record", "discard") and not self.recording_allowed:
             raise ValueError("standalone teleoperation does not record data")
         if self.recording_error and not (
-            event in (
+            event
+            in (
                 "hold",
                 "stop",
                 "quit",
@@ -301,7 +302,10 @@ class Runtime:
                 if button_event in ("record", "discard") and not self.recording_allowed:
                     button_event = None
                 if self.recording_error and button_event in (
-                    "record", "discard", "success", "failure"
+                    "record",
+                    "discard",
+                    "success",
+                    "failure",
                 ):
                     button_event = None
                 try:
@@ -611,9 +615,7 @@ class Runtime:
                     "policy_buffer_remaining": a.action_buffer.remaining(now),
                     "policy_buffer_seconds": a.action_buffer.seconds_to_expiry(now),
                     "policy_observed_rtt_p95_s": a.observed_policy_rtt_p95,
-                    "policy_observation_to_ready_p95_s": (
-                        a.observed_observation_to_ready_p95
-                    ),
+                    "policy_observation_to_ready_p95_s": (a.observed_observation_to_ready_p95),
                     "policy_latency_budget_s": a.policy_latency_budget,
                     "policy_request_reason": a.last_request_reason,
                     "policy_request_pending": a.pending is not None,
@@ -622,6 +624,10 @@ class Runtime:
                     "policy_seam_max_rad": a.action_buffer.last_seam_max_rad,
                     "policy_constraint_active": bool(
                         np.any(constraint_mask[[0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]])
+                    ),
+                    "policy_trajectory_hz": getattr(self.io, "policy_trajectory_hz", 0),
+                    "policy_trajectory_active": (
+                        getattr(self.io, "_policy_trajectory", None) is not None
                     ),
                     "leader_error_rad": error,
                     "frame_age_s": quality.get("age_s"),
@@ -713,14 +719,17 @@ def main(argv=None, *, service=None):
     p.add_argument("--demo", action="store_true", help="mock only: automated takeover/resume")
     p.add_argument("--baseline", action="store_true", help="ordinary non-prefetch baseline")
     p.add_argument(
-        "--policy-fusion", choices=("raw", "smooth", "ensemble"),
+        "--policy-fusion",
+        choices=("raw", "smooth", "ensemble"),
         help="non-RTC timestamped chunk fusion; default comes from station config",
     )
     p.add_argument("--smooth-steps", type=int, help="short matching-time smoothing window (1-50)")
     p.add_argument("--ensemble-chunks", type=int, help="recent matching-time chunks (2-5)")
     p.add_argument("--ensemble-decay", type=float, help="newest-first exponential weight decay")
     p.add_argument("--action-dt", type=float, help="model action target spacing in seconds")
-    p.add_argument("--expected-policy-latency", type=float, help="initial total Thor RPC estimate in seconds")
+    p.add_argument(
+        "--expected-policy-latency", type=float, help="initial total Thor RPC estimate in seconds"
+    )
     p.add_argument("--prefetch-margin", type=float, help="extra deadline reserve in seconds")
     p.add_argument("--web-port", type=int, help="optional local dashboard port")
     p.add_argument(
@@ -729,11 +738,13 @@ def main(argv=None, *, service=None):
         help="private Unix socket used by the persistent device owner",
     )
     p.add_argument(
-        "--device-daemon", action="store_true",
+        "--device-daemon",
+        action="store_true",
         help="own devices persistently and expose only the private Unix socket",
     )
     p.add_argument(
-        "--web-only", action="store_true",
+        "--web-only",
+        action="store_true",
         help="serve the public Web/API as a proxy without constructing hardware",
     )
     p.add_argument(
@@ -850,7 +861,8 @@ def main(argv=None, *, service=None):
                     "mode": args.mode,
                     "action_dt": action_dt,
                     "policy_fusion": hil_cfg.get("policy_fusion", "raw"),
-                    "factory_zero_home": bool(hil_cfg.get("factory_zero_home", False)) and not args.mock,
+                    "factory_zero_home": bool(hil_cfg.get("factory_zero_home", False))
+                    and not args.mock,
                     "hardware_checked": False,
                     "note": "仅检查模块是否可发现；未验证二进制加载、设备、网络或实时性能",
                 },
@@ -910,6 +922,10 @@ def main(argv=None, *, service=None):
             mock=args.mock,
             leader_gain=hil_cfg.get("leader_gain", 0.2),
             leader_speed=hil_cfg.get("leader_speed", 0.5),
+            policy_trajectory_hz=hil_cfg.get("policy_trajectory_hz", 0),
+            policy_joint_speed=hil_cfg.get("max_joint_speed", 3.0),
+            policy_joint_acceleration=hil_cfg.get("policy_joint_acceleration", 30.0),
+            policy_natural_frequency=hil_cfg.get("policy_natural_frequency", 10.0),
         )
         client = (
             MockPolicy()

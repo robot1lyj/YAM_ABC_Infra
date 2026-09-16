@@ -1,7 +1,9 @@
+import time
+
 import numpy as np
 import pytest
 
-from yam_abc_reproduce.hil.trajectory import JOINTS, TrajectoryFilter
+from yam_abc_reproduce.hil.trajectory import JOINTS, TrajectoryExecutor, TrajectoryFilter
 
 
 def test_trajectory_bounds_joint_velocity_and_acceleration():
@@ -47,3 +49,36 @@ def test_trajectory_reset_rejects_old_motion_and_gripper_is_independent():
 def test_trajectory_rejects_invalid_limits(kwargs):
     with pytest.raises(ValueError):
         TrajectoryFilter(np.zeros(14), **kwargs)
+
+
+def test_executor_is_latest_target_wins_and_stops_before_returning():
+    writes = []
+
+    def write(target):
+        writes.append(target.copy())
+        return target
+
+    executor = TrajectoryExecutor(
+        np.zeros(14),
+        write,
+        hz=100,
+        max_joint_speed=3,
+        max_joint_acceleration=30,
+        natural_frequency=10,
+    )
+    try:
+        first = np.zeros(14)
+        first[0] = -1
+        latest = np.zeros(14)
+        latest[0] = 1
+        executor.submit(first)
+        executor.submit(latest)
+        deadline = time.monotonic() + 0.5
+        while executor.latest()[0] <= 0 and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert executor.latest()[0] > 0
+    finally:
+        executor.close()
+    count = len(writes)
+    time.sleep(0.03)
+    assert len(writes) == count

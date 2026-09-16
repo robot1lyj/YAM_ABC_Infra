@@ -252,7 +252,9 @@ function render() {
                 ? "姿态保持"
                 : state.source === "human"
                   ? "Leader 遥操作"
-                  : "Thor 模型"),
+                  : state.policy_trajectory_active
+                    ? `Thor 模型 / ${state.policy_trajectory_hz} Hz 轨迹`
+                    : "Thor 模型"),
   );
   $("record").disabled = !(
     canRecord &&

@@ -1,0 +1,53 @@
+{
+  "report_date": "2026-09-15",
+  "cutoff": "2026-09-15 20:27:40 +0800",
+  "method": "只读核对YAM与condapi已提交记录、现场证据和工作区状态；本报告未重新启动硬件、相机或模型测试。",
+  "heads": {
+    "YAM": {
+      "commit": "3fb23881d43a3df81f050d96d6e3e71dea8c3d85",
+      "commit_time": "2026-09-15 18:34:59 +0800",
+      "status_at_review": "clean"
+    },
+    "condapi": {
+      "commit": "20f6ab44a04cfd4cc1aa338b65559f2ffc73ab1e",
+      "commit_time": "2026-09-15 20:27:40 +0800",
+      "status_at_review": "M scripts/training_dashboard.service (pre-existing unrelated worktree change; excluded)"
+    }
+  },
+  "yam_commits": [
+    ["41aaff0", "夹爪编码器跨重启处理"],
+    ["42be5c7", "独立日常遥操作与数据采集"],
+    ["9e356f0", "官方CAN拉起流程"],
+    ["757f0e8", "录制故障与机械臂会话隔离"],
+    ["39bbd0a", "录制突发缓存与保持状态"],
+    ["9513d4f", "IPC资源分配对照"],
+    ["73d9aaf", "恢复已验证CPU4-7配置"],
+    ["0e5ea07", "按实际进展等待保存排空"],
+    ["685d860", "采集任务绑定活动遥操作会话"],
+    ["1cb7dc6", "记录手柄放弃与保留集验收"],
+    ["d76a94d", "非RTC动作缓冲"],
+    ["9272d4b", "Thor预取与condapi协议核对"],
+    ["3fb2388", "KAI0动作融合与Thor绝对动作合同"]
+  ],
+  "condapi_commits": [
+    ["0130f59", "158000权重NaN审计与阻塞"],
+    ["efbfc98", "切换Thor下载到100000"],
+    ["86ded69", "100000权重审计与FP32对照"],
+    ["20f6ab4", "100000混合精度引擎与MAXN离线验收"]
+  ],
+  "source_files": [
+    {"repository": "YAM", "path": "docs/workstation.md", "sha256": "d09d6b6c181eec5c140353287aad0917d9513a761ee90451d85a6486c0ae0229"},
+    {"repository": "YAM", "path": "docs/acceptance.md", "sha256": "5432a5c2bfd575197d0c250d583d3645b8ca944031cb3d699ed17d9294cf5258"},
+    {"repository": "YAM", "path": "docs/cache/checkpoint.md", "sha256": "3f18f331b8ac9598cbdd208db36605734e130a3ae4aa8ca6c12756803d6cb553"},
+    {"repository": "YAM", "path": "docs/condapi_interface.md", "sha256": "54119ce4f2a101bb41f42ba66b6bf8cb7825b500c32b6d5b549a2a96d692b9fa"},
+    {"repository": "YAM", "path": "docs/synchronization_design.md", "sha256": "2083e9e83f5dd08ac6ebca41f6317f733fb7b919174cfe3bebae9772b9ac1eb9"},
+    {"repository": "condapi", "path": "docs/reference/thor/12_checkpoint_handoff.md", "sha256": "04344e500d182b32ba47221ba0c8153612584eb69e1c89391fa174cebd5709ea"},
+    {"repository": "condapi", "path": "docs/reports/thor/100000.html", "sha256": "8387b81f58084f0b0fe2a71914f9c3319b39dc9a6fb9f2da6c0e0c05b0d1f1d0"}
+  ],
+  "key_boundaries": [
+    "真实页面采集和视频/HDF5回读已验证，但短集不代表长时容量或运动跟手性通过。",
+    "非RTC动作缓冲和condapi普通handler为离线/源协议验证，不代表真实Thor网络或机械臂闭环。",
+    "100000为已完成离线推理候选；158000含9个NaN，未部署。",
+    "测试数据已按要求清理，证据和验收结论保留；工作区未提交改动不计入完成项。"
+  ]
+}

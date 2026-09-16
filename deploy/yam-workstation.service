@@ -12,7 +12,7 @@ Environment=PYTHONUNBUFFERED=1
 # cores 4-5 caused perceptible teleoperation jitter. Keep the verified 4-7
 # service mask until recording is isolated without narrowing control's cores.
 CPUAffinity=4 5 6 7
-ExecStart=/data/YAM/.venv/bin/yam-workstation --station /data/YAM/configs/station_hil.yaml --mode collect --web-port 8766 --web-host 192.168.110.140
+ExecStart=/data/YAM/.venv/bin/yam-workstation --station /data/YAM/configs/station_hil.yaml --mode collect --url ws://192.168.250.1:8000 --web-port 8766 --web-host 192.168.110.140
 Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT

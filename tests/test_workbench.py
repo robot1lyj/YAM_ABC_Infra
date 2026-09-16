@@ -298,7 +298,11 @@ def test_runtime_emergency_reset_jog_and_home(tmp_path):
         wait(lambda: runtime.maintenance.ready is not None)
         runtime.request_jog("left", 0, np.deg2rad(2))
         wait(lambda: runtime.status["follower_state"][0] > 0.02)
-        runtime.event("stop")
+        # Exercise the exact panel command path, not only Runtime.event().
+        with TestClient(create_app(runtime)) as client:
+            response = client.post("/event/stop", headers={"X-YAM-Control": "1"})
+            assert response.status_code == 200
+            assert response.json() == {"queued": "stop"}
         wait(lambda: runtime.status.get("stop_latched"))
         frozen = np.array(runtime.status["follower_state"])
         with pytest.raises(ValueError):

@@ -254,7 +254,7 @@ class Workbench:
             if self._preview_at
             else None,
             "home_reason": (
-                "官方六关节零位；夹爪保持当前开度"
+                "Follower 官方六关节零位；Leader 不主动运动，夹爪保持"
                 if runtime and runtime.maintenance.factory_zero
                 else "请先示教并保存四台机械臂的准备位"
             ),

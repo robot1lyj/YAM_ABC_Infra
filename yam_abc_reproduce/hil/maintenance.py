@@ -72,11 +72,13 @@ class Maintenance:
                 target = vector(self.ready["follower"])
                 lead_target = vector(self.ready["leader"])
                 joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
-                distance = max(
-                    np.max(np.abs(target[joints] - q[joints])),
-                    np.max(np.abs(lead_target[joints] - leader[joints])),
-                )
-                self.home_start = (q.copy(), leader.copy())
+                distance = np.max(np.abs(target[joints] - q[joints]))
+                if not self.factory_zero:
+                    distance = max(
+                        distance,
+                        np.max(np.abs(lead_target[joints] - leader[joints])),
+                    )
+                self.home_start = (q.copy(), None if self.factory_zero else leader.copy())
                 self.home_duration = distance / 0.12
             return "hold"
         if self.state != "idle":
@@ -98,10 +100,12 @@ class Maintenance:
         target[[6, 13]] = self.grippers
         lead_target[[6, 13]] = leader[[6, 13]]
         joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
-        distance = max(
-            np.max(np.abs(target[joints] - q[joints])),
-            np.max(np.abs(lead_target[joints] - leader[joints])),
-        )
+        distance = np.max(np.abs(target[joints] - q[joints]))
+        if not self.factory_zero:
+            distance = max(
+                distance,
+                np.max(np.abs(lead_target[joints] - leader[joints])),
+            )
         if distance <= 0.015:
             self.state = "idle"
             self.home_start = None
@@ -109,14 +113,20 @@ class Maintenance:
         start, lead_start = self.home_start
         progress = min(1.0, (now - self.started) / max(self.home_duration, dt))
         planned = start + (target - start) * progress
-        lead_planned = lead_start + (lead_target - lead_start) * progress
+        lead_planned = (
+            None
+            if self.factory_zero
+            else lead_start + (lead_target - lead_start) * progress
+        )
         # Unlike feedback-relative stepping, a time-based target keeps advancing
         # through motor deadband, matching i2rt's move_joints interpolation. Stop
         # instead of accumulating a large hidden error if any arm cannot follow.
-        tracking_error = max(
-            np.max(np.abs(planned[joints] - q[joints])),
-            np.max(np.abs(lead_planned[joints] - leader[joints])),
-        )
+        tracking_error = np.max(np.abs(planned[joints] - q[joints]))
+        if not self.factory_zero:
+            tracking_error = max(
+                tracking_error,
+                np.max(np.abs(lead_planned[joints] - leader[joints])),
+            )
         if tracking_error > 0.15:
             self.state = "idle"
             self.home_start = None

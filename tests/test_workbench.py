@@ -71,15 +71,14 @@ def test_factory_zero_home_full_offline_trajectory_and_stop():
         if action is None:
             break
         next_q, next_leader = action
+        assert next_leader is None
         assert np.max(np.abs(next_q[joints] - q[joints])) <= 0.12 * dt + 1e-10
-        assert np.max(np.abs(next_leader[joints] - leader[joints])) <= 0.12 * dt + 1e-10
         np.testing.assert_array_equal(next_q[[6, 13]], follower_grippers)
-        np.testing.assert_array_equal(next_leader[[6, 13]], leader_grippers)
-        q, leader = next_q, next_leader
+        q = next_q
     assert m.state == "idle" and m.error is None
     assert tick * dt < 60
     assert np.max(np.abs(q[joints])) <= 0.015
-    assert np.max(np.abs(leader[joints])) <= 0.015
+    np.testing.assert_array_equal(leader[[6, 13]], leader_grippers)
 
     # A fresh zero-return must cancel immediately on software stop; reset does
     # not resume the old interpolation.
@@ -103,10 +102,11 @@ def test_factory_zero_time_trajectory_crosses_motor_deadband_and_stops_if_blocke
     first_target = None
     for tick in range(1, 20):
         target, lead_target = m.step(q, leader, now=tick / 30, dt=1 / 30)
+        assert lead_target is None
         if first_target is None:
             first_target = target.copy()
         if abs(target[0] - q[0]) > 0.01:
-            q, leader = target, lead_target
+            q = target
             break
     assert first_target[0] == pytest.approx(0.396)
     assert q[0] < 0.4

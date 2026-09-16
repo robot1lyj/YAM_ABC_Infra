@@ -23,8 +23,8 @@ task_name: pick and place
 hil:
   # Model action sample interval; align with condapi training before hardware rollout.
   action_dt: 0.03333333333333333
-  # The YAM factory home is six zero arm joints, not encoder recalibration.
-  # Return through the shared maintenance interpolator; retain both grippers.
+  # Follower factory home is six zero arm joints, not encoder recalibration.
+  # Leaders stay manual; retain both follower grippers.
   factory_zero_home: true
   # Live raw chunks disagreed by up to 1.15 rad at 2026-09-16 replans.
   # Same-target-time short smoothing suppresses the discontinuity; grippers

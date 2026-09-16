@@ -15,6 +15,7 @@ from yam_abc_reproduce.camera.worker import CameraWorker
 from yam_abc_reproduce.config import build_station_config, load_yaml
 from yam_abc_reproduce.hil.observation import Observations
 from yam_abc_reproduce.hil.recording import RecordingSession
+from yam_abc_reproduce.hil.recording_service import RemoteRecordingSession
 from yam_abc_reproduce.hil.storage import read_rows
 from yam_abc_reproduce.hil.video import select_backend
 from yam_abc_reproduce.runtime import build_cameras_from_config
@@ -37,6 +38,7 @@ def main() -> int:
     parser.add_argument("--warmup-seconds", type=float, default=5.0)
     parser.add_argument("--segment-seconds", type=float, default=60.0)
     parser.add_argument("--mock", action="store_true")
+    parser.add_argument("--separate-recording", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("output already exists; choose a new path")
@@ -59,6 +61,8 @@ def main() -> int:
     first_write_elapsed = None
     record_started = None
     encoder_queue_peak = 0
+    transport_queue_peak = 0
+    spool_peak_bytes = 0
     try:
         for driver in drivers:
             worker = CameraWorker(driver)
@@ -83,7 +87,8 @@ def main() -> int:
             max_skew=settings.get("max_frame_skew", 0.12),
             warn_skew=settings.get("warn_frame_skew", 0.04),
         )
-        recorder = RecordingSession(
+        recorder_type = RemoteRecordingSession if args.separate_recording else RecordingSession
+        recorder = recorder_type(
             args.output,
             mode="collect",
             fps=cfg.control_hz,
@@ -134,18 +139,21 @@ def main() -> int:
                 submitted += 1
             if first_write_elapsed is None and recorder.written > 0:
                 first_write_elapsed = time.monotonic() - record_started
-            encoder_queue_peak = max(encoder_queue_peak, recorder.metrics["encoder_queue"])
+            encoder_queue_peak = max(encoder_queue_peak, recorder.metrics.get("encoder_queue", 0))
+            transport_queue_peak = max(
+                transport_queue_peak, recorder.metrics.get("transport_queue_peak", 0)
+            )
+            spool_peak_bytes = max(
+                spool_peak_bytes,
+                recorder.metrics.get("encoder", {}).get("spool_peak_bytes", 0),
+            )
             tick += 1
             time.sleep(max(0.0, 1 / cfg.control_hz - (time.monotonic() - started)))
 
         recorder.stop_episode("success")
-        wait_deadline = time.monotonic() + 35
-        while not recorder.episodes and not recorder.error and time.monotonic() < wait_deadline:
-            if first_write_elapsed is None and recorder.written > 0:
-                first_write_elapsed = time.monotonic() - record_started
-            encoder_queue_peak = max(encoder_queue_peak, recorder.metrics["encoder_queue"])
-            time.sleep(0.05)
+        save_started = time.monotonic()
         recorder.close("success")
+        save_elapsed = time.monotonic() - save_started
         if recorder.error:
             raise RuntimeError(recorder.error)
         if len(recorder.episodes) != 1:
@@ -165,12 +173,17 @@ def main() -> int:
             "backend_probe_elapsed_s": backend_probe_elapsed,
             "first_write_elapsed_s": first_write_elapsed,
             "first_write_poll_resolution_s": 0.05,
+            "save_elapsed_s": save_elapsed,
             "encoder_queue_peak": encoder_queue_peak,
+            "transport_queue_peak": transport_queue_peak,
+            "spool_peak_bytes": spool_peak_bytes,
             "submitted": submitted,
             "invalid_snapshots": invalid,
             "rows_read": len(rows),
             "video_frames": videos,
-            "session_queue_peak": recorder.queue_peak,
+            "session_queue_peak": recorder.metrics.get(
+                "session_queue_peak", getattr(recorder, "queue_peak", 0)
+            ),
             "encoder_metrics": recorder.metrics,
             "episode": recorder.episodes[0],
         }

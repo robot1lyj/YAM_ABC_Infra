@@ -41,6 +41,28 @@ def test_latency_trim_uses_observation_clock_and_drops_expired_prefix():
     assert decision.policy_action[0] != rows[0, 0]
 
 
+def test_naive_async_replaces_old_chunk_for_joints_and_grippers():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=0.1,
+        policy_fusion="raw", replan_period=0.2, max_action_age=3,
+    )
+    arbiter.start(q)
+    old = chunk(joint=0.2, gripper=0.0)
+    policy(arbiter, old, observed_at=1.0, sent_at=1.01, received_at=1.05)
+    new = chunk(joint=0.8, gripper=1.0)
+    token = arbiter.request(2, 1.25, observed_at=1.24)
+    assert token is not None
+    assert arbiter.accept(token, new, 1.55)
+    assert len(arbiter.action_buffer.chunks) == 1
+    assert arbiter.action_buffer.chunks[0].first_index == 3
+    decision = arbiter.step(q, q, now=1.55, dt=0.03, leader_ready=True)
+    assert decision.policy_action[0] == pytest.approx(0.8)
+    assert decision.policy_action[[6, 13]].tolist() == [1.0, 1.0]
+    assert decision.policy_selection["joint_sources"][0]["request_id"] == token.request_id
+    assert decision.policy_selection["gripper_source"]["request_id"] == token.request_id
+
+
 def test_finite_thor_gripper_overshoot_is_clamped_on_control_side():
     q = np.zeros(14)
     arbiter = Arbiter(Mode.INFERENCE, streaming=True, max_action_age=3)

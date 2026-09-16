@@ -160,18 +160,18 @@ uv run --no-sync yam-workstation --mode hil --url ws://THOR_IP:8000 --web-port 8
 Thor已反馈关节输出是rad绝对目标、夹爪0关/1开，Thor完成反归一化、关节delta→absolute和32D→14D；RK不再次反归一化或加状态。有限夹爪预测即使超出[0,1]也由RK裁剪，NaN/Inf仍拒绝，关节按SDK硬限位。
 客户端消费协议要求的首条服务元数据，但不保存模型名称、后端、指纹或服务URL；任务效果仍需另验收。
 
-## 非RTC推理与可选动作融合
+## 非RTC异步推理
 
-当前`configs/station_hil.yaml`默认`policy_fusion: ensemble`。`smooth`把旧预测插值到新块的精确目标时刻，再对前`smooth_steps`步关节目标按KAI0的旧100%→新100%线性过渡；`ensemble`按KAI0/ACT的较早预测优先指数权重融合最近`ensemble_chunks`块的同目标时刻关节预测。两者都不外推旧块。ensemble中的夹爪不做数值平均或二值化，而使用覆盖同一目标时刻的最早仍有效预测，避免频繁重规划把动作块后段的闭合/张开意图不断后移。三种选择不改变同步模式、Thor模型或50×14绝对动作协议；`--baseline`关闭预取与融合，保留普通分块基准。
+当前`configs/station_hil.yaml`默认`policy_fusion: raw`，即本项目的KAI0 `naive_async` 对照：后台单在途请求新块，到达后按观测时刻裁掉过期前缀，以最新有效块替换旧块；手臂和夹爪使用同一块，不做跨块融合。预取时机仍由固定重规划周期和实测延迟预算共同决定。`smooth`和`ensemble`实现保留供显式对照，不是本站默认；`--baseline`则连预取也关闭，保留普通分块基准。切换融合方式不改变Thor模型或50×14绝对动作协议。
 
-高频轨迹整形可用`policy_trajectory_hz`显式开关；`0`保持原30Hz直接路径，本站当前实验配置为100Hz、3rad/s、30rad/s²、临界阻尼10rad/s并配合同目标时刻ensemble。它只在策略拥有控制权时启动唯一Follower写线程；进入HOLD、急停、接管、遥操作、维护或重力补偿前先停止并join该线程，再恢复原直接IO，不能并行保留第二个电机写入者。页面控制权会明确显示`Thor 模型 / 100 Hz 轨迹`。离线比较命令仍为`python scripts/evaluate_trajectory_filter.py <samples.h5> --hz 100 --max-joint-speed 3 --max-joint-acceleration 30 --natural-frequency 10 --policy-fusion ensemble`；首轮1325帧真机段无控制故障且方向反转明显下降，任务成功率、长时温升及操作者体感仍须继续验收。
+高频轨迹整形可用`policy_trajectory_hz`显式开关；`0`保持原30Hz直接路径，本站当前实验配置为100Hz、3rad/s、30rad/s²、临界阻尼10rad/s。它只在策略拥有控制权时启动唯一Follower写线程；进入HOLD、急停、接管、遥操作、维护或重力补偿前先停止并join该线程，再恢复原直接IO，不能并行保留第二个电机写入者。页面控制权会明确显示`Thor 模型 / 100 Hz 轨迹`。离线比较命令为`python scripts/evaluate_trajectory_filter.py <samples.h5> --hz 100 --max-joint-speed 3 --max-joint-acceleration 30 --natural-frequency 10 --policy-fusion raw`。从ensemble切到raw可能增加块边界目标跳变，短集真机验收须重点观察接缝、跟踪误差和夹爪闭合时序；尚不能把离线通过写成真机通过。
 
 推理录制的`segment_*/samples.h5`每行`details`现记录`policy_selection`：同目标时刻`joint_sources`列出融合来源、权重、观测时刻和模型小数索引，`gripper_source`给出实际夹爪来源；`smooth`模式的旧行可能已有融合，不能还原原始关节来源，此时`joint_sources=null`。`bounded_action/bounded_at`是30Hz安全包络后的目标；`policy_write_trace.samples`是两次30Hz读取间100Hz写线程的独立流水，包含目标更新时间、滤波目标和速度、逐臂SDK调用起止、调用后提交目标及序号，`lost`表示64项有界环溢出。`submitted_at`仅是30Hz控制读取快照；所有本机monotonic时间只在同一设备会话内比较，SDK调用返回不代表电机运动完成，必须与后续`measured_state`反馈对齐。以上字段不会改变策略动作，也不是RTC。
 
 离线无设备检查与模拟延迟测试：
 
 ```bash
-uv run --no-sync yam-workstation --mock --mode inference --policy-fusion smooth --smooth-steps 6 --check
+uv run --no-sync yam-workstation --mock --mode inference --policy-fusion raw --check
 uv run --no-sync pytest -q tests/test_async_inference.py
 CONDAPI_ROOT=/home/wuyan-lyj/condapi uv run --no-sync pytest -q tests/test_condapi_wire.py
 ```

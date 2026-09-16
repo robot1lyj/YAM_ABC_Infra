@@ -47,6 +47,50 @@ def test_home_exclusive_coordinated_and_gripper_retained():
     assert m.state == "idle"
 
 
+def test_factory_zero_home_full_offline_trajectory_and_stop():
+    """Replay the observed held pose without opening grippers or touching hardware."""
+    m = Maintenance(factory_zero=True)
+    assert m.ready == {"follower": [0.0] * 14, "leader": [0.0] * 14}
+    with pytest.raises(ValueError, match="零位"):
+        m.capture(np.zeros(14), np.zeros(14))
+    q = np.array(
+        [-0.6193, 1.2400, 0.7212, -0.2325, -0.1921, -0.3271, 0.9494,
+         0.2577, 1.5059, 1.0866, -0.6498, -0.0086, 0.5205, 0.9717]
+    )
+    leader = np.array(
+        [0.03, -0.11, 0.08, 0.02, -0.05, 0.01, 0.95,
+         -0.04, 0.09, -0.07, 0.03, 0.02, -0.02, 0.97]
+    )
+    follower_grippers = q[[6, 13]].copy()
+    leader_grippers = leader[[6, 13]].copy()
+    joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
+    dt = 1 / 30
+    assert m.command("home", q, leader, now=0, paused=True) == "hold"
+    for tick in range(1, 1800):
+        action = m.step(q, leader, now=tick * dt, dt=dt)
+        if action is None:
+            break
+        next_q, next_leader = action
+        assert np.max(np.abs(next_q[joints] - q[joints])) <= 0.12 * dt + 1e-10
+        assert np.max(np.abs(next_leader[joints] - leader[joints])) <= 0.12 * dt + 1e-10
+        np.testing.assert_array_equal(next_q[[6, 13]], follower_grippers)
+        np.testing.assert_array_equal(next_leader[[6, 13]], leader_grippers)
+        q, leader = next_q, next_leader
+    assert m.state == "idle" and m.error is None
+    assert tick * dt < 60
+    assert np.max(np.abs(q[joints])) <= 0.015
+    assert np.max(np.abs(leader[joints])) <= 0.015
+
+    # A fresh zero-return must cancel immediately on software stop; reset does
+    # not resume the old interpolation.
+    q[0] = 0.4
+    m.command("home", q, leader, now=20, paused=True)
+    m.command("stop", q, leader, now=20.1, paused=True)
+    assert m.latched and m.state == "idle"
+    assert m.command("reset_stop", q, leader, now=20.2, paused=True) == "hold"
+    assert m.step(q, leader, now=20.3, dt=dt) is None
+
+
 def test_stop_freezes_four_arms_and_reset_never_resumes():
     m = Maintenance()
     q, h = np.zeros(14), np.full(14, 0.2)

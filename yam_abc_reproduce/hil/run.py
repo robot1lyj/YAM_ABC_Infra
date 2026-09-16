@@ -154,7 +154,9 @@ class Runtime:
         self.latencies = Latencies()
         self.emergency = threading.Event()
         self.jog = Jog()
-        self.maintenance = Maintenance()
+        self.maintenance = Maintenance(
+            factory_zero=bool(settings.get("factory_zero_home", False)) and not io.mock
+        )
         self.operator_error = None
         self.recording_error = None
         self._record_started = None
@@ -206,6 +208,8 @@ class Runtime:
         if self.maintenance.latched and event not in ("stop", "hold", "quit", "reset_stop"):
             raise ValueError("紧急暂停已锁存，请先检查现场并解除锁存")
         if event in ("home", "capture_home", "gravity"):
+            if event == "capture_home" and self.maintenance.factory_zero:
+                raise ValueError("此设备固定使用官方关节零位，无需保存准备位")
             if self.maintenance.state != "idle":
                 raise ValueError("请先结束当前维护操作")
             if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
@@ -751,6 +755,10 @@ def main(argv=None, *, service=None):
     for key, value in hil_cfg.items():
         if key == "policy_fusion":
             continue
+        if key == "factory_zero_home":
+            if not isinstance(value, bool):
+                p.error("factory_zero_home must be true or false")
+            continue
         if not isinstance(value, (float, int)) or not np.isfinite(value) or value <= 0:
             p.error(f"invalid hil setting: {key}")
     try:
@@ -788,6 +796,7 @@ def main(argv=None, *, service=None):
                     "mode": args.mode,
                     "action_dt": action_dt,
                     "policy_fusion": hil_cfg.get("policy_fusion", "raw"),
+                    "factory_zero_home": bool(hil_cfg.get("factory_zero_home", False)) and not args.mock,
                     "hardware_checked": False,
                     "note": "仅检查模块是否可发现；未验证二进制加载、设备、网络或实时性能",
                 },

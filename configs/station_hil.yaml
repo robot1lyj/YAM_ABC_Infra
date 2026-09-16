@@ -23,10 +23,13 @@ task_name: pick and place
 hil:
   # Model action sample interval; align with condapi training before hardware rollout.
   action_dt: 0.03333333333333333
-  # Non-RTC async chunk buffer: raw, smooth (same target time only), ensemble.
-  # Grippers always use the newest prediction. Keep raw until model-side
-  # observation/action timestamp semantics are verified for the checkpoint.
-  policy_fusion: raw
+  # The YAM factory home is six zero arm joints, not encoder recalibration.
+  # Return through the shared maintenance interpolator; retain both grippers.
+  factory_zero_home: true
+  # Live raw chunks disagreed by up to 1.15 rad at 2026-09-16 replans.
+  # Same-target-time short smoothing suppresses the discontinuity; grippers
+  # still take the newest prediction and their existing speed bound.
+  policy_fusion: smooth
   smooth_steps: 8
   ensemble_chunks: 3
   ensemble_decay: 0.01

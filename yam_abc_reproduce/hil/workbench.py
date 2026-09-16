@@ -253,7 +253,12 @@ class Workbench:
             "preview_age_s": max(0, time.monotonic() - self._preview_at)
             if self._preview_at
             else None,
-            "home_reason": "请先示教并保存四台机械臂的准备位",
+            "home_reason": (
+                "官方六关节零位；夹爪保持当前开度"
+                if runtime and runtime.maintenance.factory_zero
+                else "请先示教并保存四台机械臂的准备位"
+            ),
+            "factory_zero_home": bool(runtime and runtime.maintenance.factory_zero),
             "initializing": self.initializing,
             "taskless_teleop": self.taskless_teleop,
             "initialization": {**self._initialization, "inventory": self._station_inventory()},
@@ -566,7 +571,7 @@ class Workbench:
         runtime.recorder.metadata["task"] = self.task
         runtime.recorder.metadata["collection_task"] = dict(self._session_task)
         runtime.recorder.metadata["station"]["task_name"] = self.task
-        if self._profile_path.exists():
+        if not runtime.maintenance.factory_zero and self._profile_path.exists():
             try:
                 profile = json.loads(self._profile_path.read_text())
                 station_hash = hashlib.sha256(Path(self.args.station).read_bytes()).hexdigest()

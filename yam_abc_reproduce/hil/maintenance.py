@@ -1,6 +1,7 @@
 """Exclusive recovery/teaching control, evaluated by the same 30 Hz owner.
 
-Home means a taught ready pose, never encoder calibration or all-zero joints.
+Factory home means six zero arm joints, never motor encoder recalibration.
+Stations without factory-zero mode may still use a taught ready pose.
 """
 
 import numpy as np
@@ -9,10 +10,15 @@ from .core import vector
 
 
 class Maintenance:
-    def __init__(self):
+    def __init__(self, *, factory_zero=False):
+        self.factory_zero = factory_zero
         self.latched = False
         self.state = "idle"
-        self.ready = None
+        self.ready = (
+            {"follower": np.zeros(14).tolist(), "leader": np.zeros(14).tolist()}
+            if factory_zero
+            else None
+        )
         self.ready_version = 0
         self.started = 0.0
         self.error = None
@@ -20,10 +26,14 @@ class Maintenance:
         self.frozen = None
 
     def capture(self, q, leader):
+        if self.factory_zero:
+            raise ValueError("此设备固定使用官方关节零位，无需保存准备位")
         self.ready = {"follower": vector(q).tolist(), "leader": vector(leader).tolist()}
         self.ready_version += 1
 
     def load(self, profile):
+        if self.factory_zero:
+            return
         self.ready = {key: vector(profile[key]).tolist() for key in ("follower", "leader")}
 
     def command(self, event, q, leader, *, now, paused):

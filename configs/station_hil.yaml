@@ -41,9 +41,8 @@ hil:
   leader_speed: 0.5
   # Manual tracking has no application-level slew limit, matching official GELLO.
   # This includes the grippers; policy and automatic paths retain their bounds.
-  # Policy/automatic joint slew envelope. Upstream YAM defaults to 1.5rad/s;
-  # this station uses the operator-approved 2.5rad/s compromise.
-  max_joint_speed: 2.5
+  # Policy/automatic joint slew envelope, now aligned with upstream YAM's default.
+  max_joint_speed: 1.5
   handover_error: 0.2
   mirror_error: 0.5
   # Normal replanning cadence: execute about ten 30Hz targets between requests.

@@ -182,7 +182,7 @@ uv run --no-sync yam-workstation --station configs/station_hil.yaml \
 
 获准并验证raw后，可改`--policy-fusion smooth --smooth-steps 6`，或`--policy-fusion ensemble --ensemble-chunks 3 --ensemble-decay 0.01`做运动对照。3588以`configs/station_hil.yaml`的`action_dt`或命令行`--action-dt 0.03333333333333333`配置动作间隔，固定认为动作第0步对应本机observation参考时刻；这是动作时间轴，不是触发下一次推理的时间偏移。换模型时如动作间隔/单位不同，先更新配置并做无电机回放，不要求模型名称或指纹匹配。请求超过`request_timeout`、缓冲耗尽或动作超过`action_timeout`会保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。
 
-正常重规划间隔为333ms，即约执行10个30Hz动作后取最新观测发起下一次请求；若缓冲剩余时间已接近“最近16个有效回复的观测参考时刻→动作可用p95（初始0.2s）+67ms余量”，会动态提前。单在途期间不排队旧观测。状态接口同时报告缓冲秒数、请求RTT、端到端观测延迟、动作索引、裁掉步数、块边界原始差值和2.5rad/s限幅是否正在介入。
+正常重规划间隔为333ms，即约执行10个30Hz动作后取最新观测发起下一次请求；若缓冲剩余时间已接近“最近16个有效回复的观测参考时刻→动作可用p95（初始0.2s）+67ms余量”，会动态提前。单在途期间不排队旧观测。状态接口同时报告缓冲秒数、请求RTT、端到端观测延迟、动作索引、裁掉步数、块边界原始差值和1.5rad/s限幅是否正在介入。
 
 ## 实用同步与性能默认值
 
@@ -201,7 +201,7 @@ uv run --no-sync yam-workstation --station configs/station_hil.yaml \
 | replan_period | 333ms（约10步） | 正常重规划间隔；缓冲截止时间紧迫时可提前 |
 | expected_policy_latency / prefetch_margin | 200ms / 67ms | 首次总往返预算/两个30Hz周期余量；收到有效回复后按最近16次本机往返p95更新 |
 | handover/mirror_error | 0.2 / 0.5rad | 策略恢复交接门限/运行中的leader大偏差保持；普通遥操作使用绝对1:1关节目标，不受HIL交接门限阻挡 |
-| max_joint_speed / max_manual_joint_speed | 2.5rad/s / 无 | 推理与自动运动的每周期目标变化包络；上游默认1.5rad/s，本站按现场要求提高；人工遥操作不做应用层裁剪 |
+| max_joint_speed / max_manual_joint_speed | 1.5rad/s / 无 | 推理与自动运动的每周期目标变化包络，与上游默认一致；人工遥操作不做应用层裁剪 |
 
 这些是可调的开发默认值，不是现场性能证明或最终控制参数。
 D405无三机外部硬同步；本版按**主机接收时间**配对与关节历史插值，

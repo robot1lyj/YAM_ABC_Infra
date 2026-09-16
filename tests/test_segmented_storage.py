@@ -119,13 +119,15 @@ def test_disk_spool_drains_full_resolution_three_camera_burst(tmp_path):
     encoder = EncoderProcess(
         path, 30, {"mock": True}, seconds=60, reserve=0, video_backend="libx264"
     )
-    frame = np.full((480, 640, 3), 64, dtype=np.uint8)
-    camera_frames = {role: frame for role in ROLES}
+    camera_frames = {
+        role: np.full((480, 640, 3), 64 + index, dtype=np.uint8)
+        for index, role in enumerate(ROLES)
+    }
     for i in range(90):
         encoder.submit(row(i), camera_frames)
     result = encoder.close("success", {})
     assert encoder.written.value == 90
-    assert result["spool_peak_bytes"] >= 3 * frame.nbytes
+    assert result["spool_peak_bytes"] >= sum(frame.nbytes for frame in camera_frames.values())
     assert not (path / ".recording-spool").exists()
     assert [item["tick"] for item in read_rows(path)] == list(range(90))
     for role in ROLES:

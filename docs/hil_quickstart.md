@@ -164,6 +164,8 @@ Thor已反馈关节输出是rad绝对目标、夹爪0关/1开，Thor完成反归
 
 当前`configs/station_hil.yaml`默认`policy_fusion: smooth`。`smooth`把旧预测插值到新块的精确目标时刻，再对前`smooth_steps`步关节目标按KAI0的旧100%→新100%线性过渡；`ensemble`按KAI0/ACT的较早预测优先指数权重融合最近`ensemble_chunks`块的同目标时刻关节预测。两者都不外推旧块，夹爪只取最新块，不混合开闭。三种选择不改变同步模式、Thor模型或50×14绝对动作协议；`--baseline`关闭预取与融合，保留普通分块基准。
 
+实验性高频轨迹整形目前只提供离线影子回放，**不会写电机，也不是运行配置开关**。可用`python scripts/evaluate_trajectory_filter.py <samples.h5> --hz 100 --max-joint-speed 3 --max-joint-acceleration 30 --natural-frequency 10 --policy-fusion ensemble`比较记录目标、raw、smooth与同目标时刻ensemble。只有影子指标、停止/HOLD世代清理和真机分级验收都通过后，才允许把该生成器接到唯一设备写入者；不得并行保留第二个电机写线程。
+
 离线无设备检查与模拟延迟测试：
 
 ```bash

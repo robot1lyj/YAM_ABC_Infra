@@ -10,6 +10,11 @@ from .core import vector
 
 
 class Maintenance:
+    HOME_SPEED = 0.12
+    HOME_TRACKING_WINDOW = 0.08
+    HOME_HARD_ERROR = 0.15
+    HOME_STALL_TIMEOUT = 3.0
+
     def __init__(self, *, factory_zero=False):
         self.factory_zero = factory_zero
         self.latched = False
@@ -26,6 +31,8 @@ class Maintenance:
         self.frozen = None
         self.home_start = None
         self.home_duration = 0.0
+        self.home_progress = 0.0
+        self.home_stalled_at = None
 
     def capture(self, q, leader):
         if self.factory_zero:
@@ -45,16 +52,22 @@ class Maintenance:
             self.frozen = (q.copy(), leader.copy())
             self.state = "idle"
             self.home_start = None
+            self.home_progress = 0.0
+            self.home_stalled_at = None
             return "hold"
         if event == "reset_stop":
             self.latched = False
             self.state = "idle"
             self.error = None
             self.frozen = None
+            self.home_progress = 0.0
+            self.home_stalled_at = None
             return "hold"
         if event == "hold" or (event and event.startswith("mode:")):
             self.state = "idle"
             self.home_start = None
+            self.home_progress = 0.0
+            self.home_stalled_at = None
             self.error = None
         if self.latched:
             return "hold"
@@ -83,7 +96,9 @@ class Maintenance:
                         np.max(np.abs(lead_target[joints] - leader[joints])),
                     )
                 self.home_start = (q.copy(), None if self.factory_zero else leader.copy())
-                self.home_duration = distance / 0.12
+                self.home_duration = distance / self.HOME_SPEED
+                self.home_progress = 0.0
+                self.home_stalled_at = None
             return "hold"
         if self.state != "idle":
             return "hold"
@@ -97,6 +112,7 @@ class Maintenance:
         if now - self.started > 60:
             self.state = "idle"
             self.home_start = None
+            self.home_stalled_at = None
             self.error = "回准备位超时，已暂停；请检查阻挡和反馈"
             return None
         target, lead_target = vector(self.ready["follower"]), vector(self.ready["leader"])
@@ -115,32 +131,74 @@ class Maintenance:
             self.home_start = None
             return None
         start, lead_start = self.home_start
-        progress = min(1.0, (now - self.started) / max(self.home_duration, dt))
-        planned = start + (target - start) * progress
-        lead_planned = (
+        current = start + (target - start) * self.home_progress
+        lead_current = (
             None
             if self.factory_zero
-            else lead_start + (lead_target - lead_start) * progress
+            else lead_start + (lead_target - lead_start) * self.home_progress
         )
-        # Unlike feedback-relative stepping, a time-based target keeps advancing
-        # through motor deadband, matching i2rt's move_joints interpolation. Stop
-        # instead of accumulating a large hidden error if any arm cannot follow.
-        tracking_error = np.max(np.abs(planned[joints] - q[joints]))
-        if not self.factory_zero:
-            tracking_error = max(
-                tracking_error,
-                np.max(np.abs(lead_planned[joints] - leader[joints])),
-            )
-        if tracking_error > 0.15:
+
+        def tracking_error(follower_plan, leader_plan):
+            errors = np.abs(follower_plan[joints] - q[joints])
+            owner, local = "Follower", int(np.argmax(errors))
+            maximum = float(errors[local])
+            dimension = joints[local]
+            if leader_plan is not None:
+                leader_errors = np.abs(leader_plan[joints] - leader[joints])
+                leader_local = int(np.argmax(leader_errors))
+                if float(leader_errors[leader_local]) > maximum:
+                    owner, local = "Leader", leader_local
+                    maximum = float(leader_errors[leader_local])
+                    dimension = joints[leader_local]
+            side = "左" if dimension < 7 else "右"
+            joint = dimension + 1 if dimension < 7 else dimension - 6
+            return maximum, f"{side}{owner} J{joint}"
+
+        # Keep the last bounded target if feedback is slower than the nominal
+        # interpolation.  This still accumulates enough position error to cross
+        # motor deadband, but it cannot run an otherwise healthy loaded arm into
+        # the old 0.15 rad tracking abort merely because the wall clock advanced.
+        current_error, current_joint = tracking_error(current, lead_current)
+        if current_error > self.HOME_HARD_ERROR:
             self.state = "idle"
             self.home_start = None
-            self.error = "回零反馈未跟随规划，已暂停；请检查阻挡或电机状态"
+            self.home_stalled_at = None
+            self.error = f"回零反馈异常，已暂停：{current_joint} 落后 {current_error:.3f} rad"
             return None
-        # i2rt move_joints completes after the time interpolation and leaves the
-        # final target active; it does not wait for encoder feedback to equal the
-        # target exactly. Keep the 0.15 rad tracking-fault guard above, but do not
-        # turn a small loaded steady-state residual into a 60-second timeout.
-        if progress >= 1.0:
+
+        candidate_progress = min(
+            1.0,
+            self.home_progress + dt / max(self.home_duration, dt),
+        )
+        candidate = start + (target - start) * candidate_progress
+        lead_candidate = (
+            None
+            if self.factory_zero
+            else lead_start + (lead_target - lead_start) * candidate_progress
+        )
+        candidate_error, candidate_joint = tracking_error(candidate, lead_candidate)
+        if candidate_error <= self.HOME_TRACKING_WINDOW:
+            self.home_progress = candidate_progress
+            self.home_stalled_at = None
+            planned, lead_planned = candidate, lead_candidate
+        else:
+            planned, lead_planned = current, lead_current
+            if self.home_stalled_at is None:
+                self.home_stalled_at = now
+            elif now - self.home_stalled_at >= self.HOME_STALL_TIMEOUT:
+                self.state = "idle"
+                self.home_start = None
+                self.home_stalled_at = None
+                self.error = (
+                    f"回零反馈停滞，已暂停：{candidate_joint} 落后 {candidate_error:.3f} rad"
+                )
+                return None
+
+        # Completion is based on the governed trajectory, not wall time.  With
+        # the bounded tracking window, the final target reaches the common outer
+        # command clamp intact and is then retained by Runtime.hold().
+        if self.home_progress >= 1.0:
             self.state = "idle"
             self.home_start = None
+            self.home_stalled_at = None
         return planned, lead_planned

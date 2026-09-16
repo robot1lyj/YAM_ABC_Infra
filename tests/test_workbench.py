@@ -54,12 +54,25 @@ def test_factory_zero_home_full_offline_trajectory_and_stop():
     with pytest.raises(ValueError, match="零位"):
         m.capture(np.zeros(14), np.zeros(14))
     q = np.array(
-        [-0.6193, 1.2400, 0.7212, -0.2325, -0.1921, -0.3271, 0.9494,
-         0.2577, 1.5059, 1.0866, -0.6498, -0.0086, 0.5205, 0.9717]
+        [
+            -0.6193,
+            1.2400,
+            0.7212,
+            -0.2325,
+            -0.1921,
+            -0.3271,
+            0.9494,
+            0.2577,
+            1.5059,
+            1.0866,
+            -0.6498,
+            -0.0086,
+            0.5205,
+            0.9717,
+        ]
     )
     leader = np.array(
-        [0.03, -0.11, 0.08, 0.02, -0.05, 0.01, 0.95,
-         -0.04, 0.09, -0.07, 0.03, 0.02, -0.02, 0.97]
+        [0.03, -0.11, 0.08, 0.02, -0.05, 0.01, 0.95, -0.04, 0.09, -0.07, 0.03, 0.02, -0.02, 0.97]
     )
     follower_grippers = q[[6, 13]].copy()
     leader_grippers = leader[[6, 13]].copy()
@@ -90,7 +103,7 @@ def test_factory_zero_home_full_offline_trajectory_and_stop():
     assert m.step(q, leader, now=20.3, dt=dt) is None
 
 
-def test_factory_zero_time_trajectory_crosses_motor_deadband_and_stops_if_blocked():
+def test_factory_zero_feedback_governed_trajectory_crosses_deadband_and_stops_if_blocked():
     m = Maintenance(factory_zero=True)
     q = np.zeros(14)
     q[0] = 0.4
@@ -115,16 +128,39 @@ def test_factory_zero_time_trajectory_crosses_motor_deadband_and_stops_if_blocke
     blocked = Maintenance(factory_zero=True)
     q[0] = 0.4
     blocked.command("home", q, leader, now=0, paused=True)
-    assert blocked.step(q, leader, now=1.5, dt=1 / 30) is None
+    last_target = q.copy()
+    for tick in range(1, 240):
+        action = blocked.step(q, leader, now=tick / 30, dt=1 / 30)
+        if action is None:
+            break
+        last_target = action[0]
+        assert abs(last_target[0] - q[0]) <= blocked.HOME_TRACKING_WINDOW + 1e-10
     assert blocked.state == "idle"
-    assert "未跟随" in blocked.error
+    assert "反馈停滞" in blocked.error
+
+    # A slow but moving plant pauses trajectory progress instead of tripping the
+    # old wall-clock tracking guard. It still reaches and submits the exact zero.
+    slow = Maintenance(factory_zero=True)
+    q[0] = 0.4
+    slow.command("home", q, leader, now=0, paused=True)
+    for tick in range(1, 1200):
+        action = slow.step(q, leader, now=tick / 30, dt=1 / 30)
+        if action is None:
+            break
+        target = action[0]
+        q[0] += np.clip(target[0] - q[0], -0.001, 0.001)
+    assert slow.state == "idle" and slow.error is None
+    assert target[0] == pytest.approx(0)
 
     # Official move_joints semantics finish when the interpolation reaches its
     # target; a small loaded encoder residual is reported, not held until timeout.
     residual = Maintenance(factory_zero=True)
     q[0] = 0.06
     residual.command("home", q, leader, now=0, paused=True)
-    final, lead_final = residual.step(q, leader, now=0.5, dt=1 / 30)
+    for tick in range(1, 30):
+        final, lead_final = residual.step(q, leader, now=tick / 30, dt=1 / 30)
+        if residual.state == "idle":
+            break
     assert residual.state == "idle" and residual.error is None
     assert final[0] == pytest.approx(0)
     assert lead_final is None

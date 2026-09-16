@@ -178,6 +178,7 @@ def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path):
         result = runtime.run(duration=0.15)
         assert result["policy_fusion"] == "smooth"
         assert result["policy_smooth_steps"] == 4
+        assert result["policy_trajectory_mode"] == "second_order"
         assert runtime.session.arbiter.epoch > old_epoch
         runtime.status["phase"] = "policy"
         with pytest.raises(ValueError, match="暂停"):

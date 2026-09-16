@@ -661,6 +661,7 @@ class Runtime:
                         np.any(constraint_mask[[0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]])
                     ),
                     "policy_trajectory_hz": getattr(self.io, "policy_trajectory_hz", 0),
+                    "policy_trajectory_mode": getattr(self.io, "policy_trajectory_mode", None),
                     "policy_trajectory_active": (
                         getattr(self.io, "_policy_trajectory", None) is not None
                     ),

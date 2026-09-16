@@ -68,10 +68,9 @@ uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 浏览器访问 http://127.0.0.1:8766 。真机前按 [工作站核验](workstation.md)填写
 [专用配置](../configs/station_hil.yaml)。带 `--web-port` 时先打开未连接的工作台，点击“连接设备”才构造设备，构造期间可能施力矩和校准夹爪；不带界面的CLI会在启动时连接。
 
-RK3588正式实例使用`--web-host 192.168.110.140`并由
-`deploy/yam-workstation.service`作为用户服务运行，局域网入口为
-`http://192.168.110.140:8766`。监听LAN不会关闭Host/Origin校验；页面服务启动本身不连接硬件。
-2026-09-16推理部署在同一用户服务的启动命令中预设`--url ws://192.168.250.1:8000`，默认模式仍为collect；选择推理任务及连接机械臂后才会构造硬件/调用策略，服务启动和无电机Thor探针不会发送电机目标。部署合同与测量见[验收](acceptance.md#2026-09-16ipc部署与真实thor无电机协议探针)。
+RK3588正式实例拆成两个用户服务：`deploy/yam-device.service`常驻并独占四臂、相机、推理和录制，私有接口为`%t/yam-device.sock`；`deploy/yam-workstation.service`只提供可独立重启的Web/API，局域网入口为`http://192.168.110.140:8766`。监听LAN不会关闭Host/Origin校验。重启Web不会关闭SDK或释放机械臂，但新Web附着时先发送HOLD；重启或停止`yam-device`仍会释放硬件，必须执行真机安全流程。设备服务预设Thor `ws://192.168.250.1:8000`，启动本身保持未连接。
+
+首次从旧单进程服务迁移需要一次有计划的力矩释放：现场支撑机械臂后安装两个unit、执行`systemctl --user daemon-reload`，停止旧`yam-workstation`，再依次启用并启动`yam-device`和`yam-workstation`。迁移完成后的页面更新只重启后者；设备代码、驱动或配置变更才重启前者。
 2026-09-15曾试验按角色分区：UI/相机/桥接/预览0–3号A55、控制及四臂读数
 4–5号A76、MPP编码6–7号A76。现场运动A/B发现两核控制分区的遥操作体感退化，
 并在30秒运动窗口出现最大约169ms控制间隔；临时恢复旧CPU4–7掩码后的

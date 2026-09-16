@@ -41,10 +41,15 @@ hil:
   leader_speed: 0.5
   # Manual tracking has no application-level slew limit, matching official GELLO.
   # This includes the grippers; policy and automatic paths retain their bounds.
-  max_joint_speed: 5.0
+  # Policy/automatic joint slew envelope. Upstream YAM defaults to 1.5rad/s;
+  # this station uses the operator-approved 2.5rad/s compromise.
+  max_joint_speed: 2.5
   handover_error: 0.2
   mirror_error: 0.5
-  replan_period: 0.2
+  # Normal replanning cadence: execute about ten 30Hz targets between requests.
+  # The adaptive deadline may request earlier if the measured observation-to-ready
+  # p95 plus reserve approaches the end of the usable action plan.
+  replan_period: 0.3333333333333333
   expected_policy_latency: 0.2 # seed for total round trip; replaced by accepted-reply p95
   prefetch_margin: 0.067 # two 30Hz control periods of reserve
   request_timeout: 1.5

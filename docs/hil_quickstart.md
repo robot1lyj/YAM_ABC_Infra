@@ -31,12 +31,22 @@ uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 IPC正式入口由用户级systemd服务保持；开发机的mock命令仍只监听本机。
 
 ```bash
+# 生产：常驻设备owner（私有Unix socket，不开放局域网端口）
+uv run --no-sync yam-workstation --device-daemon \
+  --device-socket /run/user/$(id -u)/yam-device.sock \
+  --mode collect --url ws://192.168.250.1:8000
+
+# 生产：可独立重启的Web/API
+uv run --no-sync yam-workstation --web-only \
+  --device-socket /run/user/$(id -u)/yam-device.sock \
+  --web-port 8766 --web-host 192.168.110.140
+
+# 兼容开发：旧单进程入口
 uv run --no-sync yam-workstation --mode collect --web-port 8766 \
   --web-host 192.168.110.140
 ```
 
-通配监听`0.0.0.0`不会隐式信任所有Host，必须至少补一个
-`--web-allowed-host <IP或主机名>`。服务启动只打开页面，不构造相机或机械臂。
+systemd正式部署直接使用`deploy/yam-device.service`和`deploy/yam-workstation.service`；日常页面更新只执行`systemctl --user restart yam-workstation.service`。首次从旧单进程迁移或重启`yam-device`会释放力矩，必须先支撑机械臂。通配监听`0.0.0.0`不会隐式信任所有Host，必须至少补一个`--web-allowed-host <IP或主机名>`。
 
 自动模拟策略→人工→恢复，并录制一个短episode：
 
@@ -152,7 +162,7 @@ Thor已反馈关节输出是rad绝对目标、夹爪0关/1开，Thor完成反归
 
 ## 非RTC推理与可选动作融合
 
-当前`configs/station_hil.yaml`默认`policy_fusion: smooth`（2026-09-16真实推理块边界目标跳变的离线回放选择）。`smooth`只在新旧块目标时刻匹配时对前`smooth_steps`步关节目标按KAI0的旧100%→新100%线性过渡；`ensemble`按KAI0/ACT的较早预测优先指数权重融合最近`ensemble_chunks`块的同目标时刻关节预测，`ensemble_decay`默认0.01。夹爪在两种方法中都取最新块，不混合开闭。三种选择不改变同步模式、Thor模型或50×14绝对动作协议；`--baseline`则关闭预取与融合，保留普通分块基准。
+当前`configs/station_hil.yaml`默认`policy_fusion: smooth`。`smooth`把旧预测插值到新块的精确目标时刻，再对前`smooth_steps`步关节目标按KAI0的旧100%→新100%线性过渡；`ensemble`按KAI0/ACT的较早预测优先指数权重融合最近`ensemble_chunks`块的同目标时刻关节预测。两者都不外推旧块，夹爪只取最新块，不混合开闭。三种选择不改变同步模式、Thor模型或50×14绝对动作协议；`--baseline`关闭预取与融合，保留普通分块基准。
 
 离线无设备检查与模拟延迟测试：
 
@@ -172,7 +182,7 @@ uv run --no-sync yam-workstation --station configs/station_hil.yaml \
 
 获准并验证raw后，可改`--policy-fusion smooth --smooth-steps 6`，或`--policy-fusion ensemble --ensemble-chunks 3 --ensemble-decay 0.01`做运动对照。3588以`configs/station_hil.yaml`的`action_dt`或命令行`--action-dt 0.03333333333333333`配置动作间隔，固定认为动作第0步对应本机observation参考时刻；这是动作时间轴，不是触发下一次推理的时间偏移。换模型时如动作间隔/单位不同，先更新配置并做无电机回放，不要求模型名称或指纹匹配。请求超过`request_timeout`、缓冲耗尽或动作超过`action_timeout`会保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。
 
-预取触发不再只受200ms固定间隔限制：每tick计算最新动作块距离H50末端或`action_timeout`的可执行秒数；当它不大于“最近16个有效回复的本机往返p95（初始采用配置估计）+安全余量”时，即使尚未到200ms也提前请求。200ms仍作为正常观测新鲜度的最长重规划间隔；单在途请求期间只保留当tick的最新观测，不建立旧观测队列。当前初始总往返估计为`--expected-policy-latency 0.2`秒，余量为`--prefetch-margin 0.067`秒；这不是Thor模型实测，真联网后会被有效回复p95更新。状态接口显示`policy_buffer_seconds`、`policy_observed_rtt_p95_s`、`policy_latency_budget_s`和最近请求原因。回复行另保存本机打包、send调用、等待回复、解包以及condapi`server_timing.infer_ms`；后者与本机时钟不直接相减为“纯网络”。
+正常重规划间隔为333ms，即约执行10个30Hz动作后取最新观测发起下一次请求；若缓冲剩余时间已接近“最近16个有效回复的观测参考时刻→动作可用p95（初始0.2s）+67ms余量”，会动态提前。单在途期间不排队旧观测。状态接口同时报告缓冲秒数、请求RTT、端到端观测延迟、动作索引、裁掉步数、块边界原始差值和2.5rad/s限幅是否正在介入。
 
 ## 实用同步与性能默认值
 
@@ -188,10 +198,10 @@ uv run --no-sync yam-workstation --station configs/station_hil.yaml \
 | max_state_age | 250ms | SDK状态循环停止更新则故障；不是每个CAN电机的独立接收时间 |
 | request/action_timeout | 1.5s / 1.5s | 拒绝明显过期请求/动作 |
 | tick_timeout | 500ms | 严重控制停顿锁故障，普通miss只统计；不追赶补发旧周期 |
-| replan_period | 200ms | 正常新鲜度的最长间隔；缓冲截止时间紧迫时可提前 |
+| replan_period | 333ms（约10步） | 正常重规划间隔；缓冲截止时间紧迫时可提前 |
 | expected_policy_latency / prefetch_margin | 200ms / 67ms | 首次总往返预算/两个30Hz周期余量；收到有效回复后按最近16次本机往返p95更新 |
 | handover/mirror_error | 0.2 / 0.5rad | 策略恢复交接门限/运行中的leader大偏差保持；普通遥操作使用绝对1:1关节目标，不受HIL交接门限阻挡 |
-| max_joint_speed / max_manual_joint_speed | 5.0rad/s / 无 | 策略与自动运动的每周期变化上限；人工遥操作关节与夹爪均不做应用层速度裁剪 |
+| max_joint_speed / max_manual_joint_speed | 2.5rad/s / 无 | 推理与自动运动的每周期目标变化包络；上游默认1.5rad/s，本站按现场要求提高；人工遥操作不做应用层裁剪 |
 
 这些是可调的开发默认值，不是现场性能证明或最终控制参数。
 D405无三机外部硬同步；本版按**主机接收时间**配对与关节历史插值，

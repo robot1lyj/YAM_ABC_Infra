@@ -858,3 +858,40 @@ def serve(args):
         )
     finally:
         workbench.close()
+
+
+def serve_device(args):
+    """Run the persistent hardware owner on a private Unix-domain socket."""
+    import uvicorn
+
+    from .web import create_app
+
+    socket_path = Path(args.device_socket)
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        socket_path.unlink()
+    except FileNotFoundError:
+        pass
+    workbench = Workbench(args)
+    try:
+        uvicorn.run(create_app(workbench), uds=str(socket_path), log_level="warning")
+    finally:
+        workbench.close()
+        try:
+            socket_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def serve_web(args):
+    """Run the restartable public UI/API without constructing any hardware."""
+    import uvicorn
+
+    from .device_client import DeviceClient
+    from .web import create_app
+
+    client = DeviceClient(args.device_socket, args)
+    client.hold_on_attach()
+    uvicorn.run(
+        create_app(client), host=args.web_host, port=args.web_port, log_level="warning"
+    )

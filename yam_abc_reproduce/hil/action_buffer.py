@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 
 GRIPPERS = (6, 13)
+JOINTS = tuple(index for index in range(14) if index not in GRIPPERS)
 
 
 @dataclass(frozen=True)
@@ -66,22 +67,41 @@ class ActionBuffer:
         self.ensemble_decay = ensemble_decay
         self.max_action_age = max_action_age
         self.chunks: list[TimedChunk] = []
+        self.last_trimmed_steps: int | None = None
+        self.last_seam_max_rad: float | None = None
 
     def clear(self):
         self.chunks.clear()
+        self.last_trimmed_steps = None
+        self.last_seam_max_rad = None
 
     def _index_at(self, chunk: TimedChunk, now: float) -> int:
         # Treat a target exactly on the boundary as due, despite binary rounding.
         return floor((now - chunk.origin) / self.action_dt + 1e-9)
 
-    def _matching(self, chunk: TimedChunk, target: float) -> np.ndarray | None:
-        index = round((target - chunk.origin) / self.action_dt)
-        if index < chunk.first_index or index >= chunk.first_index + len(chunk.actions):
+    def _at_target(self, chunk: TimedChunk, target: float) -> np.ndarray | None:
+        """Evaluate a chunk at one physical target time.
+
+        Camera observations are not phase-locked to the 30 Hz control clock, so
+        two valid prediction grids can be shifted by a fraction of ``action_dt``.
+        Linear interpolation evaluates the older joint plan at the *exact* new
+        target time instead of either rejecting the overlap or blending adjacent
+        timestamps as though they were equal.  Never extrapolate beyond a chunk.
+        """
+        position = (target - chunk.origin) / self.action_dt
+        lower = floor(position + 1e-9)
+        fraction = position - lower
+        end = chunk.first_index + len(chunk.actions)
+        if lower < chunk.first_index or lower >= end:
             return None
-        # Never blend adjacent predicted steps merely because they are close.
-        if abs(chunk.target(index, self.action_dt) - target) > self.action_dt * 0.25:
+        first = chunk.actions[lower - chunk.first_index]
+        if fraction <= 1e-9:
+            return first
+        upper = lower + 1
+        if upper >= end:
             return None
-        return chunk.actions[index - chunk.first_index]
+        second = chunk.actions[upper - chunk.first_index]
+        return first * (1.0 - fraction) + second * fraction
 
     def integrate(self, token: Request, actions: np.ndarray, origin: float, now: float) -> bool:
         first = max(0, floor((now - origin) / self.action_dt + 1e-9))
@@ -90,11 +110,20 @@ class ActionBuffer:
         # Physically remove the expired prefix while retaining its original
         # model index for provenance and future timestamp matching.
         rows = actions[first:].copy()
+        self.last_trimmed_steps = first
+        self.last_seam_max_rad = None
+        if self.chunks and now - self.chunks[-1].origin <= self.max_action_age:
+            old = self.chunks[-1]
+            seam_prior = self._at_target(old, origin + first * self.action_dt)
+            if seam_prior is not None:
+                self.last_seam_max_rad = float(
+                    np.max(np.abs(actions[first, list(JOINTS)] - seam_prior[list(JOINTS)]))
+                )
         if self.fusion == "smooth" and self.chunks and now - self.chunks[-1].origin <= self.max_action_age:
             old = self.chunks[-1]
             matched = 0
             for index in range(first, min(len(actions), first + self.smooth_steps)):
-                prior = self._matching(old, origin + index * self.action_dt)
+                prior = self._at_target(old, origin + index * self.action_dt)
                 if prior is None:
                     continue
                 # A short old-to-new ramp at *matching* target times only.
@@ -128,7 +157,7 @@ class ActionBuffer:
             for older in reversed(self.chunks[:-1]):
                 if now - older.origin > self.max_action_age:
                     continue
-                prior = self._matching(older, target)
+                prior = self._at_target(older, target)
                 if prior is not None:
                     candidates.append(prior)
             if len(candidates) > 1:
@@ -139,9 +168,8 @@ class ActionBuffer:
                     exp(-self.ensemble_decay * (len(candidates) - 1 - rank))
                     for rank in range(len(candidates))
                 ]
-                joints = [i for i in range(14) if i not in GRIPPERS]
-                action[joints] = np.average(
-                    np.stack([row[joints] for row in candidates]),
+                action[list(JOINTS)] = np.average(
+                    np.stack([row[list(JOINTS)] for row in candidates]),
                     axis=0,
                     weights=weights,
                 )

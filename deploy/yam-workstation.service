@@ -1,22 +1,19 @@
 [Unit]
-Description=Wuyan YAM device and acquisition workstation
-After=network-online.target
+Description=Wuyan YAM restartable workstation Web/API
+After=network-online.target yam-device.service
 Wants=network-online.target
+Requires=yam-device.service
 
 [Service]
 Type=simple
 WorkingDirectory=/data/YAM
 Environment=PYTHONUNBUFFERED=1
-# The IPC kernel reserves RK3588's Cortex-A76 cores with isolcpus/nohz_full=4-7.
-# A supervised 2026-09-15 motion A/B found that restricting control to only
-# cores 4-5 caused perceptible teleoperation jitter. Keep the verified 4-7
-# service mask until recording is isolated without narrowing control's cores.
-CPUAffinity=4 5 6 7
-ExecStart=/data/YAM/.venv/bin/yam-workstation --station /data/YAM/configs/station_hil.yaml --mode collect --url ws://192.168.250.1:8000 --web-port 8766 --web-host 192.168.110.140
+CPUAffinity=0 1 2 3
+ExecStart=/data/YAM/.venv/bin/yam-workstation --web-only --device-socket=%t/yam-device.sock --web-port 8766 --web-host 192.168.110.140
 Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT
-TimeoutStopSec=75
+TimeoutStopSec=15
 
 [Install]
 WantedBy=default.target

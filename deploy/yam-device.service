@@ -1,0 +1,21 @@
+[Unit]
+Description=Wuyan YAM persistent device control owner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/YAM
+Environment=PYTHONUNBUFFERED=1
+# The device owner keeps the previously validated A76 mask.  Web/API work is
+# isolated onto cores 0-3 by yam-workstation.service.
+CPUAffinity=4 5 6 7
+UMask=0077
+ExecStart=/data/YAM/.venv/bin/yam-workstation --device-daemon --device-socket=%t/yam-device.sock --station /data/YAM/configs/station_hil.yaml --mode collect --url ws://192.168.250.1:8000
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=75
+
+[Install]
+WantedBy=default.target

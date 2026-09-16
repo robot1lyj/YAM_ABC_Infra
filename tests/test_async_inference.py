@@ -106,6 +106,7 @@ def test_deadline_prefetch_can_override_long_freshness_interval():
     arbiter._last_request_at = 1.75
     assert arbiter.accept(second, chunk(), 2.15)  # simulated 400ms Thor/network jitter
     assert arbiter.observed_policy_rtt_p95 == pytest.approx(0.381, abs=0.01)
+    assert arbiter.observed_observation_to_ready_p95 == pytest.approx(0.381, abs=0.01)
     assert arbiter.policy_latency_budget > 0.42
     # The latest observation's old prefix (four 100ms steps) was not executed.
     assert arbiter.action_buffer.chunks[-1].first_index == 4
@@ -123,7 +124,7 @@ def test_action_dt_cli_override_is_checked_without_model_or_motors(capsys):
     assert json.loads(capsys.readouterr().out)["action_dt"] == pytest.approx(0.05)
 
 
-def test_smooth_window_only_blends_matching_future_joints_and_not_grippers():
+def test_smooth_window_interpolates_same_target_time_and_not_grippers():
     q = np.zeros(14)
     arbiter = Arbiter(
         Mode.INFERENCE, streaming=True, action_dt=0.1,
@@ -137,10 +138,65 @@ def test_smooth_window_only_blends_matching_future_joints_and_not_grippers():
         assert decision.policy_action[0] == pytest.approx(joint)
         assert decision.policy_action[6] == pytest.approx(0.8)
 
-    # 1.26 is not the old chunk's 1.2 or 1.3 target (tolerance=25ms).
+    # The observation grids are shifted by 60ms.  The old plan is evaluated at
+    # each exact new target time rather than rejecting the overlap.
     policy(arbiter, chunk(2, 0.6), observed_at=1.26, sent_at=1.27, received_at=1.28)
-    decision = arbiter.step(q, q, now=1.28, dt=0.03, leader_ready=True)
-    assert decision.policy_action[0] == pytest.approx(2)
+    for now, joint in ((1.28, 0.3), (1.38, 1.4), (1.48, 2.0)):
+        decision = arbiter.step(q, q, now=now, dt=0.03, leader_ready=True)
+        assert decision.policy_action[0] == pytest.approx(joint)
+        assert decision.policy_action[6] == pytest.approx(0.6)
+
+
+def test_latency_budget_uses_observation_age_not_only_request_rtt():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=0.1,
+        expected_policy_latency=0.05, prefetch_margin=0.02,
+        max_action_age=3,
+    )
+    arbiter.start(q)
+    token = arbiter.request(1, 1.10, observed_at=1.0)
+    assert token is not None
+    assert arbiter.accept(token, chunk(), 1.25)
+    assert arbiter.observed_policy_rtt_p95 == pytest.approx(0.15)
+    assert arbiter.observed_observation_to_ready_p95 == pytest.approx(0.25)
+    assert arbiter.policy_latency_budget == pytest.approx(0.27)
+
+
+def test_step_ten_replan_runs_old_plan_then_time_aligns_150ms_reply():
+    """The control path keeps ticking while one new chunk is in flight."""
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=1 / 30,
+        replan_period=10 / 30, policy_fusion="smooth", smooth_steps=4,
+        max_joint_speed=2.5, max_action_age=1.5,
+    )
+    arbiter.start(q)
+    old = chunk()
+    old[:, 0] = np.arange(50) * 0.01
+    policy(arbiter, old, observed_at=0, sent_at=0, received_at=0.12)
+
+    # At about action 10 the cadence launches the only next request.  During
+    # its simulated 150 ms flight, the old plan remains continuously usable.
+    token = arbiter.request(10, 10 / 30, observed_at=10 / 30)
+    assert token is not None and arbiter.last_request_reason == "freshness"
+    pending_indices = []
+    for now in (0.35, 0.38, 0.41, 0.44, 0.47):
+        decision = arbiter.step(q, q, now=now, dt=1 / 30, leader_ready=True)
+        assert decision.phase == Phase.POLICY and decision.source == "policy"
+        pending_indices.append(decision.action_index)
+    assert pending_indices == sorted(pending_indices)
+
+    new = chunk(1.0, 0.8)
+    assert arbiter.accept(token, new, 10 / 30 + 0.15)
+    assert arbiter.action_buffer.last_trimmed_steps == 4
+    decision = arbiter.step(q, q, now=10 / 30 + 0.15, dt=1 / 30, leader_ready=True)
+    assert decision.action_index == 4  # never executes the stale index-zero target
+    # First matching joint target is inherited from the old physical-time plan;
+    # the latest gripper remains discrete and is never averaged.
+    assert decision.policy_action[0] == pytest.approx(0.14)
+    assert decision.policy_action[6] == pytest.approx(0.8)
+    assert arbiter.action_buffer.last_seam_max_rad == pytest.approx(0.86)
 
 
 def test_kai0_single_step_overlap_keeps_old_joint_but_latest_gripper():
@@ -175,7 +231,8 @@ def test_ensemble_fuses_same_target_time_kai0_oldest_first_with_latest_gripper()
 
     policy(arbiter, chunk(3, 0.7), observed_at=1.44, sent_at=1.45, received_at=1.46)
     decision = arbiter.step(q, q, now=1.46, dt=0.03, leader_ready=True)
-    assert decision.policy_action[0] == pytest.approx(3)
+    expected = np.average([2, 3], weights=[1, np.exp(-0.5)])
+    assert decision.policy_action[0] == pytest.approx(expected)
 
 
 def test_kai0_oldest_first_weights_three_matching_joint_predictions():

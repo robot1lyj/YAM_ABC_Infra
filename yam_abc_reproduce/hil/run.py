@@ -492,6 +492,7 @@ class Runtime:
                     transitions.append("resume_requested")
                 if a.phase == Phase.POLICY and previous_phase != Phase.POLICY:
                     transitions.append("policy_started")
+                constraint_mask = np.abs(submitted - decision.selected_action) > 1e-8
                 row = {
                     "event_requested_at": requested_at,
                     "event_applied_at": apply_done if transitions else None,
@@ -514,7 +515,7 @@ class Runtime:
                     "human_action": leader if decision.source == "human" else None,
                     "selected_action": decision.selected_action,
                     "submitted_action": submitted,
-                    "constraint_mask": np.abs(submitted - decision.selected_action) > 1e-8,
+                    "constraint_mask": constraint_mask,
                     "measured_state": q,
                     "leader_state": leader,
                     "gripper_owned": decision.gripper_owned,
@@ -610,9 +611,18 @@ class Runtime:
                     "policy_buffer_remaining": a.action_buffer.remaining(now),
                     "policy_buffer_seconds": a.action_buffer.seconds_to_expiry(now),
                     "policy_observed_rtt_p95_s": a.observed_policy_rtt_p95,
+                    "policy_observation_to_ready_p95_s": (
+                        a.observed_observation_to_ready_p95
+                    ),
                     "policy_latency_budget_s": a.policy_latency_budget,
                     "policy_request_reason": a.last_request_reason,
                     "policy_request_pending": a.pending is not None,
+                    "policy_action_index": decision.action_index,
+                    "policy_trimmed_steps": a.action_buffer.last_trimmed_steps,
+                    "policy_seam_max_rad": a.action_buffer.last_seam_max_rad,
+                    "policy_constraint_active": bool(
+                        np.any(constraint_mask[[0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]])
+                    ),
                     "leader_error_rad": error,
                     "frame_age_s": quality.get("age_s"),
                     "arrival_skew_s": quality.get("arrival_skew_s"),
@@ -714,6 +724,19 @@ def main(argv=None, *, service=None):
     p.add_argument("--prefetch-margin", type=float, help="extra deadline reserve in seconds")
     p.add_argument("--web-port", type=int, help="optional local dashboard port")
     p.add_argument(
+        "--device-socket",
+        default="/tmp/yam-device.sock",
+        help="private Unix socket used by the persistent device owner",
+    )
+    p.add_argument(
+        "--device-daemon", action="store_true",
+        help="own devices persistently and expose only the private Unix socket",
+    )
+    p.add_argument(
+        "--web-only", action="store_true",
+        help="serve the public Web/API as a proxy without constructing hardware",
+    )
+    p.add_argument(
         "--web-host",
         default="127.0.0.1",
         help="dashboard listen address; use the IPC LAN address for direct workstation access",
@@ -725,20 +748,35 @@ def main(argv=None, *, service=None):
         help="additional HTTP Host name accepted by the dashboard (repeatable)",
     )
     args = p.parse_args(argv)
+    if args.device_daemon and args.web_only:
+        p.error("--device-daemon and --web-only are mutually exclusive")
+    if (args.device_daemon or args.web_only) and not args.device_socket:
+        p.error("split services require --device-socket")
     if not np.isfinite(args.segment_seconds) or args.segment_seconds <= 0:
         p.error("segment-seconds must be finite and positive")
     if not np.isfinite(args.min_free_gb) or args.min_free_gb < 0:
         p.error("min-free-gb must be finite and nonnegative")
     if args.web_port is not None and not 1 <= args.web_port <= 65535:
         p.error("web-port must be between 1 and 65535")
-    if args.web_host != "127.0.0.1" and args.web_port is None:
+    if args.web_host != "127.0.0.1" and args.web_port is None and not args.device_daemon:
         p.error("web-host requires web-port")
     if args.web_host == "0.0.0.0" and not args.web_allowed_host:
         p.error("0.0.0.0 requires at least one explicit --web-allowed-host")
-    if args.web_port and not args.check and not args.demo and service is None:
-        from .workbench import serve
+    if not args.check and not args.demo and service is None:
+        if args.web_only:
+            if args.web_port is None:
+                p.error("--web-only requires --web-port")
+            from .workbench import serve_web
 
-        return serve(args)
+            return serve_web(args)
+        if args.device_daemon:
+            from .workbench import serve_device
+
+            return serve_device(args)
+        if args.web_port:
+            from .workbench import serve
+
+            return serve(args)
     if args.demo and not args.mock:
         p.error("--demo is mock only")
     if args.duration is not None and (not np.isfinite(args.duration) or args.duration <= 0):

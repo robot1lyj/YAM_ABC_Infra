@@ -138,6 +138,7 @@ class Arbiter:
         self.expected_policy_latency = expected_policy_latency
         self.prefetch_margin = prefetch_margin
         self._policy_rtts = deque(maxlen=16)
+        self._observation_to_ready = deque(maxlen=16)
         self.last_request_reason: str | None = None
         self.tick_timeout = tick_timeout
         self._last_request_at = -float("inf")
@@ -265,8 +266,15 @@ class Arbiter:
 
     @property
     def policy_latency_budget(self) -> float:
-        observed = self.observed_policy_rtt_p95
+        observed = self.observed_observation_to_ready_p95
         return max(self.expected_policy_latency, observed or 0.0) + self.prefetch_margin
+
+    @property
+    def observed_observation_to_ready_p95(self) -> float | None:
+        """End-to-end age of the observation when its actions become usable."""
+        if not self._observation_to_ready:
+            return None
+        return float(np.percentile(self._observation_to_ready, 95))
 
     def accept(self, token: Request, actions, now: float) -> bool:
         if token != self.pending or token.epoch != self.epoch:
@@ -295,6 +303,7 @@ class Arbiter:
             return False
         if self.streaming:
             self._policy_rtts.append(age)
+            self._observation_to_ready.append(now - origin)
         self._active_request = token
         self._chunk = None if self.streaming else rows[: self.execute_steps].copy()
         self._origin_time = origin

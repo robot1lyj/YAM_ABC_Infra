@@ -99,7 +99,7 @@ function render() {
       !state.recording_error &&
       collectionReady &&
       mode === "collect",
-    canMaintain = connected && !latched && paused && !recording && !state.recording_error,
+    canMaintain = connected && !latched && paused && !recording,
     idle = maint === "idle";
   text("environment", state.mock ? "模拟工作站" : "真实设备");
   $("environment").className = "pill" + (state.mock ? "" : " ok");
@@ -384,7 +384,7 @@ function render() {
     state.error,
     state.recording_error,
     state.cleanup_error,
-    state.maintenance_error,
+    maint !== "idle" ? state.maintenance_error : null,
     state.operator_error,
     state.operator_lost
       ? "操作台失联已触发暂停；重新连接不会自动恢复运动。"
@@ -479,9 +479,23 @@ function render() {
       : "开度 —",
   );
   const factoryZero = !!state.factory_zero_home;
+  const homeBlockReason = !connected
+    ? "机械臂未连接或状态已过期"
+    : latched
+      ? "请先解除软件急停锁存"
+      : !paused
+        ? "请先暂停模型或遥操作"
+        : recording
+          ? "请先结束当前录制"
+          : !idle
+            ? "请先结束当前维护操作"
+            : !state.home_available
+              ? state.home_reason || "零位当前不可用"
+              : "";
   $("capture-home").hidden = factoryZero;
   $("capture-home").disabled = factoryZero || !(canMaintain && idle);
-  $("home").disabled = !(canMaintain && idle && state.home_available);
+  $("home").disabled = !!homeBlockReason;
+  $("home").title = homeBlockReason;
   $("gravity").disabled = !(canMaintain && idle);
   $("gravity-exit").disabled = !(connected && !latched && maint === "gravity");
   text("maintenance-title", factoryZero ? "Follower 零位与重力补偿" : "准备位与重力补偿");
@@ -497,14 +511,20 @@ function render() {
   );
   text(
     "home-status",
-    state.maintenance_error
-      ? state.maintenance_error
-      : maint === "homing"
+    latched
+      ? "软件急停已锁存 · 现场确认后先解除锁存"
+      : !paused
+        ? "运行中 · 暂停后可执行设备维护"
+        : recording
+          ? "录制中 · 结束录制后可执行设备维护"
+          : maint === "homing"
       ? factoryZero
         ? "Follower 正在回零，完成后保持"
         : "正在回准备位，完成后保持不动"
       : maint === "gravity"
         ? "重力补偿中：请手扶机械臂调整姿态"
+        : state.maintenance_error
+          ? `上次操作：${state.maintenance_error} 当前已保持，可重新执行`
         : state.home_available
           ? factoryZero
             ? "Follower 零位可用 · 回零前请清空完整运动路径"

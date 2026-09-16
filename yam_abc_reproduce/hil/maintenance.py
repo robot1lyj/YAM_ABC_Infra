@@ -41,6 +41,7 @@ class Maintenance:
     def command(self, event, q, leader, *, now, paused):
         if event == "stop":
             self.latched = True
+            self.error = None
             self.frozen = (q.copy(), leader.copy())
             self.state = "idle"
             self.home_start = None
@@ -48,10 +49,13 @@ class Maintenance:
         if event == "reset_stop":
             self.latched = False
             self.state = "idle"
+            self.error = None
+            self.frozen = None
             return "hold"
         if event == "hold" or (event and event.startswith("mode:")):
             self.state = "idle"
             self.home_start = None
+            self.error = None
         if self.latched:
             return "hold"
         if event == "capture_home":

@@ -136,6 +136,7 @@ def test_stop_freezes_four_arms_and_reset_never_resumes():
     m.capture(q, h)
     m.command("home", q, h, now=0, paused=True)
     m.command("stop", q, h, now=1, paused=False)
+    m.error = "旧维护错误"
     assert m.latched and m.state == "idle"
     assert m.command("start", q, h, now=2, paused=True) == "hold"
     frozen_q, frozen_h = m.step(q + 0.1, h + 0.1, now=2, dt=0.03)
@@ -143,6 +144,7 @@ def test_stop_freezes_four_arms_and_reset_never_resumes():
     np.testing.assert_array_equal(frozen_h, h)
     assert m.command("reset_stop", q, h, now=3, paused=True) == "hold"
     assert not m.latched and m.state == "idle"
+    assert m.error is None and m.frozen is None
     assert m.step(q, h, now=3, dt=0.03) is None
 
 
@@ -399,6 +401,13 @@ def test_runtime_emergency_reset_jog_and_home(tmp_path):
         wait(lambda: runtime.status.get("maintenance") == "homing")
         wait(lambda: runtime.status.get("maintenance") == "idle")
         assert abs(runtime.status["follower_state"][0]) < 0.016
+        # Recorder failure must not strand the robot away from its recovery
+        # controls after software-stop reset.
+        runtime.recording_error = "encoder failed"
+        previous_home = runtime.maintenance.started
+        runtime.event("home")
+        wait(lambda: runtime.maintenance.started > previous_home)
+        wait(lambda: runtime.status.get("maintenance") == "idle")
         assert not rec.recording
     finally:
         runtime.event("quit")

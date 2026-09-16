@@ -201,10 +201,18 @@ class Runtime:
         if event in ("record", "discard") and not self.recording_allowed:
             raise ValueError("standalone teleoperation does not record data")
         if self.recording_error and not (
-            event in ("hold", "stop", "quit", "reset_stop", "mode:teleop")
+            event in (
+                "hold",
+                "stop",
+                "quit",
+                "reset_stop",
+                "home",
+                "gravity",
+                "mode:teleop",
+            )
             or (event == "start" and self.status.get("mode") == "teleop")
         ):
-            raise ValueError("录制已中断；仅可切换为不录制的遥操作或断开机械臂")
+            raise ValueError("录制已中断；可进行设备恢复、切换为遥操作或断开机械臂")
         if self.maintenance.latched and event not in ("stop", "hold", "quit", "reset_stop"):
             raise ValueError("紧急暂停已锁存，请先检查现场并解除锁存")
         if event in ("home", "capture_home", "gravity"):
@@ -334,7 +342,15 @@ class Runtime:
                     self.recording_error
                     and self.session.arbiter.mode != Mode.TELEOP
                     and event is not None
-                    and event not in ("stop", "hold", "reset_stop", "mode:teleop")
+                    and event
+                    not in (
+                        "stop",
+                        "hold",
+                        "reset_stop",
+                        "home",
+                        "gravity",
+                        "mode:teleop",
+                    )
                 ):
                     # An old collection command must not interrupt live teleoperation.
                     event, requested_at = None, None

@@ -132,4 +132,11 @@ class Maintenance:
             self.home_start = None
             self.error = "回零反馈未跟随规划，已暂停；请检查阻挡或电机状态"
             return None
+        # i2rt move_joints completes after the time interpolation and leaves the
+        # final target active; it does not wait for encoder feedback to equal the
+        # target exactly. Keep the 0.15 rad tracking-fault guard above, but do not
+        # turn a small loaded steady-state residual into a 60-second timeout.
+        if progress >= 1.0:
+            self.state = "idle"
+            self.home_start = None
         return planned, lead_planned

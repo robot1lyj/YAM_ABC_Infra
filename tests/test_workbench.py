@@ -119,6 +119,16 @@ def test_factory_zero_time_trajectory_crosses_motor_deadband_and_stops_if_blocke
     assert blocked.state == "idle"
     assert "未跟随" in blocked.error
 
+    # Official move_joints semantics finish when the interpolation reaches its
+    # target; a small loaded encoder residual is reported, not held until timeout.
+    residual = Maintenance(factory_zero=True)
+    q[0] = 0.06
+    residual.command("home", q, leader, now=0, paused=True)
+    final, lead_final = residual.step(q, leader, now=0.5, dt=1 / 30)
+    assert residual.state == "idle" and residual.error is None
+    assert final[0] == pytest.approx(0)
+    assert lead_final is None
+
 
 def test_stop_freezes_four_arms_and_reset_never_resumes():
     m = Maintenance()

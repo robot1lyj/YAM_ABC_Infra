@@ -430,7 +430,7 @@
             </section>
             <section class="panel maintenance-panel">
               <div class="panel-heading">
-                <h2><svg><use href="#i-spark" /></svg>准备位与重力补偿</h2>
+                <h2><svg><use href="#i-spark" /></svg><span id="maintenance-title">准备位与重力补偿</span></h2>
                 <span class="pill">四臂维护</span>
               </div>
               <div class="maintenance-status">
@@ -442,8 +442,8 @@
               </p>
               <div class="maintenance-groups">
                 <section>
-                  <h3>准备位</h3>
-                  <p>保存合适的四臂姿态，供下一次采集恢复。</p>
+                  <h3 id="home-group-title">准备位</h3>
+                  <p id="home-group-copy">保存合适的四臂姿态，供下一次采集恢复。</p>
                   <div class="maintenance-buttons">
                     <button class="button maintenance-action" id="capture-home">
                       <svg><use href="#i-record" /></svg
@@ -455,8 +455,8 @@
                     <button class="button primary maintenance-action" id="home">
                       <svg><use href="#i-arm" /></svg
                       ><span
-                        ><strong>回准备位</strong
-                        ><small>四臂协调回位 · 夹爪保持当前开度</small></span
+                        ><strong id="home-label">回准备位</strong
+                        ><small id="home-subtitle">四臂协调回位 · 夹爪保持当前开度</small></span
                       >
                     </button>
                   </div>

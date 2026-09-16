@@ -478,18 +478,37 @@ function render() {
       ? "当前开度 " + Math.round(q[offset + 6] * 100) + "%"
       : "开度 —",
   );
-  $("capture-home").disabled = !(canMaintain && idle);
+  const factoryZero = !!state.factory_zero_home;
+  $("capture-home").hidden = factoryZero;
+  $("capture-home").disabled = factoryZero || !(canMaintain && idle);
   $("home").disabled = !(canMaintain && idle && state.home_available);
   $("gravity").disabled = !(canMaintain && idle);
   $("gravity-exit").disabled = !(connected && !latched && maint === "gravity");
+  text("maintenance-title", factoryZero ? "Follower 零位与重力补偿" : "准备位与重力补偿");
+  text("home-group-title", factoryZero ? "Follower 回零" : "准备位");
+  text(
+    "home-group-copy",
+    factoryZero ? "两台 Follower 回到官方关节零位，Leader 不主动运动。" : "保存合适的四臂姿态，供下一次采集恢复。",
+  );
+  text("home-label", factoryZero ? "Follower 回零" : "回准备位");
+  text(
+    "home-subtitle",
+    factoryZero ? "六关节零位 · Leader 与夹爪保持" : "四臂协调回位 · 夹爪保持当前开度",
+  );
   text(
     "home-status",
-    maint === "homing"
-      ? "正在回准备位，完成后保持不动"
+    state.maintenance_error
+      ? state.maintenance_error
+      : maint === "homing"
+      ? factoryZero
+        ? "Follower 正在回零，完成后保持"
+        : "正在回准备位，完成后保持不动"
       : maint === "gravity"
         ? "重力补偿中：请手扶机械臂调整姿态"
         : state.home_available
-          ? "准备位已保存 · 回位前请清空完整运动路径"
+          ? factoryZero
+            ? "Follower 零位可用 · 回零前请清空完整运动路径"
+            : "准备位已保存 · 回位前请清空完整运动路径"
           : "尚未保存准备位",
   );
   renderInitialization({ connected, canMaintain, idle, maint, transitional });
@@ -702,8 +721,10 @@ $("capture-home").onclick = () =>
   );
 $("home").onclick = () =>
   confirmAction(
-    "回到准备位？",
-    "回位将独占四臂控制，并沿关节插值路径运动。请确认完整路径没有人员或障碍；夹爪保持当前开度。可随时按暂停。",
+    state.factory_zero_home ? "两台 Follower 回零？" : "回到准备位？",
+    state.factory_zero_home
+      ? "两台 Follower 将沿关节插值路径回到六关节零位；Leader 不接收位置目标，夹爪保持。请确认完整路径没有人员或障碍，可随时按暂停。"
+      : "回位将独占四臂控制，并沿关节插值路径运动。请确认完整路径没有人员或障碍；夹爪保持当前开度。可随时按暂停。",
     () => action("/event/home"),
   );
 $("gravity").onclick = () =>

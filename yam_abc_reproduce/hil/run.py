@@ -857,6 +857,10 @@ def main(argv=None, *, service=None):
     for key, value in hil_cfg.items():
         if key == "policy_fusion":
             continue
+        if key == "policy_trajectory_mode":
+            if value not in ("second_order", "linear"):
+                p.error("policy_trajectory_mode must be second_order or linear")
+            continue
         if key == "factory_zero_home":
             if not isinstance(value, bool):
                 p.error("factory_zero_home must be true or false")
@@ -961,6 +965,7 @@ def main(argv=None, *, service=None):
             leader_gain=hil_cfg.get("leader_gain", 0.2),
             leader_speed=hil_cfg.get("leader_speed", 0.5),
             policy_trajectory_hz=hil_cfg.get("policy_trajectory_hz", 0),
+            policy_trajectory_mode=hil_cfg.get("policy_trajectory_mode", "second_order"),
             policy_joint_speed=hil_cfg.get("max_joint_speed", 3.0),
             policy_joint_acceleration=hil_cfg.get("policy_joint_acceleration", 30.0),
             policy_natural_frequency=hil_cfg.get("policy_natural_frequency", 10.0),

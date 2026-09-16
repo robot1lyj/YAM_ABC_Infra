@@ -156,6 +156,7 @@ def test_station_defaults_to_short_two_chunk_seam_without_hardware(capsys):
 
     station = yaml.safe_load((Path(__file__).parents[1] / "configs/station_hil.yaml").read_text())
     assert station["hil"]["smooth_steps"] == 4
+    assert station["hil"]["policy_trajectory_mode"] == "linear"
     main(["--mock", "--mode", "inference", "--check"])
     assert json.loads(capsys.readouterr().out)["policy_fusion"] == "smooth"
 

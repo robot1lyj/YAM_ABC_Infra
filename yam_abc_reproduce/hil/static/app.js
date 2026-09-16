@@ -19,6 +19,7 @@ let state = {},
   arm = "left",
   online = false,
   busy = false,
+  policyDraft = null,
   toastTimer,
   lastPoll = 0;
 function text(id, value) {
@@ -172,8 +173,11 @@ function render() {
   text("policy-buffer", state.policy_buffer_seconds == null ? "—" : `${Math.max(0, state.policy_buffer_seconds).toFixed(2)} s`);
   text("policy-trim", state.policy_trimmed_steps == null ? "—" : `${state.policy_trimmed_steps} 步`);
   text("policy-speed", state.policy_joint_speed_rad_s == null ? "—" : `${state.policy_joint_speed_rad_s.toFixed(1)} rad/s`);
-  if (document.activeElement !== $("policy-fusion")) $("policy-fusion").value = state.policy_fusion || "smooth";
-  if (document.activeElement !== $("policy-steps") && state.policy_smooth_steps != null) $("policy-steps").value = state.policy_smooth_steps;
+  if (policyDraft && state.policy_fusion === policyDraft.fusion && state.policy_smooth_steps === policyDraft.smooth_steps) policyDraft = null;
+  if (!policyDraft) {
+    $("policy-fusion").value = state.policy_fusion || "smooth";
+    if (state.policy_smooth_steps != null) $("policy-steps").value = state.policy_smooth_steps;
+  }
   const policyEditable = connected && paused && !latched && !recording && maint === "idle";
   $("policy-fusion").disabled = !policyEditable;
   $("policy-steps").disabled = !policyEditable;
@@ -1074,6 +1078,11 @@ $("edit-task").onclick = () => {
   $("task-dialog").showModal();
 };
 
+function keepPolicyDraft() {
+  policyDraft = { fusion: $("policy-fusion").value, smooth_steps: Number($("policy-steps").value) };
+}
+$("policy-fusion").onchange = keepPolicyDraft;
+$("policy-steps").oninput = keepPolicyDraft;
 $("policy-form").onsubmit = async (e) => {
   e.preventDefault();
   const smooth_steps = Number($("policy-steps").value);
@@ -1081,8 +1090,12 @@ $("policy-form").onsubmit = async (e) => {
     toast("接缝步数请输入 1–12 的整数");
     return;
   }
-  if (await action("/policy/settings", { fusion: $("policy-fusion").value, smooth_steps })) {
+  const fusion = $("policy-fusion").value;
+  policyDraft = { fusion, smooth_steps };
+  if (await action("/policy/settings", policyDraft)) {
     toast("设置已提交；保持状态下生效，下次模型执行使用新值");
+  } else {
+    policyDraft = null;
   }
 };
 $("policy-restart").onclick = async () => {

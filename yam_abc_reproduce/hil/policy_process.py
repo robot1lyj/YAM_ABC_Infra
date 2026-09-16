@@ -69,7 +69,10 @@ class ProcessPolicyClient:
             raise
         child.close()
         self._conn, self._process = parent, process
-        if not parent.poll(self.timeout + 1.0):
+        # Cold ARM64 module imports can exceed the network RPC timeout. This
+        # wait runs in PolicyWorker, not the control thread; inference remains
+        # disabled until the child has completed its Thor handshake.
+        if not parent.poll(max(8.0, self.timeout + 1.0)):
             self.close()
             raise TimeoutError("policy process startup timeout")
         try:

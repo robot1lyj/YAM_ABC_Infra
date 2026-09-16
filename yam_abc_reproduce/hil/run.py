@@ -452,7 +452,13 @@ class Runtime:
                     decision.selected_action = decision.action.copy()
                 # Never enlarge a motion step because this loop missed its deadline.
                 joint_speed = a.max_joint_speed
-                if decision.phase == Phase.HUMAN and a.max_manual_joint_speed is None:
+                # Maintenance owns its own feedback-governed 0.12 rad/s
+                # interpolation and 0.15 rad tracking guard.  Applying the
+                # policy limiter again here can clip its final zero target and
+                # make the UI report completion before zero was submitted.
+                if maintenance_action is not None:
+                    joint_speed = np.inf
+                elif decision.phase == Phase.HUMAN and a.max_manual_joint_speed is None:
                     joint_speed = np.inf
                 elif decision.phase == Phase.HUMAN:
                     joint_speed = a.max_manual_joint_speed

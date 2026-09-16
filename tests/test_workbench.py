@@ -152,9 +152,26 @@ def test_factory_zero_feedback_governed_trajectory_crosses_deadband_and_stops_if
     assert slow.state == "idle" and slow.error is None
     assert target[0] == pytest.approx(0)
 
+    # The real loaded J4 was observed trailing by 0.081 rad.  That is normal
+    # following lag, not a blocked joint, and must remain below the governed
+    # window until the plant catches the final target.
+    loaded = Maintenance(factory_zero=True)
+    q[3] = 0.4
+    loaded.command("home", q, leader, now=0, paused=True)
+    for tick in range(1, 1200):
+        action = loaded.step(q, leader, now=tick / 30, dt=1 / 30)
+        if action is None:
+            break
+        target = action[0]
+        q[3] += np.clip(target[3] - q[3], -0.002, 0.002)
+        assert abs(target[3] - q[3]) <= loaded.HOME_TRACKING_WINDOW
+    assert loaded.state == "idle" and loaded.error is None
+    assert target[3] == pytest.approx(0)
+
     # Official move_joints semantics finish when the interpolation reaches its
     # target; a small loaded encoder residual is reported, not held until timeout.
     residual = Maintenance(factory_zero=True)
+    q = np.zeros(14)
     q[0] = 0.06
     residual.command("home", q, leader, now=0, paused=True)
     for tick in range(1, 30):

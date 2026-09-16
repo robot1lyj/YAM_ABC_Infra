@@ -213,7 +213,7 @@ def test_kai0_single_step_overlap_keeps_old_joint_but_latest_gripper():
     assert decision.policy_action[6] == pytest.approx(0.8)
 
 
-def test_ensemble_fuses_same_target_time_kai0_oldest_first_with_latest_gripper():
+def test_ensemble_fuses_same_target_time_and_keeps_oldest_valid_gripper_plan():
     q = np.zeros(14)
     arbiter = Arbiter(
         Mode.INFERENCE, streaming=True, action_dt=0.1,
@@ -227,12 +227,13 @@ def test_ensemble_fuses_same_target_time_kai0_oldest_first_with_latest_gripper()
     expected = 2 * np.exp(-0.5) / (1 + np.exp(-0.5))
     assert decision.action_index == 1
     assert decision.policy_action[0] == pytest.approx(expected)
-    assert decision.policy_action[6] == pytest.approx(0.9)
+    assert decision.policy_action[6] == pytest.approx(0.1)
 
     policy(arbiter, chunk(3, 0.7), observed_at=1.44, sent_at=1.45, received_at=1.46)
     decision = arbiter.step(q, q, now=1.46, dt=0.03, leader_ready=True)
     expected = np.average([2, 3], weights=[1, np.exp(-0.5)])
     assert decision.policy_action[0] == pytest.approx(expected)
+    assert decision.policy_action[6] == pytest.approx(0.9)
 
 
 def test_kai0_oldest_first_weights_three_matching_joint_predictions():
@@ -250,7 +251,7 @@ def test_kai0_oldest_first_weights_three_matching_joint_predictions():
     weights = np.exp(-0.5 * np.arange(3))
     expected = np.average([0, 1, 2], weights=weights)
     assert decision.policy_action[0] == pytest.approx(expected)
-    assert decision.policy_action[6] == pytest.approx(0.9)
+    assert decision.policy_action[6] == pytest.approx(0.1)
 
 
 def test_ensemble_does_not_reuse_an_expired_older_prediction():

@@ -37,7 +37,9 @@ class ActionBuffer:
 
     ``raw`` and ``smooth`` execute the newest chunk. ``ensemble`` combines up
     to ``ensemble_chunks`` recent predictions for a matching target time.
-    Grippers always use the newest chunk rather than averaging open/close targets.
+    Grippers are never averaged. In ensemble mode they use the oldest still
+    valid prediction for the same target time, so rolling replans cannot keep
+    postponing a close/open transition into the tail of every new chunk.
     """
 
     def __init__(
@@ -173,6 +175,13 @@ class ActionBuffer:
                     axis=0,
                     weights=weights,
                 )
+                # ``candidates`` is newest-first.  Keep the oldest prediction
+                # that still covers this exact target time for the two
+                # continuous gripper dimensions.  This is deliberately not a
+                # threshold and not an average: native YAM/ABC use [0,1]
+                # continuous targets, while the stable older plan prevents a
+                # tail transition being shifted forever by frequent replans.
+                action[list(GRIPPERS)] = candidates[-1][list(GRIPPERS)]
         return action, index, newest.token
 
     def remaining(self, now: float) -> int:

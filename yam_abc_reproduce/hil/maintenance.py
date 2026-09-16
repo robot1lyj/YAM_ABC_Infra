@@ -11,9 +11,12 @@ from .core import vector
 
 class Maintenance:
     HOME_SPEED = 0.12
-    HOME_TRACKING_WINDOW = 0.08
+    # Loaded joints can normally trail the commanded interpolation by a little
+    # over 0.08 rad.  Keep enough room for that measured lag while retaining a
+    # separate 0.15 rad hard stop for a genuine tracking anomaly.
+    HOME_TRACKING_WINDOW = 0.12
     HOME_HARD_ERROR = 0.15
-    HOME_STALL_TIMEOUT = 3.0
+    HOME_STALL_TIMEOUT = 5.0
 
     def __init__(self, *, factory_zero=False):
         self.factory_zero = factory_zero

@@ -523,8 +523,6 @@ function render() {
         : "正在回准备位，完成后保持不动"
       : maint === "gravity"
         ? "重力补偿中：请手扶机械臂调整姿态"
-        : state.maintenance_error
-          ? `上次操作：${state.maintenance_error} 当前已保持，可重新执行`
         : state.home_available
           ? factoryZero
             ? "Follower 零位可用 · 回零前请清空完整运动路径"

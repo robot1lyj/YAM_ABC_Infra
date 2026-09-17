@@ -1,5 +1,20 @@
 # condapi 对接约束（2026-09-14 架构基线 v1）
 
+## Trained RTC 分阶段对接（2026-09-17）
+
+已按 condapi `docs/reference/thor/13_trained_rtc_inference.md` 增加**仅离线使用**的
+`hil/rtc_protocol.py`：构造 `type=infer`、`obs`、`rtc` 封包，强制由调用方给出
+`target_start_tick` 和已承诺的绝对 `(d,14)` 前缀；握手要求 `rtc_mode=trained`、
+H50/14D、服务端声明的最大 `d`，回复要求 `server_timing.rtc_used=true` 且前缀不变。
+不使用模型名称、后端或指纹作为3588运行记录；普通 8000 协议不变。
+
+该适配器**尚未接入** `PolicyWorker`、`Session`、`Arbiter`、页面或真机执行，
+也不改变现有30Hz/100Hz控制、限速与平滑。不能仅把 URL 改成 RTC 8001 以启用它。
+原因是控制侧目标 tick 与 observation/动作第0步的对齐规则尚待确认，且 RTC
+`committed_actions` 必须是随后真正执行的目标，不能把会被限速/滤波再改写的旧预测
+冒充已承诺动作。下一阶段在确认规则并取得 Thor 独立 RTC 服务后，先用真实记录做
+无电机回放和模拟延迟，再决定如何接入动作缓冲及真机 A/B；不得静默退化为普通推理。
+
 这是本项目的适配约束，不取代 condapi 的模型/训练事实所有者。
 源仓库 `/home/wuyan-lyj/condapi`，本次读取 HEAD `1077699987cd66d5b95ba0402d4163250f8bc0cb`；源文件哈希、检查范围和已有工作区变更见 [本轮核查](evidence/20260914-architecture-audit.json)。2026-09-08 快照 `925d2ed3de37660c94694cc4bff292d721783108` 的 [原证据](evidence/20260908-condapi-sources.json)保留为历史。
 2026-09-14架构审计只读 condapi 本地文档和代码，没有连接或操作 Thor、RK3588、训练服务器，也没有修改 condapi。系统部署和工作包归 [架构基线](dagger_architecture.md#2026-09-14-架构基线-v1)。

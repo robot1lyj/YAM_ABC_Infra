@@ -1,0 +1,61 @@
+{
+  "report_date": "2026-09-16",
+  "cutoff": "2026-09-16 19:03:19 +0800",
+  "method": "以YAM与condapi在9月16日最后已提交版本为边界，只读核对提交、验收文档和现场证据；未重新启动硬件、相机或模型测试。9月17日工作区未提交改动排除。",
+  "heads": {
+    "YAM": {
+      "commit": "8fac80b83ee1fd803471d8704d5b64173b1444de",
+      "commit_time": "2026-09-16 19:03:19 +0800",
+      "status_at_review": "工作区含9月17日未提交改动，报告仅引用8fac80b提交内容"
+    },
+    "condapi": {
+      "commit": "65a44612eb9e6361b99a0af767cf329065c9d28d",
+      "commit_time": "2026-09-16 18:37:55 +0800",
+      "status_at_review": "clean"
+    }
+  },
+  "yam_commits": [
+    ["3b64676", "接入Thor策略地址并核对页面停止路径"],
+    ["41337f7", "工厂零位回位和推理轨迹调整"],
+    ["0830aea", "Follower回位插值与操作页面"],
+    ["b022335", "初始化退出进入任务工作台"],
+    ["e729ded", "异步推理重规划平滑"],
+    ["a678f3a", "可选高频策略执行"],
+    ["fd966c0", "修正推理夹爪时序与回位延迟"],
+    ["d9e5080", "录制owner与机器人控制进程隔离"],
+    ["fd96a2d", "真实相机录制与排空指标"],
+    ["6ffd8c2", "策略来源与高频下发时序记录"],
+    ["24c6aac", "隔离Thor传输并提供HOLD接缝调参"],
+    ["d503684", "回退不安全线性轨迹"],
+    ["5d1a7c7", "记录线性启动故障与预览边界"],
+    ["4b47678", "记录USB-CAN重置与HOLD回连失败"],
+    ["72ce49c", "记录IPC NVMe重复枚举失败"],
+    ["8fac80b", "撤回多块融合并记录轨迹结论"]
+  ],
+  "condapi_commits": [
+    ["5f1a147", "启动100000 TensorRT推理服务并记录MAXN实测"],
+    ["0ac1712", "降低训练数据并发并增加有限值保护"],
+    ["1cf5457", "记录异步夹爪诊断并重设训练对照计划"],
+    ["463b8f0", "修复Evo环境并实测FlashAttention"],
+    ["3dd9c82", "实现Pi0.5 training-time RTC和随机十小时子集入口"],
+    ["40beeb9", "启动十小时RTC训练并记录断点恢复交接"],
+    ["f954678", "接入RTC子集训练监控"],
+    ["6b00f7a", "搭建RTC推理与Thor转换候选"],
+    ["65a4461", "构建Pi系列RTC候选镜像并记录验证"]
+  ],
+  "source_files": [
+    {"repository": "YAM", "path": "docs/acceptance.md", "commit": "8fac80b", "sha256": "16132cbbe5e20b27301756cab059b018c4bd741ca37ba235e4c332d7413b2930"},
+    {"repository": "YAM", "path": "docs/cache/checkpoint.md", "commit": "8fac80b", "sha256": "8e014755114602a5b823887d96cad0468dae399fc3ae437b7753f478da43fb37"},
+    {"repository": "YAM", "path": "docs/workstation.md", "commit": "8fac80b", "sha256": "d09d6b6c181eec5c140353287aad0917d9513a761ee90451d85a6486c0ae0229"},
+    {"repository": "YAM", "path": "docs/dagger_architecture.md", "commit": "8fac80b", "sha256": "a15f4dbeccf9ebb08e332ddf92020935faeb55c36942dbc3c8441be0bd416c6c"},
+    {"repository": "condapi", "path": "docs/reference/thor/12_checkpoint_handoff.md", "commit": "65a4461", "sha256": "bf6967f4974855cffe219c06011905b81a951cd081399085678ada34b1cd0c62"},
+    {"repository": "condapi", "path": "docs/07_change_log.md", "commit": "65a4461", "sha256": "b5934afc31772ab889a1f63a07665fcd5e2492cf9dbdfe96a810faa855fb43ad"}
+  ],
+  "key_boundaries": [
+    "100000已作为Thor常驻服务启动并通过本机及IPC无电机协议探针；未完成有电机闭环和任务成功率。",
+    "推理轨迹已收束到raw、可选短smooth和独立100Hz二阶，纯线性与多块ensemble已撤回，smooth效果尚未定稿。",
+    "NVMe间歇不枚举、USB-CAN无应答和SDK状态过期均保留为未定根因，不能因一次重启或重插恢复而关闭问题。",
+    "录制owner/NVMe spool完成短时与离线验证，但真机推理录制曾达到300项队列上限，长时30Hz能力未验收。",
+    "RTC/Evo训练工作已启动或完成环境准备，但未取得可部署新模型及任务效果结论。"
+  ]
+}

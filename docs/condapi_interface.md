@@ -4,21 +4,27 @@
 
 已按 condapi `docs/reference/thor/13_trained_rtc_inference.md` 增加**仅离线使用**的
 `hil/rtc_protocol.py`：构造 `type=infer`、`obs`、`rtc` 封包，强制由调用方给出
-`target_start_tick` 和已承诺的绝对 `(d,14)` 前缀；握手要求 `rtc_mode=trained`、
+`target_start_tick`（同时作为 `observation_policy_tick`）和已承诺的绝对 `(d,14)` 前缀；握手要求 `rtc_mode=trained`、
 H50/14D、服务端声明的最大 `d`，回复要求 `server_timing.rtc_used=true` 且前缀不变。
 不使用模型名称、后端或指纹作为3588运行记录；普通 8000 协议不变。
 
 该适配器**尚未接入** `PolicyWorker`、`Session`、`Arbiter`、页面或真机执行，
-也不改变现有30Hz直接下发或可选100Hz轨迹。不能仅把 URL 改成 RTC 8001 以启用它。
-原因是控制侧目标 tick 与 observation/动作第0步的对齐规则尚待确认，且 RTC
+也不改变现有30Hz直接下发或可选100Hz轨迹。不能仅把 URL 指向 RTC 服务以启用它。
+原因是控制侧目标 tick 与 observation/动作第0步的物理对齐规则尚待确认，且 RTC
 `committed_actions` 必须是随后真正执行的目标，不能把会被可选滤波或SDK硬限位改写的旧预测
-冒充已承诺动作。下一阶段在确认规则并取得 Thor 独立 RTC 服务后，先用真实记录做
-无电机回放和模拟延迟，再决定如何接入动作缓冲及真机 A/B；不得静默退化为普通推理。
+冒充已承诺动作。2026-09-17 Thor 已在原固定 `ws://192.168.250.1:8000` 提供训练式 RTC；
+IPC 用已录制三路 RGB、14D 反馈及同集提交目标做 9 次无电机跨机请求，`d=0/1/10`
+均返回有限 H50/14D、前缀逐值不变。往返 p50 约 1057.5ms，热态约 1056–1059ms；
+服务端 infer 约 1037–1041ms。30Hz 下仅网络请求已跨约 32 tick，加 40ms 余量至少
+需要 `d=33`，超过训练/握手上限 10。因此当前**没有合法的 RTC 接管参数**，维持页面
+RTC 禁用；不得把 `d=10` 的迟到结果强行执行、放慢30Hz动作周期或静默退化成普通推理。
+相机曝光到 policy tick 的物理对应与真实闭环仍未验收；详见[验收记录](acceptance.md#2026-09-17-rtc跨ipc无电机探针)。
 
 普通10w检查点的动作块模式现已把旧固定窗口`smooth`替换为从openarm-vr复用的
 `tda_smooth`队列丢步/重叠混合；此变更只在普通协议上，**不作用于RTC已承诺前缀**。
-实验路线收为普通模型同步完整50步、普通10w＋TDA、训练RTC原生三组；后者仍待目标tick合同、Thor 8001与
-无电机回放，当前设备服务不会因本地代码更新而自动切换。旧`raw`仅留内部回归测试，不是页面/CLI可选项。
+实验路线收为普通模型同步完整50步、普通10w＋TDA、训练RTC原生三组；后者仍待
+延迟达标、物理 tick 合同与控制侧集成，当前设备服务不会因本地代码更新而自动切换。
+旧`raw`仅留内部回归测试，不是页面/CLI可选项。
 
 这是本项目的适配约束，不取代 condapi 的模型/训练事实所有者。
 源仓库 `/home/wuyan-lyj/condapi`，本次读取 HEAD `1077699987cd66d5b95ba0402d4163250f8bc0cb`；源文件哈希、检查范围和已有工作区变更见 [本轮核查](evidence/20260914-architecture-audit.json)。2026-09-08 快照 `925d2ed3de37660c94694cc4bff292d721783108` 的 [原证据](evidence/20260908-condapi-sources.json)保留为历史。

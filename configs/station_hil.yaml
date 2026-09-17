@@ -26,9 +26,8 @@ hil:
   # Follower factory home is six zero arm joints, not encoder recalibration.
   # Leaders stay manual; retain both follower grippers.
   factory_zero_home: true
-  # First non-RTC comparison: execute only the newest time-aligned chunk.
-  # Keep TDA available for comparison, but do not blend chunks by default.
-  policy_fusion: raw
+  # Ordinary 10w checkpoint uses TDA; trained RTC is a separate protocol.
+  policy_fusion: tda_smooth
   max_frame_age: 0.5
   max_frame_skew: 0.12
   warn_frame_skew: 0.04

@@ -45,6 +45,12 @@ class Session:
             self.arbiter.fail(state, "operator stop")
         elif event is not None:
             raise ValueError(f"unknown event: {event}")
+        if (
+            self.worker is not None
+            and not getattr(self.worker, "planner_alive", True)
+            and self.arbiter.phase in (Phase.POLICY, Phase.RESUME)
+        ):
+            self.arbiter.hold(state)
         if self.worker:
             reply = self.worker.poll()
             if reply is not None:
@@ -62,10 +68,17 @@ class Session:
                 }
             if reply is not None and reply.token == self.arbiter.pending:
                 if reply.error:
-                    self.arbiter.fail(state, reply.error)
+                    if reply.planner_error:
+                        self.arbiter.hold(state)
+                    else:
+                        self.arbiter.fail(state, reply.error)
                 else:
                     try:
-                        accepted = self.arbiter.accept(reply.token, reply.actions, now)
+                        accepted = (
+                            self.arbiter.accept_plan(reply.token, reply.plan, now)
+                            if self.arbiter.external_planner else
+                            self.arbiter.accept(reply.token, reply.actions, now)
+                        )
                         self.last_reply["discarded"] = not accepted
                         if accepted and self.arbiter.action_buffer.fusion == "raw":
                             buffer = self.arbiter.action_buffer

@@ -56,7 +56,7 @@ uv run --no-sync yam-workstation --mock --demo --duration 4
 ```
 
 终端末尾显示状态，输出默认在 `data/episodes/hil_年月日_时分秒/`；目录已存在会拒绝覆盖。
-`--demo`只允许mock。`--baseline`切回不预取的普通分块基准；默认是非RTC异步重规划。
+`--demo`只允许mock。`--baseline`选择不预取的`sync_hold`对照；默认是非RTC异步重规划。
 
 ## 界面工作流
 
@@ -165,13 +165,13 @@ Thor已反馈关节输出是rad绝对目标、夹爪0关/1开，Thor完成反归
 
 页面在模型执行时显示设备进程报告的策略轨迹状态；不能由浏览器缓存或磁盘文件推断运行算法。实验性纯线性100Hz轨迹已删除，历史失败证据保留在[验收](acceptance.md#2026-09-16-线性插值推理短测与回退)。
 
-当前`configs/station_hil.yaml`默认`policy_fusion: raw`，作为普通非RTC模型的无融合对照：后台仍保持单在途预取，按观测时间与30Hz动作周期丢弃过期前缀；新块一旦可用便替换旧块，关节和夹爪均只执行新块，不加短时接管过渡。`--baseline`关闭预取。换块瞬间的目标不连续可能直接表现为抖动，不能把此配置称为已通过真机效果验收。`tda_smooth`仍可在HOLD下选择用于对照，不作为本站默认；训练时RTC的已承诺前缀不能经TDA混合。
+当前操作模式只列三种：同步推理、TDA推理、RTC推理。`configs/station_hil.yaml`默认普通模型的`tda_smooth`；RTC仍是**禁用的待对接项**，目前只有离线协议适配器，不能由页面或CLI启动，也不会回退为普通模型。同步推理的`sync_hold`不预取，顺序执行每块**全部50步**，随后保持最后提交目标并请求下一块，从新块第0步执行；保持位置力矩，不是电机失能，也不是RTC。普通异步模式的1.5秒观测龄保护不足以覆盖50/30≈1.67秒加推理耗时；同步模式从回复到达起单独限定50步执行墙钟期限，等待下一回复仍受原有请求超时保护，超时进入HOLD需重新开始。`--baseline`选择同一路径。同步等待会带来每块约一次推理往返时长的停顿，不声称已通过真机效果验收。训练时RTC的已承诺前缀不能经TDA混合。
 
 TDA实现从`/home/wuyan-lyj/openarm-vr/src/openarm_remote_policy/openarm_remote_policy/ws_policy_client.py::ActionChunkQueue`复用算法，默认`drop_max=25`、`min_overlap=1`、`linear`；保留YAM本有的50×14有限值检查、夹爪[0,1]裁剪、关节SDK限位和故障HOLD。它混合完整重叠区，不能视为仅处理几步换块边界；旧YAM固定窗口`smooth`已移除。TDA队列按消费步数对齐，不声称能替代RTC目标tick合同。
 
-推理/HIL页面显示Thor往返p95、动作缓冲余量、丢步数及关节限速。HOLD且未录制时可在页面切换`raw/tda_smooth`；提交后控制线程清空旧缓冲、递增epoch，下一次明确开始才执行新设置。改动只保存在当前设备会话，断开重连恢复station YAML默认。页面不开放关节限速改写。`raw`的每个已接受回复另在录制样本的`policy_reply`记录`trimmed_steps`、`new_vs_old_target_joint_max_rad`及`new_vs_old_target_gripper_max`；后两者比较同一目标时刻的新旧计划，不是电机实际跳变量，首次无旧计划或无法对齐时为null。结合`policy_action`、`bounded_action`、`submitted_action`与后续`measured_state`判读。
+推理/HIL页面显示Thor往返p95、动作缓冲余量、丢步数及关节限速。HOLD且未录制时可在页面切换`sync_hold/tda_smooth`；RTC显示为待对接，不能选中。提交后控制线程清空旧缓冲、递增epoch，下一次明确开始才执行新设置。改动只保存在当前设备会话，断开重连恢复station YAML默认。页面不开放关节限速改写。每行录制样本的`details.policy_fusion`是当时生效模式；历史`raw`录制另有`policy_reply`裁前缀和新旧目标差字段，仍可用于旧会话分析，不表示它是新版可选模式。结合`policy_action`、`bounded_action`、`submitted_action`与后续`measured_state`判读。
 
-Thor通信/序列化现在由独立策略子进程执行，设备进程的工作线程异步传输观测，30Hz控制线程不等待网络或子进程；页面在HOLD可“重载推理通信”，不会断开CAN或释放机械臂。子进程须完成Thor握手后页面才允许开始推理。设备进程仍持有动作时间对齐、接缝融合与最终安全仲裁：修改这些控制侧代码仍需受控重启，不能把通信子进程隔离误称为整个推理控制可热替换。首次部署进程边界变更需重启`yam-device`并会释放力矩，必须先支撑四臂。
+本仓库新版把Thor通信与动作块规划分成两个子进程：网络工作线程拿到回复后在后台请求规划，30Hz控制线程只读取已安装计划，不等待网络或规划。TDA完整重叠融合和同步完整块规划在规划进程中；设备进程保留通用时间轴/队列消费、epoch/时效、HOLD/接管/急停、限速及唯一SDK写入权。页面在HOLD且未录制时可分别“重载 Thor 通信”和“重载动作规划”，不会主动断开CAN或释放力矩；规划进程失联时策略进入HOLD，旧回复不能恢复运动。**截至2026-09-17仅完成离线验证，IPC仍运行旧进程；首次迁移须在四臂支撑、现场照看下受控重启`yam-device`一次。**迁移后修改现有动作块算法只需在HOLD重载规划子进程；修改设备侧通用计划接口、安全仲裁或SDK控制仍要受控重启。两个子进程都就绪后才允许开始推理。
 RK3588首次拉起子进程的Python模块冷导入可能超过单次Thor请求的1.5秒超时；后台启动最多等待8秒完成握手，期间页面保持模型“未就绪”、控制线程继续HOLD。此等待与已经开始的推理请求超时是不同边界。
 
 高频轨迹写入可用`policy_trajectory_hz`显式开关；`0`是30Hz策略目标直接提交给现有YAM SDK，不加应用层100Hz轨迹。2026-09-17无融合对照仍将本站配置为`0`，以便先观察原始动作与底层跟踪；100Hz二阶执行器代码仍保留、此轮不启用。OpenArm-vr的30Hz目标发布、200Hz MIT控制器保持目标并做PD跟踪仅作为设计参照，不能声称YAM SDK具有相同的200Hz底层实现。此前100Hz、3rad/s、30rad/s²、临界阻尼10rad/s的二阶轨迹可能造成模型目标跟踪滞后；纯线性100Hz轨迹在2026-09-16现场短测被操作者判定动作明显异常，代码已删除，不重新启用。切换`policy_trajectory_hz`需要受控重启设备进程并释放力矩，须先支撑四臂。
@@ -184,7 +184,7 @@ RK3588首次拉起子进程的Python模块冷导入可能超过单次Thor请求�
 
 ```bash
 uv run --no-sync yam-workstation --mock --mode inference --check
-uv run --no-sync pytest -q tests/test_async_inference.py
+uv run --no-sync pytest -q tests/test_action_planner_process.py tests/test_async_inference.py
 CONDAPI_ROOT=/home/wuyan-lyj/condapi uv run --no-sync pytest -q tests/test_condapi_wire.py
 ```
 
@@ -196,7 +196,7 @@ uv run --no-sync yam-workstation --station configs/station_hil.yaml \
   --web-port 8766 --web-host 192.168.110.140
 ```
 
-普通10w模型可用`--policy-fusion tda_smooth`或`--policy-fusion raw`做对照。3588以`configs/station_hil.yaml`的`action_dt`或命令行`--action-dt 0.03333333333333333`配置普通动作间隔。RTC模式仍未接入真机；其第0步目标tick由后续合同确定，不能沿用普通路径的observation参考时刻。请求超时、缓冲耗尽仍保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。
+普通10w模型使用`--policy-fusion tda_smooth`；完整块同步对照使用`--policy-fusion sync_hold`。旧`raw`不再是启动或页面选项。3588以`configs/station_hil.yaml`的`action_dt`或命令行`--action-dt 0.03333333333333333`配置普通动作间隔。RTC模式仍未接入真机；其第0步目标tick由后续合同确定，不能沿用普通路径的observation参考时刻。请求超时、缓冲耗尽仍保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。
 
 正常重规划间隔为333ms，即约执行10个30Hz动作后取最新观测发起下一次请求；若缓冲剩余时间已接近“最近16个有效回复的观测参考时刻→动作可用p95（初始0.2s）+67ms余量”，会动态提前。单在途期间不排队旧观测。状态接口同时报告缓冲秒数、请求RTT、端到端观测延迟、动作索引、裁掉步数、块边界原始差值和3rad/s反馈相对目标包络是否正在介入。
 

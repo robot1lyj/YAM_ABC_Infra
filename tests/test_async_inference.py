@@ -145,7 +145,7 @@ def test_action_dt_cli_override_is_checked_without_model_or_motors(capsys):
     assert json.loads(capsys.readouterr().out)["action_dt"] == pytest.approx(0.05)
 
 
-def test_station_defaults_to_time_aligned_raw_for_ordinary_policy(capsys):
+def test_station_defaults_to_tda_and_baseline_executes_full_chunk(capsys):
     import json
     from pathlib import Path
 
@@ -154,10 +154,16 @@ def test_station_defaults_to_time_aligned_raw_for_ordinary_policy(capsys):
     from yam_abc_reproduce.hil.run import main
 
     station = yaml.safe_load((Path(__file__).parents[1] / "configs/station_hil.yaml").read_text())
-    assert station["hil"]["policy_fusion"] == "raw"
+    assert station["hil"]["policy_fusion"] == "tda_smooth"
     assert station["hil"]["policy_trajectory_hz"] == 0
     main(["--mock", "--mode", "inference", "--check"])
-    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "raw"
+    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "tda_smooth"
+    main(["--mock", "--mode", "inference", "--baseline", "--check"])
+    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "sync_hold"
+    with pytest.raises(SystemExit):
+        main(["--mock", "--mode", "inference", "--policy-fusion", "raw", "--check"])
+    with pytest.raises(SystemExit):
+        main(["--mock", "--mode", "inference", "--policy-fusion", "rtc", "--check"])
 
 
 def test_latency_budget_uses_observation_age_not_only_request_rtt():
@@ -244,8 +250,66 @@ def test_raw_reply_records_trim_and_target_discontinuity_without_blending():
     assert session.last_reply["new_vs_old_target_gripper_max"] == pytest.approx(1.0)
 
 
+def test_sync_hold_finishes_full_fifty_actions_then_holds_until_next_reply():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, policy_fusion="sync_hold",
+        action_dt=0.1, max_action_age=3,
+    )
+    assert not arbiter.streaming
+    assert arbiter.action_buffer.fusion == "sync_hold"
+    assert arbiter.execute_steps == 50
+    arbiter.start(q)
+    first = arbiter.request(1, 1.0, observed_at=1.0)
+    assert first is not None
+    assert arbiter.accept(first, chunk(0.2, 1.0), 1.05)
+    for step in range(50):
+        decision = arbiter.step(
+            q, q, now=1.05 + step * 0.1, dt=0.1, leader_ready=True
+        )
+        assert decision.source == "policy" and decision.action_index == step
+        if step < 49:
+            assert arbiter.request(step + 2, 1.05 + step * 0.1) is None
+    second = arbiter.request(60, 5.95, observed_at=5.95)
+    assert second is not None
+    for now in (6.05, 6.15, 6.25):
+        decision = arbiter.step(q, q, now=now, dt=0.1, leader_ready=True)
+        assert decision.source == "hold" and decision.phase == Phase.POLICY
+        assert decision.policy_action is None
+    assert arbiter.accept(second, chunk(0.4, 0.0), 6.30)
+    assert arbiter.observed_policy_rtt_p95 == pytest.approx(0.335)
+    resumed = arbiter.step(q, q, now=6.35, dt=0.1, leader_ready=True)
+    assert resumed.source == "policy" and resumed.action_index == 0
+    assert resumed.policy_action[0] == pytest.approx(0.4)
+
+
+def test_sync_hold_full_chunk_has_its_own_execution_deadline():
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, policy_fusion="sync_hold",
+        action_dt=1 / 30, max_action_age=1.5,
+    )
+    arbiter.start(q)
+    token = arbiter.request(1, 1.0, observed_at=1.0)
+    assert token is not None and arbiter.accept(token, chunk(0.1), 1.17)
+    # 50/30 exceeds the ordinary asynchronous 1.5 s observation-age limit.
+    for step in range(50):
+        decision = arbiter.step(
+            q, q, now=1.17 + step / 30, dt=1 / 30, leader_ready=True
+        )
+        assert decision.source == "policy" and decision.action_index == step
+    arbiter.hold(q)
+    token = arbiter.request(2, 3.0, observed_at=3.0)
+    assert token is None
+    arbiter.start(q)
+    fresh = arbiter.request(3, 3.1, observed_at=3.1)
+    assert fresh is not None and arbiter.accept(fresh, chunk(0.1), 3.2)
+    expired = arbiter.step(q, q, now=5.0, dt=1 / 30, leader_ready=True)
+    assert expired.phase == Phase.HOLD and expired.source == "hold"
+
+
 def test_retired_multi_chunk_mode_is_rejected():
-    with pytest.raises(ValueError, match="raw or tda_smooth"):
+    with pytest.raises(ValueError, match="raw, tda_smooth or sync_hold"):
         Arbiter(Mode.INFERENCE, streaming=True, policy_fusion="ensemble")
 
 

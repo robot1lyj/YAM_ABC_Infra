@@ -694,6 +694,12 @@ class Workbench:
         self.runtime.restart_policy()
         self.log("已请求重载推理通信子进程；机械臂保持连接")
 
+    def restart_planner(self):
+        if self.runtime is None or self.state != "connected" or self.initializing:
+            raise ValueError("请先连接设备并退出初始化向导")
+        self.runtime.restart_planner()
+        self.log("已请求重载动作规划子进程；机械臂保持连接")
+
     def disconnect(self, *, supported=False):
         if not self.args.mock and supported is not True:
             raise ValueError("断开可能结束力矩控制；请先支撑四台机械臂")

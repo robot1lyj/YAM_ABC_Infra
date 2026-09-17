@@ -29,19 +29,21 @@ from ..resource_qos import place_on_cpus
 from ..robot.can_bus import bring_up_can_buses, check_can_up, stop_can_buses
 from ..runtime import build_arm_units, build_cameras_from_config
 from .action_buffer import ActionBuffer
-from .tda_buffer import TdaActionBuffer
 from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
 from .jog import Jog
 from .maintenance import Maintenance
 from .metrics import Latencies
 from .observation import Observations
+from .planned_buffer import PlannedActionBuffer
+from .planner_process import ProcessActionPlanner
 from .policy import PolicyWorker
 from .policy_process import ProcessPolicyClient
 from .recording import RecordingSession
 from .recording_service import RemoteRecordingSession
 from .session import Session
 from .station import StationIO
+from .tda_buffer import TdaActionBuffer
 
 
 class MockPolicy:
@@ -123,10 +125,13 @@ class Runtime:
                 replan_period=settings.get("replan_period", 0.2),
                 expected_policy_latency=settings.get("expected_policy_latency", 0.2),
                 prefetch_margin=settings.get("prefetch_margin", 2 / 30),
-                policy_fusion=settings.get("policy_fusion", "raw"),
+                policy_fusion=settings.get("policy_fusion", "tda_smooth"),
+                external_planner=worker is not None and worker.planner is not None,
             ),
             worker,
         )
+        if worker is not None and worker.planner is not None:
+            worker.plan_context = self._plan_context
         self.events = queue.Queue(maxsize=16)
         self.policy_commands = queue.Queue(maxsize=4)
         self.takeovers = queue.Queue(maxsize=1)
@@ -146,6 +151,15 @@ class Runtime:
         self.recording_error = None
         self._record_started = None
         self.recording_allowed = True
+
+    def _plan_context(self):
+        arbiter = self.session.arbiter
+        return (
+            arbiter.action_buffer.fusion,
+            arbiter.action_buffer.snapshot(),
+            arbiter.action_dt,
+            arbiter.max_action_age,
+        )
 
     def _recording_failed(self, state, reason):
         """Abort the episode and signal HOLD without latching a motor fault."""
@@ -252,8 +266,10 @@ class Runtime:
         self.jog.request(arm, joint, delta)
 
     def configure_policy(self, *, fusion: str):
-        if fusion not in ("raw", "tda_smooth"):
-            raise ValueError("推理动作块模式需为 raw/tda_smooth")
+        if fusion == "rtc":
+            raise ValueError("RTC 尚未接入控制循环和 Thor RTC 服务，不能启动；不会退化成普通推理")
+        if fusion not in ("tda_smooth", "sync_hold"):
+            raise ValueError("推理动作块模式需为同步推理或 TDA")
         if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
             raise ValueError("请先暂停模型并结束本集录制")
         self.policy_commands.put_nowait(("configure", fusion))
@@ -264,6 +280,13 @@ class Runtime:
         if self.worker is None or not hasattr(self.worker.client, "restart"):
             raise ValueError("当前策略不支持独立重载")
         self.policy_commands.put_nowait(("restart",))
+
+    def restart_planner(self):
+        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
+            raise ValueError("请先暂停模型并结束本集录制")
+        if self.worker is None or self.worker.planner is None:
+            raise ValueError("当前会话未启用独立动作规划进程")
+        self.policy_commands.put_nowait(("restart_planner",))
 
     def run(self, *, duration=None, auto_start=False, demo=False):
         period = 1 / self.hz
@@ -305,11 +328,25 @@ class Runtime:
                     else:
                         a._transition(Phase.HOLD, q)  # Invalidate any old policy reply.
                         if policy_command[0] == "configure":
+                            a.streaming = policy_command[1] != "sync_hold"
+                            a.execute_steps = (
+                                50 if policy_command[1] == "sync_hold"
+                                else a.default_execute_steps
+                            )
                             a.action_buffer = (
+                                PlannedActionBuffer(
+                                    a.action_dt, max_action_age=a.max_action_age,
+                                    fusion=policy_command[1],
+                                ) if a.external_planner else
                                 TdaActionBuffer(a.action_dt)
                                 if policy_command[1] == "tda_smooth"
                                 else ActionBuffer(a.action_dt, max_action_age=a.max_action_age)
                             )
+                            if not a.streaming:
+                                a.action_buffer.fusion = "sync_hold"
+                            self.operator_error = None
+                        elif policy_command[0] == "restart_planner":
+                            self.worker.request_planner_restart()
                             self.operator_error = None
                         else:
                             self.worker.request_restart()
@@ -341,7 +378,10 @@ class Runtime:
                     event, requested_at = urgent, urgent_at
                     while not self.events.empty():
                         self.events.get_nowait()
-                if auto_start and snapshot is not None and demo_stage == 0:
+                if (
+                    auto_start and snapshot is not None and demo_stage == 0
+                    and (self.worker is None or self.worker.ready)
+                ):
                     event, demo_stage = "start", 1
                 if demo and demo_stage == 1 and elapsed > 1:
                     event, demo_stage = "takeover", 2
@@ -539,6 +579,7 @@ class Runtime:
                     "is_intervention": decision.intervention,
                     "expert_valid": decision.source == "human" and snapshot is not None,
                     "policy_valid": decision.policy_valid,
+                    "policy_fusion": a.action_buffer.fusion,
                     "policy_action": decision.policy_action,
                     "human_action": leader if decision.source == "human" else None,
                     "selected_action": decision.selected_action,
@@ -616,6 +657,10 @@ class Runtime:
                         self._record_started = now
                 else:
                     self._record_started = None
+                policy_remaining = (
+                    a.action_buffer.remaining(now) if a.streaming
+                    else max(0, len(a._chunk) - a._index) if a._chunk is not None else 0
+                )
                 self.status = {
                     "episode_elapsed_s": 0
                     if self._record_started is None
@@ -644,17 +689,32 @@ class Runtime:
                     "source": decision.source,
                     "policy_fusion": a.action_buffer.fusion,
                     "policy_ready": self.worker.ready if self.worker else False,
+                    "planner_ready": (
+                        self.worker.planner_alive if self.worker and self.worker.planner
+                        else False
+                    ),
+                    "policy_transport_ready": (
+                        self.worker._client_ready if self.worker else False
+                    ),
                     "policy_restart_error": self.worker.restart_error if self.worker else None,
                     "policy_tda_drop_max": getattr(a.action_buffer, "drop_max", None),
                     "policy_joint_speed_rad_s": a.max_joint_speed,
                     "policy_replan_period_s": a.replan_period,
-                    "policy_buffer_remaining": a.action_buffer.remaining(now),
-                    "policy_buffer_seconds": a.action_buffer.seconds_to_expiry(now),
+                    "policy_buffer_remaining": policy_remaining,
+                    "policy_buffer_seconds": (
+                        a.action_buffer.seconds_to_expiry(now) if a.streaming
+                        else policy_remaining * a.action_dt
+                    ),
                     "policy_observed_rtt_p95_s": a.observed_policy_rtt_p95,
                     "policy_observation_to_ready_p95_s": (a.observed_observation_to_ready_p95),
                     "policy_latency_budget_s": a.policy_latency_budget,
                     "policy_request_reason": a.last_request_reason,
                     "policy_request_pending": a.pending is not None,
+                    "policy_waiting_for_reply": (
+                        not a.streaming and a.phase in (Phase.POLICY, Phase.RESUME)
+                        and a._chunk is not None and a._index >= len(a._chunk)
+                        and a.pending is not None
+                    ),
                     "policy_action_index": decision.action_index,
                     "policy_trimmed_steps": a.action_buffer.last_trimmed_steps,
                     "policy_seam_max_rad": a.action_buffer.last_seam_max_rad,
@@ -759,7 +819,7 @@ def main(argv=None, *, service=None):
     p.add_argument("--baseline", action="store_true", help="ordinary non-prefetch baseline")
     p.add_argument(
         "--policy-fusion",
-        choices=("raw", "tda_smooth"),
+        choices=("tda_smooth", "sync_hold", "rtc"),
         help="ordinary policy chunk handling; trained RTC never uses TDA",
     )
     p.add_argument("--action-dt", type=float, help="model action target spacing in seconds")
@@ -849,9 +909,11 @@ def main(argv=None, *, service=None):
         if option is not None:
             hil_cfg[key] = option
     if args.baseline:
-        hil_cfg["policy_fusion"] = "raw"
-    if hil_cfg.get("policy_fusion", "raw") not in ("raw", "tda_smooth"):
-        p.error("policy_fusion must be raw or tda_smooth")
+        hil_cfg["policy_fusion"] = "sync_hold"
+    if hil_cfg.get("policy_fusion", "tda_smooth") == "rtc":
+        p.error("RTC is not wired to the control loop or Thor RTC endpoint yet")
+    if hil_cfg.get("policy_fusion", "tda_smooth") not in ("tda_smooth", "sync_hold"):
+        p.error("policy_fusion must be tda_smooth or sync_hold")
     for key, value in hil_cfg.items():
         if key == "policy_fusion":
             continue
@@ -866,7 +928,7 @@ def main(argv=None, *, service=None):
         if not isinstance(value, (float, int)) or not np.isfinite(value) or value <= 0:
             p.error(f"invalid hil setting: {key}")
     try:
-        if hil_cfg.get("policy_fusion", "raw") == "tda_smooth":
+        if hil_cfg.get("policy_fusion", "tda_smooth") == "tda_smooth":
             TdaActionBuffer(action_dt)
         else:
             ActionBuffer(action_dt)
@@ -896,7 +958,7 @@ def main(argv=None, *, service=None):
                     "mock": args.mock,
                     "mode": args.mode,
                     "action_dt": action_dt,
-                    "policy_fusion": hil_cfg.get("policy_fusion", "raw"),
+                    "policy_fusion": hil_cfg.get("policy_fusion", "tda_smooth"),
                     "factory_zero_home": bool(hil_cfg.get("factory_zero_home", False))
                     and not args.mock,
                     "hardware_checked": False,
@@ -922,9 +984,9 @@ def main(argv=None, *, service=None):
             "station": dataclasses.asdict(cfg),
             "mock": args.mock,
             "rtc": False,
-            "streaming": not args.baseline,
+            "streaming": not args.baseline and hil_cfg.get("policy_fusion") != "sync_hold",
             "action_dt": action_dt,
-            "policy_fusion": hil_cfg.get("policy_fusion", "raw"),
+            "policy_fusion": hil_cfg.get("policy_fusion", "tda_smooth"),
             "expected_policy_latency": hil_cfg.get("expected_policy_latency", 0.2),
             "prefetch_margin": hil_cfg.get("prefetch_margin", 2 / 30),
         },
@@ -968,7 +1030,9 @@ def main(argv=None, *, service=None):
             if args.url
             else None
         )
-        policy_worker = PolicyWorker(client) if client else None
+        policy_worker = (
+            PolicyWorker(client, planner=ProcessActionPlanner()) if client else None
+        )
         runtime = Runtime(
             io,
             workers,

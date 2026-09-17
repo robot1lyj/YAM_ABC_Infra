@@ -160,7 +160,8 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
             rec.close("aborted")
 
 
-def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path):
+@pytest.mark.parametrize("fusion", ("tda_smooth", "sync_hold"))
+def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path, fusion):
     cfg = StationConfig()
     io = StationIO(build_arm_units(cfg, mock=True), mock=True)
     recorder = Recorder(tmp_path / "policy-settings")
@@ -172,17 +173,21 @@ def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path):
         for camera in cameras:
             camera.start()
         old_epoch = runtime.session.arbiter.epoch
-        runtime.configure_policy(fusion="tda_smooth")
-        with pytest.raises(ValueError, match="raw/tda_smooth"):
+        runtime.configure_policy(fusion=fusion)
+        with pytest.raises(ValueError, match="同步推理或 TDA"):
             runtime.configure_policy(fusion="smooth")
+        with pytest.raises(ValueError, match="RTC 尚未接入"):
+            runtime.configure_policy(fusion="rtc")
         result = runtime.run(duration=0.15)
-        assert result["policy_fusion"] == "tda_smooth"
-        assert result["policy_tda_drop_max"] == 25
+        assert result["policy_fusion"] == fusion
+        assert result["policy_tda_drop_max"] == (25 if fusion == "tda_smooth" else None)
         assert result["policy_trajectory_mode"] == "second_order"
         assert runtime.session.arbiter.epoch > old_epoch
         runtime.status["phase"] = "policy"
         with pytest.raises(ValueError, match="暂停"):
-            runtime.configure_policy(fusion="raw")
+            runtime.configure_policy(
+                fusion="sync_hold" if fusion == "tda_smooth" else "tda_smooth"
+            )
     finally:
         for camera in cameras:
             camera.stop()

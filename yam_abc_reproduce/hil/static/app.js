@@ -168,7 +168,7 @@ function render() {
   $("workspace-page").classList.toggle("teleop-view", teleopView);
   $("recording-controls").hidden = teleopView || mode !== "collect";
   $("policy-panel").hidden = !["inference", "hil"].includes(mode);
-  text("policy-mode", state.policy_fusion === "tda_smooth" ? "TDA 平滑" : "原始异步");
+  text("policy-mode", state.policy_fusion === "tda_smooth" ? "TDA 推理" : state.policy_fusion === "sync_hold" ? (state.policy_waiting_for_reply ? "同步推理 · 保持" : "同步推理") : state.policy_fusion === "rtc" ? "RTC 推理" : "旧模式");
   text("policy-rtt", state.policy_observed_rtt_p95_s == null ? "—" : `${Math.round(state.policy_observed_rtt_p95_s * 1000)} ms`);
   text("policy-buffer", state.policy_buffer_seconds == null ? "—" : `${Math.max(0, state.policy_buffer_seconds).toFixed(2)} s`);
   text("policy-trim", state.policy_trimmed_steps == null ? "—" : `${state.policy_trimmed_steps} 步`);
@@ -181,6 +181,7 @@ function render() {
   $("policy-fusion").disabled = !policyEditable;
   $("policy-apply").disabled = !policyEditable;
   $("policy-restart").disabled = !policyEditable || !!state.mock;
+  $("planner-restart").disabled = !policyEditable || !!state.mock;
   $("session-summary").hidden = teleopView;
   $("recent-episodes").hidden = teleopView;
   text("control-title", teleopView ? "遥操作控制" : "采集控制");
@@ -270,6 +271,8 @@ function render() {
                 ? "姿态保持"
                 : state.source === "human"
                   ? "Leader 遥操作"
+                  : state.policy_waiting_for_reply
+                    ? "等待 Thor · 姿态保持"
                   : state.policy_trajectory_active
                     ? `Thor 模型 / ${state.policy_trajectory_hz} Hz 二阶轨迹`
                     : "Thor 模型"),
@@ -398,6 +401,11 @@ function render() {
             : "已配置 / 待验证"
         : "未配置",
       state.source === "policy" && connected,
+    );
+    healthRow(
+      "动作规划",
+      state.planner_ready ? "独立进程就绪" : "未就绪 / 保持",
+      !!state.planner_ready,
     );
     healthRow(
       "录制队列",
@@ -1092,6 +1100,9 @@ $("policy-form").onsubmit = async (e) => {
 };
 $("policy-restart").onclick = async () => {
   if (await action("/policy/restart")) toast("推理通信子进程正在重载；机械臂保持连接");
+};
+$("planner-restart").onclick = async () => {
+  if (await action("/policy/planner/restart")) toast("动作规划子进程正在重载；机械臂保持连接");
 };
 $("fullscreen").onclick = async () => {
   try {

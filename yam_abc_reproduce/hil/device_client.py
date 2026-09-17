@@ -81,6 +81,9 @@ class DeviceClient:
     def restart_policy(self):
         return self._request("POST", "/policy/restart")
 
+    def restart_planner(self):
+        return self._request("POST", "/policy/planner/restart")
+
     def heartbeat(self):
         return self._request("POST", "/heartbeat")
 

@@ -46,10 +46,12 @@ def test_policy_process_can_reload_without_replacing_device_owner():
 def test_policy_settings_api_validates_and_forwards_without_motor_calls():
     configured = []
     reloaded = []
+    planner_reloaded = []
     owner = SimpleNamespace(
         status={"phase": "hold"},
         configure_policy=lambda **settings: configured.append(settings),
         restart_policy=lambda: reloaded.append(True),
+        restart_planner=lambda: planner_reloaded.append(True),
     )
     headers = {"X-YAM-Control": "1"}
     with TestClient(create_app(owner)) as client:
@@ -62,6 +64,11 @@ def test_policy_settings_api_validates_and_forwards_without_motor_calls():
         assert client.post("/policy/settings", headers=headers, json={
             "fusion": "smooth",
         }).status_code == 422
+        assert client.post("/policy/settings", headers=headers, json={
+            "fusion": "raw",
+        }).status_code == 422
         assert client.post("/policy/restart", headers=headers).status_code == 200
+        assert client.post("/policy/planner/restart", headers=headers).status_code == 200
     assert configured == [{"fusion": "tda_smooth"}]
     assert reloaded == [True]
+    assert planner_reloaded == [True]

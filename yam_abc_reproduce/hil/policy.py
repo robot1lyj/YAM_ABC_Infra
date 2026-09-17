@@ -21,6 +21,8 @@ class Reply:
     worker_elapsed_ms: float | None = None
     server_timing: dict | None = None
     client_timing: dict | None = None
+    plan: dict | None = None
+    planner_error: bool = False
 
 
 class PolicyWorker:
@@ -30,25 +32,37 @@ class PolicyWorker:
     enforce their own finite timeout. The control thread never joins on takeover.
     """
 
-    def __init__(self, client):
+    def __init__(self, client, *, planner=None):
         self.client = client
+        self.planner = planner
+        self.plan_context = None
         self._requests = queue.Queue(maxsize=1)
         self._replies = queue.Queue(maxsize=1)
         self._busy = threading.Event()
         self._stop = threading.Event()
         self._restart = threading.Event()
+        self._restart_planner = threading.Event()
         self._ready = threading.Event()
         self.restart_error = None
-        if hasattr(client, "restart"):
+        self._client_ready = not hasattr(client, "restart")
+        self._planner_ready = planner is None
+        if not self._client_ready:
             self._restart.set()
-        else:
-            self._ready.set()
+        if not self._planner_ready:
+            self._restart_planner.set()
+        self._update_ready()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
+    def _update_ready(self):
+        if self._client_ready and self._planner_ready:
+            self._ready.set()
+        else:
+            self._ready.clear()
+
     def submit(self, token: Request, observation: dict[str, Any]) -> bool:
         # Called only by the single control owner; snapshots must be immutable.
-        if self._busy.is_set() or self._stop.is_set() or not self._ready.is_set():
+        if self._busy.is_set() or self._stop.is_set() or not self.ready:
             return False
         self._busy.set()
         self._requests.put_nowait((token, observation))
@@ -66,12 +80,26 @@ class PolicyWorker:
         """Restart the network owner off the control thread; old tokens remain epoch-checked."""
         if not hasattr(self.client, "restart"):
             raise ValueError("policy client does not support independent restart")
-        self._ready.clear()
+        self._client_ready = False
+        self._update_ready()
         self._restart.set()
+
+    def request_planner_restart(self):
+        if self.planner is None:
+            raise ValueError("action planner process is not enabled")
+        self._planner_ready = False
+        self._update_ready()
+        self._restart_planner.set()
 
     @property
     def ready(self):
-        return self._ready.is_set()
+        return self._ready.is_set() and self.planner_alive
+
+    @property
+    def planner_alive(self):
+        return self.planner is None or (
+            self._planner_ready and getattr(self.planner, "alive", True)
+        )
 
     def _run(self):
         try:
@@ -81,29 +109,55 @@ class PolicyWorker:
                     try:
                         self.client.restart()
                         self.restart_error = None
-                        self._ready.set()
+                        self._client_ready = True
                     except Exception as exc:
                         self.restart_error = str(exc)
+                    self._update_ready()
+                if self._restart_planner.is_set():
+                    self._restart_planner.clear()
+                    try:
+                        self.planner.restart()
+                        self.restart_error = None
+                        self._planner_ready = True
+                    except Exception as exc:
+                        self.restart_error = str(exc)
+                    self._update_ready()
                 try:
                     token, observation = self._requests.get(timeout=0.05)
                 except queue.Empty:
                     continue
+                planning = False
                 try:
                     started = time.monotonic()
                     response = self.client.infer(observation)
+                    actions = np.array(response["actions"], copy=True)
+                    plan = None
+                    if self.planner is not None:
+                        planning = True
+                        if self.plan_context is None:
+                            raise RuntimeError("action planner context is not attached")
+                        mode, previous, action_dt, max_action_age = self.plan_context()
+                        plan = self.planner.plan(
+                            mode, token, actions, previous, time.monotonic(),
+                            action_dt, max_action_age,
+                        )
                     reply = Reply(
-                        token, np.array(response["actions"], copy=True),
+                        token, actions,
                         worker_elapsed_ms=(time.monotonic() - started) * 1000,
                         server_timing=response.get("server_timing"),
                         client_timing=getattr(self.client, "last_timing", None),
+                        plan=plan,
                     )
                 except Exception as exc:
-                    reply = Reply(token, None, f"{type(exc).__name__}: {exc}")
+                    reply = Reply(token, None, f"{type(exc).__name__}: {exc}",
+                                  planner_error=planning)
                 self._replies.put_nowait(reply)
         finally:
             close = getattr(self.client, "close", None)
             if close:
                 close()
+            if self.planner is not None:
+                self.planner.close()
 
     def close(self):
         self._stop.set()

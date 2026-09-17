@@ -47,7 +47,7 @@ class InitializationComplete(BaseModel):
 
 class PolicySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    fusion: Literal["raw", "tda_smooth"]
+    fusion: Literal["sync_hold", "tda_smooth", "rtc"]
 
 
 def create_app(runtime):
@@ -110,6 +110,11 @@ def create_app(runtime):
     def policy_restart():
         invoke(runtime.restart_policy)
         return {"queued": "policy_restart"}
+
+    @app.post("/policy/planner/restart")
+    def planner_restart():
+        invoke(runtime.restart_planner)
+        return {"queued": "planner_restart"}
 
     @app.post("/tasks")
     def create_task(body: TaskCreate):

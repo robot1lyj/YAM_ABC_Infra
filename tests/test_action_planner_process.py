@@ -31,7 +31,28 @@ def test_policy_plan_target_reaches_device_arbiter_without_feedback_slew(mode):
     assert arbiter.accept_plan(token, plan, 1.1)
     decision = arbiter.step(q, q, now=1.1, dt=0.1, leader_ready=True)
     assert decision.source == "policy"
-    np.testing.assert_allclose(decision.action, rows[0])
+    expected = rows[0].copy()
+    expected[13] = 0.05
+    np.testing.assert_allclose(decision.action, expected)
+
+
+@pytest.mark.parametrize("mode", ["tda_smooth", "sync_hold"])
+def test_inference_close_trick_only_changes_grippers_below_threshold(mode):
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, external_planner=True,
+        policy_fusion=mode, action_dt=0.1, max_action_age=3,
+    )
+    arbiter.start(np.zeros(14))
+    token = arbiter.request(1, 1.0, 1.0)
+    rows = np.full((50, 14), 0.4)
+    rows[:, 6] = [0.0, 0.299, 0.3, 0.301, *([0.4] * 46)]
+    rows[:, 13] = 0.8
+    original = rows.copy()
+    plan = build_plan(mode, token, rows, None, 1.1, 0.1, 3)
+    np.testing.assert_array_equal(rows, original)
+    np.testing.assert_allclose(plan["actions"][:4, 6], [0.05, 0.05, 0.3, 0.301])
+    np.testing.assert_allclose(plan["actions"][:, 13], 0.8)
+    np.testing.assert_allclose(plan["actions"][:, :6], 0.4)
 
 
 def test_planner_process_restart_keeps_device_arbiter_and_discards_old_plan():
@@ -79,6 +100,8 @@ def test_planner_raw_and_tda_match_existing_buffer_on_overlapping_chunks():
             actual = arbiter.action_buffer.current(now)
             expected = reference.current(now)
             assert actual is not None and expected is not None
+            if mode == "tda_smooth":
+                expected[0][[6, 13]] = 0.05
             np.testing.assert_allclose(actual[0], expected[0])
             assert actual[1] == expected[1]
         second = arbiter.request(2, 1.35, 1.35)
@@ -91,6 +114,8 @@ def test_planner_raw_and_tda_match_existing_buffer_on_overlapping_chunks():
             actual = arbiter.action_buffer.current(now)
             expected = reference.current(now)
             assert actual is not None and expected is not None
+            if mode == "tda_smooth":
+                expected[0][[6, 13]] = 0.05
             np.testing.assert_allclose(actual[0], expected[0])
             assert actual[1] == expected[1]
 

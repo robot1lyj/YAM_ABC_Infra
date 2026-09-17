@@ -8,6 +8,14 @@ from time import monotonic
 import numpy as np
 
 
+def _snap_close_grippers(actions):
+    """Temporary inference experiment: make small close targets decisive."""
+    result = np.asarray(actions, dtype=np.float64).copy()
+    grippers = result[:, [6, 13]]
+    result[:, [6, 13]] = np.where(grippers < 0.3, 0.05, grippers)
+    return result
+
+
 def build_plan(mode, token, actions, previous, now, action_dt, max_action_age):
     """Pure planner entrypoint, also used by offline parity tests."""
     from .action_buffer import ActionBuffer, TimedChunk
@@ -45,7 +53,7 @@ def build_plan(mode, token, actions, previous, now, action_dt, max_action_age):
             raise ValueError("policy action queue is empty")
         return {
             "kind": "queue", "origin": origin, "first_index": 0,
-            "actions": np.stack(buffer._queue).astype(np.float64),
+            "actions": _snap_close_grippers(np.stack(buffer._queue)),
             "meta": buffer._meta,
             "based_on_consumed": (
                 0 if previous is None else previous["consumed_total"]
@@ -56,7 +64,8 @@ def build_plan(mode, token, actions, previous, now, action_dt, max_action_age):
     if mode == "sync_hold":
         return {
             "kind": "queue", "origin": now, "first_index": 0,
-            "actions": rows, "meta": [(token, index) for index in range(50)],
+            "actions": _snap_close_grippers(rows),
+            "meta": [(token, index) for index in range(50)],
             "based_on_consumed": 0,
             "trimmed_steps": 0,
         }

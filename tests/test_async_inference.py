@@ -155,6 +155,7 @@ def test_station_defaults_to_openarm_tda_for_ordinary_policy(capsys):
 
     station = yaml.safe_load((Path(__file__).parents[1] / "configs/station_hil.yaml").read_text())
     assert station["hil"]["policy_fusion"] == "tda_smooth"
+    assert station["hil"]["policy_trajectory_hz"] == 0
     main(["--mock", "--mode", "inference", "--check"])
     assert json.loads(capsys.readouterr().out)["policy_fusion"] == "tda_smooth"
 

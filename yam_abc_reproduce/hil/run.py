@@ -859,6 +859,10 @@ def main(argv=None, *, service=None):
             if not isinstance(value, bool):
                 p.error("factory_zero_home must be true or false")
             continue
+        if key == "policy_trajectory_hz":
+            if not isinstance(value, (float, int)) or not np.isfinite(value) or value < 0:
+                p.error("policy_trajectory_hz must be finite and nonnegative")
+            continue
         if not isinstance(value, (float, int)) or not np.isfinite(value) or value <= 0:
             p.error(f"invalid hil setting: {key}")
     try:

@@ -40,9 +40,9 @@ hil:
   # Policy/automatic joint target envelope. 3rad/s reduces prolonged catch-up;
   # this is still a feedback-relative tracking bound, not a velocity guarantee.
   max_joint_speed: 3.0
-  # Experimental policy-only high-rate trajectory writer. Leaving POLICY stops
-  # and joins this writer before HOLD/teleop/maintenance resumes direct IO.
-  policy_trajectory_hz: 100
+  # 10w + TDA trial: publish policy targets directly at 30 Hz. Keep the
+  # experimental 100 Hz second-order writer available but disabled for this run.
+  policy_trajectory_hz: 0
   policy_joint_acceleration: 30.0
   policy_natural_frequency: 10.0
   handover_error: 0.2

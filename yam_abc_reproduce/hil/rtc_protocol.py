@@ -54,6 +54,7 @@ def build_rtc_request(
         "obs": observation,
         "rtc": {
             "delay_steps": delay,
+            "observation_policy_tick": target_start_tick,
             "target_start_tick": target_start_tick,
             "committed_start_tick": target_start_tick,
             "committed_actions": prefix.copy(),

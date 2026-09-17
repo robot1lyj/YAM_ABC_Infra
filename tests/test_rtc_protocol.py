@@ -27,6 +27,7 @@ def test_rtc_envelope_has_explicit_target_tick_and_absolute_prefix():
     )
     assert request["type"] == "infer"
     assert request["rtc"]["delay_steps"] == 3
+    assert request["rtc"]["observation_policy_tick"] == 42
     assert request["rtc"]["target_start_tick"] == 42
     assert request["rtc"]["committed_start_tick"] == 42
     np.testing.assert_array_equal(request["rtc"]["committed_actions"], prefix)
@@ -108,6 +109,7 @@ def test_rtc_wire_refuses_ordinary_fallback_and_changed_prefix(
                     )
                     assert np.asarray(result["actions"]).shape == (50, 14)
                     assert received[0]["rtc"]["target_start_tick"] == 42
+                    assert received[0]["rtc"]["observation_policy_tick"] == 42
                     assert received[0]["rtc"]["delay_steps"] == 2
         finally:
             if client is not None:

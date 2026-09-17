@@ -54,14 +54,14 @@ def test_policy_settings_api_validates_and_forwards_without_motor_calls():
     headers = {"X-YAM-Control": "1"}
     with TestClient(create_app(owner)) as client:
         assert client.post("/policy/settings", headers=headers, json={
-            "fusion": "smooth", "smooth_steps": 4,
+            "fusion": "tda_smooth",
         }).status_code == 200
         assert client.post("/policy/settings", headers=headers, json={
-            "fusion": "ensemble", "smooth_steps": 4,
+            "fusion": "ensemble",
         }).status_code == 422
         assert client.post("/policy/settings", headers=headers, json={
-            "fusion": "smooth", "smooth_steps": 0,
+            "fusion": "smooth",
         }).status_code == 422
         assert client.post("/policy/restart", headers=headers).status_code == 200
-    assert configured == [{"fusion": "smooth", "smooth_steps": 4}]
+    assert configured == [{"fusion": "tda_smooth"}]
     assert reloaded == [True]

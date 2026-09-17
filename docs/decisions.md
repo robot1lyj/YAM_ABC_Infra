@@ -10,7 +10,7 @@
 | 产品 | 遥操作、推理、DAgger/HIL、数据采集四模式 | [架构](dagger_architecture.md) |
 | 接管 | 键盘i冻结并自动相对遥操作，HIL人工阶段手柄①交还模型；②无功能 | [运行手册](hil_quickstart.md) |
 | 推理位置 | 现场Thor模型服务，经网线连接RK3588；RK采集/控制/记录 | [接口](condapi_interface.md) |
-| 推理算法 | 非RTC单在途异步预取；3588配置`action_dt`、第0步对齐observation时刻，不加时间偏移；本站默认`smooth_steps=4`仅在新旧两块接缝过渡关节、不做多块持续融合，`raw`保留naive_async对照；HOLD可按会话调`raw/smooth`和1–12步，无法由RTT严格算出最优窗口；`--baseline`保留普通基准，不改模型 | [运行手册](hil_quickstart.md) |
+| 推理算法 | 普通10w模型单在途异步预取；默认复用openarm-vr的`tda_smooth`队列丢步/重叠混合，`raw`保留对照，HOLD可切换；RTC训练模型只走原生前缀条件，不叠加TDA。RTC目标tick合同及真机执行待验收；`--baseline`保留普通基准 | [运行手册](hil_quickstart.md) |
 | 模型切换 | 3588不记录模型名称、后端、指纹或服务URL，也不按它们阻挡推理；只核实输出形状、单位、动作间隔与本机安全 | [接口](condapi_interface.md) |
 | 性能取舍 | 预览/MPP编码使用独立进程；控制不缩窄至两个大核，录制短时积压可停录后排空；长时完整性与运动中延迟仍需验收 | [架构](dagger_architecture.md#性能与格式整理) |
 | 数据 | 采集①开始/结束、②放弃；实时原始MP4/HDF5/JSON，LeRobot v3.0仅显式离线转换；保存Follower反馈/提交动作/三路图像/HIL完整阶段 | [转换](convert.md) |

@@ -29,6 +29,7 @@ from ..resource_qos import place_on_cpus
 from ..robot.can_bus import bring_up_can_buses, check_can_up, stop_can_buses
 from ..runtime import build_arm_units, build_cameras_from_config
 from .action_buffer import ActionBuffer
+from .tda_buffer import TdaActionBuffer
 from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
 from .jog import Jog
@@ -123,7 +124,6 @@ class Runtime:
                 expected_policy_latency=settings.get("expected_policy_latency", 0.2),
                 prefetch_margin=settings.get("prefetch_margin", 2 / 30),
                 policy_fusion=settings.get("policy_fusion", "raw"),
-                smooth_steps=settings.get("smooth_steps", 8),
             ),
             worker,
         )
@@ -251,12 +251,12 @@ class Runtime:
             raise ValueError("录制或紧急暂停时不可点动")
         self.jog.request(arm, joint, delta)
 
-    def configure_policy(self, *, fusion: str, smooth_steps: int):
-        if fusion not in ("raw", "smooth") or type(smooth_steps) is not int or not 1 <= smooth_steps <= 12:
-            raise ValueError("推理接缝模式需为 raw/smooth，步数需为 1–12")
+    def configure_policy(self, *, fusion: str):
+        if fusion not in ("raw", "tda_smooth"):
+            raise ValueError("推理动作块模式需为 raw/tda_smooth")
         if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
             raise ValueError("请先暂停模型并结束本集录制")
-        self.policy_commands.put_nowait(("configure", fusion, smooth_steps))
+        self.policy_commands.put_nowait(("configure", fusion))
 
     def restart_policy(self):
         if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
@@ -305,8 +305,11 @@ class Runtime:
                     else:
                         a._transition(Phase.HOLD, q)  # Invalidate any old policy reply.
                         if policy_command[0] == "configure":
-                            a.action_buffer.fusion = policy_command[1]
-                            a.action_buffer.smooth_steps = policy_command[2]
+                            a.action_buffer = (
+                                TdaActionBuffer(a.action_dt)
+                                if policy_command[1] == "tda_smooth"
+                                else ActionBuffer(a.action_dt, max_action_age=a.max_action_age)
+                            )
                             self.operator_error = None
                         else:
                             self.worker.request_restart()
@@ -642,7 +645,7 @@ class Runtime:
                     "policy_fusion": a.action_buffer.fusion,
                     "policy_ready": self.worker.ready if self.worker else False,
                     "policy_restart_error": self.worker.restart_error if self.worker else None,
-                    "policy_smooth_steps": a.action_buffer.smooth_steps,
+                    "policy_tda_drop_max": getattr(a.action_buffer, "drop_max", None),
                     "policy_joint_speed_rad_s": a.max_joint_speed,
                     "policy_replan_period_s": a.replan_period,
                     "policy_buffer_remaining": a.action_buffer.remaining(now),
@@ -756,10 +759,9 @@ def main(argv=None, *, service=None):
     p.add_argument("--baseline", action="store_true", help="ordinary non-prefetch baseline")
     p.add_argument(
         "--policy-fusion",
-        choices=("raw", "smooth"),
-        help="non-RTC timestamped chunk fusion; default comes from station config",
+        choices=("raw", "tda_smooth"),
+        help="ordinary policy chunk handling; trained RTC never uses TDA",
     )
-    p.add_argument("--smooth-steps", type=int, help="short matching-time smoothing window (1-50)")
     p.add_argument("--action-dt", type=float, help="model action target spacing in seconds")
     p.add_argument(
         "--expected-policy-latency", type=float, help="initial total Thor RPC estimate in seconds"
@@ -841,7 +843,6 @@ def main(argv=None, *, service=None):
         p.error("--url is required for local edge inference")
     for key, option in (
         ("policy_fusion", args.policy_fusion),
-        ("smooth_steps", args.smooth_steps),
         ("expected_policy_latency", args.expected_policy_latency),
         ("prefetch_margin", args.prefetch_margin),
     ):
@@ -849,6 +850,8 @@ def main(argv=None, *, service=None):
             hil_cfg[key] = option
     if args.baseline:
         hil_cfg["policy_fusion"] = "raw"
+    if hil_cfg.get("policy_fusion", "raw") not in ("raw", "tda_smooth"):
+        p.error("policy_fusion must be raw or tda_smooth")
     for key, value in hil_cfg.items():
         if key == "policy_fusion":
             continue
@@ -859,11 +862,10 @@ def main(argv=None, *, service=None):
         if not isinstance(value, (float, int)) or not np.isfinite(value) or value <= 0:
             p.error(f"invalid hil setting: {key}")
     try:
-        ActionBuffer(
-            action_dt,
-            fusion=hil_cfg.get("policy_fusion", "raw"),
-            smooth_steps=hil_cfg.get("smooth_steps", 8),
-        )
+        if hil_cfg.get("policy_fusion", "raw") == "tda_smooth":
+            TdaActionBuffer(action_dt)
+        else:
+            ActionBuffer(action_dt)
     except ValueError as exc:
         p.error(str(exc))
     # Check before constructing cameras, motors, sockets or recording threads.
@@ -919,7 +921,6 @@ def main(argv=None, *, service=None):
             "streaming": not args.baseline,
             "action_dt": action_dt,
             "policy_fusion": hil_cfg.get("policy_fusion", "raw"),
-            "smooth_steps": hil_cfg.get("smooth_steps", 8),
             "expected_policy_latency": hil_cfg.get("expected_policy_latency", 0.2),
             "prefetch_margin": hil_cfg.get("prefetch_margin", 2 / 30),
         },

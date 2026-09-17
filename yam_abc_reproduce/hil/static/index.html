@@ -353,15 +353,12 @@
                 <div class="policy-metrics">
                   <div><span>往返 p95</span><strong id="policy-rtt">—</strong></div>
                   <div><span>缓冲余量</span><strong id="policy-buffer">—</strong></div>
-                  <div><span>过期裁剪</span><strong id="policy-trim">—</strong></div>
+                  <div><span>新块丢步</span><strong id="policy-trim">—</strong></div>
                   <div><span>关节限速</span><strong id="policy-speed">—</strong></div>
                 </div>
                 <form id="policy-form" class="policy-settings">
-                  <label>接缝模式
-                    <select id="policy-fusion"><option value="raw">原始异步</option><option value="smooth">两块接缝过渡</option></select>
-                  </label>
-                  <label>过渡步数
-                    <input id="policy-steps" type="number" min="1" max="12" step="1" value="4" />
+                  <label>动作块模式
+                    <select id="policy-fusion"><option value="raw">原始异步</option><option value="tda_smooth">TDA 平滑（普通模型）</option></select>
                   </label>
                   <button class="button primary" id="policy-apply" type="submit">应用</button>
                 </form>

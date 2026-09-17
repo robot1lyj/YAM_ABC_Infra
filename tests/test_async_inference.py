@@ -145,7 +145,7 @@ def test_action_dt_cli_override_is_checked_without_model_or_motors(capsys):
     assert json.loads(capsys.readouterr().out)["action_dt"] == pytest.approx(0.05)
 
 
-def test_station_defaults_to_short_two_chunk_seam_without_hardware(capsys):
+def test_station_defaults_to_openarm_tda_for_ordinary_policy(capsys):
     import json
     from pathlib import Path
 
@@ -154,33 +154,9 @@ def test_station_defaults_to_short_two_chunk_seam_without_hardware(capsys):
     from yam_abc_reproduce.hil.run import main
 
     station = yaml.safe_load((Path(__file__).parents[1] / "configs/station_hil.yaml").read_text())
-    assert station["hil"]["smooth_steps"] == 4
+    assert station["hil"]["policy_fusion"] == "tda_smooth"
     main(["--mock", "--mode", "inference", "--check"])
-    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "smooth"
-
-
-def test_smooth_window_interpolates_same_target_time_and_not_grippers():
-    q = np.zeros(14)
-    arbiter = Arbiter(
-        Mode.INFERENCE, streaming=True, action_dt=0.1,
-        policy_fusion="smooth", smooth_steps=3, max_action_age=3,
-    )
-    arbiter.start(q)
-    policy(arbiter, chunk(0, 0.2), observed_at=1, sent_at=1, received_at=1.01)
-    policy(arbiter, chunk(1, 0.8), observed_at=1.2, sent_at=1.21, received_at=1.25)
-    assert arbiter.action_buffer.chunk is not None
-    for now, joint in ((1.25, 0), (1.35, 0.5), (1.45, 1)):
-        decision = arbiter.step(q, q, now=now, dt=0.03, leader_ready=True)
-        assert decision.policy_action[0] == pytest.approx(joint)
-        assert decision.policy_action[6] == pytest.approx(0.8)
-
-    # The observation grids are shifted by 60ms.  The old plan is evaluated at
-    # each exact new target time rather than rejecting the overlap.
-    policy(arbiter, chunk(2, 0.6), observed_at=1.26, sent_at=1.27, received_at=1.28)
-    for now, joint in ((1.28, 0.3), (1.38, 1.4), (1.48, 2.0)):
-        decision = arbiter.step(q, q, now=now, dt=0.03, leader_ready=True)
-        assert decision.policy_action[0] == pytest.approx(joint)
-        assert decision.policy_action[6] == pytest.approx(0.6)
+    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "tda_smooth"
 
 
 def test_latency_budget_uses_observation_age_not_only_request_rtt():
@@ -204,7 +180,7 @@ def test_step_ten_replan_runs_old_plan_then_time_aligns_150ms_reply():
     q = np.zeros(14)
     arbiter = Arbiter(
         Mode.INFERENCE, streaming=True, action_dt=1 / 30,
-        replan_period=10 / 30, policy_fusion="smooth", smooth_steps=4,
+        replan_period=10 / 30, policy_fusion="raw",
         max_joint_speed=2.5, max_action_age=1.5,
     )
     arbiter.start(q)
@@ -228,29 +204,14 @@ def test_step_ten_replan_runs_old_plan_then_time_aligns_150ms_reply():
     assert arbiter.action_buffer.last_trimmed_steps == 4
     decision = arbiter.step(q, q, now=10 / 30 + 0.15, dt=1 / 30, leader_ready=True)
     assert decision.action_index == 4  # never executes the stale index-zero target
-    # First matching joint target is inherited from the old physical-time plan;
-    # the latest gripper remains discrete and is never averaged.
-    assert decision.policy_action[0] == pytest.approx(0.14)
+    # Raw replacement uses the new plan without a second smoothing method.
+    assert decision.policy_action[0] == pytest.approx(1.0)
     assert decision.policy_action[6] == pytest.approx(0.8)
     assert arbiter.action_buffer.last_seam_max_rad == pytest.approx(0.86)
 
 
-def test_kai0_single_step_overlap_keeps_old_joint_but_latest_gripper():
-    q = np.zeros(14)
-    arbiter = Arbiter(
-        Mode.INFERENCE, streaming=True, action_dt=0.1,
-        policy_fusion="smooth", smooth_steps=1, max_action_age=3,
-    )
-    arbiter.start(q)
-    policy(arbiter, chunk(0.1, 0.2), observed_at=1, sent_at=1, received_at=1.01)
-    policy(arbiter, chunk(0.4, 0.8), observed_at=1.2, sent_at=1.21, received_at=1.25)
-    decision = arbiter.step(q, q, now=1.25, dt=0.03, leader_ready=True)
-    assert decision.policy_action[0] == pytest.approx(0.1)
-    assert decision.policy_action[6] == pytest.approx(0.8)
-
-
 def test_retired_multi_chunk_mode_is_rejected():
-    with pytest.raises(ValueError, match="raw or smooth"):
+    with pytest.raises(ValueError, match="raw or tda_smooth"):
         Arbiter(Mode.INFERENCE, streaming=True, policy_fusion="ensemble")
 
 

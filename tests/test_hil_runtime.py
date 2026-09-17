@@ -172,17 +172,17 @@ def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path):
         for camera in cameras:
             camera.start()
         old_epoch = runtime.session.arbiter.epoch
-        runtime.configure_policy(fusion="smooth", smooth_steps=4)
-        with pytest.raises(ValueError, match="1–12"):
-            runtime.configure_policy(fusion="smooth", smooth_steps=0)
+        runtime.configure_policy(fusion="tda_smooth")
+        with pytest.raises(ValueError, match="raw/tda_smooth"):
+            runtime.configure_policy(fusion="smooth")
         result = runtime.run(duration=0.15)
-        assert result["policy_fusion"] == "smooth"
-        assert result["policy_smooth_steps"] == 4
+        assert result["policy_fusion"] == "tda_smooth"
+        assert result["policy_tda_drop_max"] == 25
         assert result["policy_trajectory_mode"] == "second_order"
         assert runtime.session.arbiter.epoch > old_epoch
         runtime.status["phase"] = "policy"
         with pytest.raises(ValueError, match="暂停"):
-            runtime.configure_policy(fusion="raw", smooth_steps=4)
+            runtime.configure_policy(fusion="raw")
     finally:
         for camera in cameras:
             camera.stop()

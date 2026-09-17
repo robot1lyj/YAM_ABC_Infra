@@ -47,8 +47,7 @@ class InitializationComplete(BaseModel):
 
 class PolicySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    fusion: Literal["raw", "smooth"]
-    smooth_steps: int = Field(strict=True, ge=1, le=12)
+    fusion: Literal["raw", "tda_smooth"]
 
 
 def create_app(runtime):

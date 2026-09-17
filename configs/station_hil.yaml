@@ -26,11 +26,9 @@ hil:
   # Follower factory home is six zero arm joints, not encoder recalibration.
   # Leaders stay manual; retain both follower grippers.
   factory_zero_home: true
-  # KAI0-style two-chunk seam: blend only the first four aligned joint targets
-  # (about 100 ms), then follow the newest chunk directly. Do not ensemble
-  # several full plans; grippers always use the newest chunk without blending.
-  policy_fusion: smooth
-  smooth_steps: 4
+  # Ordinary 10w policy only: port of OpenArm TDA queue drop/overlap blending.
+  # Trained RTC must use its own committed-prefix path, never this fusion.
+  policy_fusion: tda_smooth
   max_frame_age: 0.5
   max_frame_skew: 0.12
   warn_frame_skew: 0.04

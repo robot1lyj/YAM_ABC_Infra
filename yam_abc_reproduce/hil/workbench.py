@@ -559,7 +559,6 @@ class Workbench:
             argv.append("--baseline")
         for option, value in (
             ("--policy-fusion", getattr(self.args, "policy_fusion", None)),
-            ("--smooth-steps", getattr(self.args, "smooth_steps", None)),
             ("--action-dt", getattr(self.args, "action_dt", None)),
             ("--expected-policy-latency", getattr(self.args, "expected_policy_latency", None)),
             ("--prefetch-margin", getattr(self.args, "prefetch_margin", None)),
@@ -683,11 +682,11 @@ class Workbench:
             raise ValueError("操作台心跳已断开")
         self.runtime.request_jog(arm, joint, delta)
 
-    def configure_policy(self, *, fusion, smooth_steps):
+    def configure_policy(self, *, fusion):
         if self.runtime is None or self.state != "connected" or self.initializing:
             raise ValueError("请先连接设备并退出初始化向导")
-        self.runtime.configure_policy(fusion=fusion, smooth_steps=smooth_steps)
-        self.log(f"推理接缝设置已提交：{fusion} / {smooth_steps} 步")
+        self.runtime.configure_policy(fusion=fusion)
+        self.log(f"推理动作块设置已提交：{fusion}")
 
     def restart_policy(self):
         if self.runtime is None or self.state != "connected" or self.initializing:

@@ -15,6 +15,11 @@ H50/14D、服务端声明的最大 `d`，回复要求 `server_timing.rtc_used=tr
 冒充已承诺动作。下一阶段在确认规则并取得 Thor 独立 RTC 服务后，先用真实记录做
 无电机回放和模拟延迟，再决定如何接入动作缓冲及真机 A/B；不得静默退化为普通推理。
 
+普通10w检查点的动作块模式现已把旧固定窗口`smooth`替换为从openarm-vr复用的
+`tda_smooth`队列丢步/重叠混合；此变更只在普通协议上，**不作用于RTC已承诺前缀**。
+实验只保留普通10w＋TDA与RTC原生两组；后者仍待目标tick合同、Thor 8001与
+无电机回放，当前设备服务不会因本地代码更新而自动切换。
+
 这是本项目的适配约束，不取代 condapi 的模型/训练事实所有者。
 源仓库 `/home/wuyan-lyj/condapi`，本次读取 HEAD `1077699987cd66d5b95ba0402d4163250f8bc0cb`；源文件哈希、检查范围和已有工作区变更见 [本轮核查](evidence/20260914-architecture-audit.json)。2026-09-08 快照 `925d2ed3de37660c94694cc4bff292d721783108` 的 [原证据](evidence/20260908-condapi-sources.json)保留为历史。
 2026-09-14架构审计只读 condapi 本地文档和代码，没有连接或操作 Thor、RK3588、训练服务器，也没有修改 condapi。系统部署和工作包归 [架构基线](dagger_architecture.md#2026-09-14-架构基线-v1)。

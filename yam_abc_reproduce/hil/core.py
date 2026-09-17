@@ -14,6 +14,7 @@ from enum import StrEnum
 import numpy as np
 
 from .action_buffer import ActionBuffer
+from .tda_buffer import TdaActionBuffer
 
 
 class Mode(StrEnum):
@@ -39,6 +40,7 @@ class Request:
     observation_id: int
     created_at: float  # controller monotonic seconds, never Thor wall time
     observed_at: float | None = None
+    queue_size_at_request: int | None = None  # TDA: unconsumed old actions at request time
 
 
 @dataclass
@@ -95,7 +97,6 @@ class Arbiter:
         replan_period: float = 0.2,
         tick_timeout: float = 0.1,
         policy_fusion: str = "raw",
-        smooth_steps: int = 8,
         expected_policy_latency: float = 0.2,
         prefetch_margin: float = 2 / 30,
     ):
@@ -142,11 +143,11 @@ class Arbiter:
         self.tick_timeout = tick_timeout
         self._last_request_at = -float("inf")
         self._active_request = None
-        self.action_buffer = ActionBuffer(
-            action_dt,
-            fusion=policy_fusion if streaming else "raw",
-            smooth_steps=smooth_steps,
-            max_action_age=max_action_age,
+        if policy_fusion not in ("raw", "tda_smooth"):
+            raise ValueError("policy fusion must be raw or tda_smooth")
+        self.action_buffer = (
+            TdaActionBuffer(action_dt) if streaming and policy_fusion == "tda_smooth"
+            else ActionBuffer(action_dt, max_action_age=max_action_age)
         )
         self.mode = Mode(mode)
         self.phase = Phase.HOLD
@@ -252,7 +253,10 @@ class Arbiter:
         self._serial += 1
         if observed_at is not None and (not np.isfinite(observed_at) or observed_at > now):
             raise ValueError("invalid observation time")
-        self.pending = Request(self.epoch, self._serial, observation_id, now, observed_at)
+        self.pending = Request(
+            self.epoch, self._serial, observation_id, now, observed_at,
+            self.action_buffer.remaining(now) if self.streaming else None,
+        )
         return self.pending
 
     @property
@@ -356,17 +360,19 @@ class Arbiter:
         elif self.phase in (Phase.RESUME, Phase.POLICY) and (
             (self.action_buffer.chunk is not None) if self.streaming else (self._chunk is not None)
         ):
-            current = self.action_buffer.current(now) if self.streaming else None
-            if self.streaming and current is None:
-                self._transition(Phase.HOLD, q)
-                selected = q.copy()
-            elif now - self._origin_time > self.max_action_age:
+            if now - self._origin_time > self.max_action_age:
                 self._transition(Phase.HOLD, q)
                 selected = q.copy()
             elif self.phase == Phase.POLICY or leader_ready:
+                current = self.action_buffer.current(now) if self.streaming else None
+                if self.streaming and current is None:
+                    self._transition(Phase.HOLD, q)
+                    selected = q.copy()
+                    current = None
                 if self.streaming:
-                    policy, action_index, token = current
-                    self._active_request = token
+                    if current is not None:
+                        policy, action_index, token = current
+                        self._active_request = token
                 elif self._index < len(self._chunk):
                     action_index = self._index
                     policy = self._chunk[self._index].copy()

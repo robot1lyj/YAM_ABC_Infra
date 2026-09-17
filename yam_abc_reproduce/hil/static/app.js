@@ -168,19 +168,17 @@ function render() {
   $("workspace-page").classList.toggle("teleop-view", teleopView);
   $("recording-controls").hidden = teleopView || mode !== "collect";
   $("policy-panel").hidden = !["inference", "hil"].includes(mode);
-  text("policy-mode", state.policy_fusion === "smooth" ? "两块过渡" : "原始异步");
+  text("policy-mode", state.policy_fusion === "tda_smooth" ? "TDA 平滑" : "原始异步");
   text("policy-rtt", state.policy_observed_rtt_p95_s == null ? "—" : `${Math.round(state.policy_observed_rtt_p95_s * 1000)} ms`);
   text("policy-buffer", state.policy_buffer_seconds == null ? "—" : `${Math.max(0, state.policy_buffer_seconds).toFixed(2)} s`);
   text("policy-trim", state.policy_trimmed_steps == null ? "—" : `${state.policy_trimmed_steps} 步`);
   text("policy-speed", state.policy_joint_speed_rad_s == null ? "—" : `${state.policy_joint_speed_rad_s.toFixed(1)} rad/s`);
-  if (policyDraft && state.policy_fusion === policyDraft.fusion && state.policy_smooth_steps === policyDraft.smooth_steps) policyDraft = null;
+  if (policyDraft && state.policy_fusion === policyDraft.fusion) policyDraft = null;
   if (!policyDraft) {
-    $("policy-fusion").value = state.policy_fusion || "smooth";
-    if (state.policy_smooth_steps != null) $("policy-steps").value = state.policy_smooth_steps;
+    $("policy-fusion").value = state.policy_fusion || "tda_smooth";
   }
   const policyEditable = connected && paused && !latched && !recording && maint === "idle";
   $("policy-fusion").disabled = !policyEditable;
-  $("policy-steps").disabled = !policyEditable;
   $("policy-apply").disabled = !policyEditable;
   $("policy-restart").disabled = !policyEditable || !!state.mock;
   $("session-summary").hidden = teleopView;
@@ -1079,19 +1077,13 @@ $("edit-task").onclick = () => {
 };
 
 function keepPolicyDraft() {
-  policyDraft = { fusion: $("policy-fusion").value, smooth_steps: Number($("policy-steps").value) };
+  policyDraft = { fusion: $("policy-fusion").value };
 }
 $("policy-fusion").onchange = keepPolicyDraft;
-$("policy-steps").oninput = keepPolicyDraft;
 $("policy-form").onsubmit = async (e) => {
   e.preventDefault();
-  const smooth_steps = Number($("policy-steps").value);
-  if (!Number.isInteger(smooth_steps) || smooth_steps < 1 || smooth_steps > 12) {
-    toast("接缝步数请输入 1–12 的整数");
-    return;
-  }
   const fusion = $("policy-fusion").value;
-  policyDraft = { fusion, smooth_steps };
+  policyDraft = { fusion };
   if (await action("/policy/settings", policyDraft)) {
     toast("设置已提交；保持状态下生效，下次模型执行使用新值");
   } else {

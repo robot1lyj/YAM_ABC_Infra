@@ -1,9 +1,4 @@
-"""Timestamped non-RTC policy chunks; only the control owner reads or writes this buffer.
-
-Index zero targets the originating observation time. The newest response replaces
-the future plan; optional fusion only compares predictions for the same target
-time. No previously executed prefix or held last action is replayed.
-"""
+"""Raw timestamped non-RTC chunks; only the control owner reads or writes here."""
 
 from __future__ import annotations
 
@@ -33,25 +28,18 @@ class TimedChunk:
 
 
 class ActionBuffer:
-    """One current chunk, optionally smoothed against the previous chunk at handoff."""
+    """The newest valid chunk replaces the prior plan without fusion."""
 
     def __init__(
         self,
         action_dt: float,
         *,
-        fusion: str = "raw",
-        smooth_steps: int = 8,
         max_action_age: float = 1.0,
     ):
-        if fusion not in ("raw", "smooth"):
-            raise ValueError("policy fusion must be raw or smooth")
-        if not isinstance(smooth_steps, int) or not 1 <= smooth_steps <= 50:
-            raise ValueError("smooth_steps must be 1-50")
         if not np.isfinite(max_action_age) or max_action_age <= 0:
             raise ValueError("max_action_age must be finite and positive")
         self.action_dt = action_dt
-        self.fusion = fusion
-        self.smooth_steps = smooth_steps
+        self.fusion = "raw"
         self.max_action_age = max_action_age
         self.chunk: TimedChunk | None = None
         self.last_trimmed_steps: int | None = None
@@ -108,22 +96,6 @@ class ActionBuffer:
                 self.last_seam_max_rad = float(
                     np.max(np.abs(actions[first, list(JOINTS)] - seam_prior[list(JOINTS)]))
                 )
-        if self.fusion == "smooth" and self.chunk is not None and now - self.chunk.origin <= self.max_action_age:
-            old = self.chunk
-            matched = 0
-            for index in range(first, min(len(actions), first + self.smooth_steps)):
-                prior = self._at_target(old, origin + index * self.action_dt)
-                if prior is None:
-                    continue
-                # A short old-to-new ramp at *matching* target times only.
-                old_weight = (
-                    1.0 if self.smooth_steps == 1 else
-                    max(0.0, 1.0 - matched / (self.smooth_steps - 1))
-                )
-                offset = index - first
-                rows[offset] = old_weight * prior + (1.0 - old_weight) * rows[offset]
-                rows[offset, list(GRIPPERS)] = actions[index, list(GRIPPERS)]
-                matched += 1
         self.chunk = TimedChunk(token, origin, first, rows)
         return True
 
@@ -140,9 +112,7 @@ class ActionBuffer:
         self.last_selection = {
             "fusion": self.fusion,
             "target_at": target_at,
-            # Smooth mode has already blended rows during integrate; the old
-            # chunk may itself be smoothed, so it has no simple raw provenance.
-            "joint_sources": None if self.fusion == "smooth" else [
+            "joint_sources": [
                 {"epoch": newest.token.epoch, "request_id": newest.token.request_id,
                  "observed_at": newest.origin,
                  "model_index": (target_at - newest.origin) / self.action_dt,

@@ -22,7 +22,7 @@ class RtcCommitment:
 
 
 class RtcTimeline:
-    def __init__(self, *, delay_steps: int = 8, max_delay_steps: int = 10):
+    def __init__(self, *, delay_steps: int = 9, max_delay_steps: int = 10):
         if not (type(delay_steps) is int and type(max_delay_steps) is int
                 and 0 < delay_steps <= max_delay_steps < 50):
             raise ValueError("RTC delay must fit the trained prefix range")
@@ -135,7 +135,12 @@ class RtcTimeline:
         if not np.allclose(rows[:d], commitment.actions, rtol=0, atol=2e-6):
             raise ValueError("RTC reply modified committed prefix")
         self._plan = {
-            commitment.observation_tick + index: self._action(limit_target(row))
+            # Thor may return finite gripper values outside [0,1]. Apply the
+            # controller's semantic gripper clamp before StationIO's strict
+            # target validator, then apply the same SDK joint limits as writes.
+            commitment.observation_tick + index: self._action(
+                limit_target(self._action(row))
+            )
             for index, row in enumerate(rows[d:], start=d)
         }
         self.has_accepted_plan = True

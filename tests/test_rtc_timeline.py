@@ -73,6 +73,22 @@ def test_joint_limit_is_applied_to_future_and_new_plan():
     assert clock.select(8, action(0))[0][0] == pytest.approx(1)
 
 
+def test_finite_out_of_range_gripper_is_clipped_before_strict_sdk_target():
+    from yam_abc_reproduce.hil.core import vector
+
+    clock = RtcTimeline(delay_steps=8)
+    clock.record_submitted(0, action(.1))
+    request = clock.prepare(observation_tick=0, current_tick=0,
+                            limit_target=vector)
+    rows = np.vstack([action(.1) for _ in range(50)])
+    rows[:8] = request.actions
+    rows[8:, 6] = -0.2
+    rows[8:, 13] = 1.2
+    assert clock.install(request, rows, current_tick=2, limit_target=vector)
+    selected, _ = clock.select(8, action(0))
+    assert selected[6] == 0 and selected[13] == 1
+
+
 def test_missing_history_cannot_be_fabricated():
     clock = RtcTimeline(delay_steps=8)
     clock.record_submitted(5, action(0))

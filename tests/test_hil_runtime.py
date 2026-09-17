@@ -216,7 +216,7 @@ def test_mock_rtc_executes_only_post_commit_suffix_at_30hz(tmp_path):
             camera.start()
         result = runtime.run(duration=1.1, auto_start=True)
         assert result["policy_fusion"] == "rtc"
-        assert result["rtc_delay_steps"] == 8
+        assert result["rtc_delay_steps"] == 9
         recorder.close("aborted")
         rows = list(read_rows(recorder.path))
         replies = [row["policy_reply"] for row in rows if row.get("policy_reply")]
@@ -232,6 +232,34 @@ def test_mock_rtc_executes_only_post_commit_suffix_at_30hz(tmp_path):
         io.close()
         if recorder._thread.is_alive():
             recorder.close("aborted")
+
+
+def test_rtc_prefix_delay_changes_in_hold_without_restarting_device(tmp_path):
+    cfg = StationConfig()
+    io = StationIO(build_arm_units(cfg, mock=True), mock=True)
+    recorder = Recorder(tmp_path / "rtc-delay-setting")
+    worker = PolicyWorker(MockPolicy())
+    cameras = [CameraWorker(MockCamera(role, role, width=32, height=32))
+               for role in ("top", "left", "right")]
+    runtime = Runtime(
+        io, cameras, worker, recorder, mode="inference",
+        settings={"policy_fusion": "rtc", "rtc_delay_steps": 9},
+    )
+    try:
+        for camera in cameras:
+            camera.start()
+        runtime.configure_policy(fusion="rtc", rtc_delay_steps=10)
+        result = runtime.run(duration=0.15)
+        assert result["phase"] == "hold"
+        assert result["rtc_delay_steps"] == 10
+        assert runtime.session.arbiter.rtc_timeline.delay_steps == 10
+        assert not result.get("error")
+    finally:
+        for camera in cameras:
+            camera.stop()
+        worker.close()
+        io.close()
+        recorder.close("aborted")
 
 
 @pytest.mark.parametrize("delay_steps", (8, 9))

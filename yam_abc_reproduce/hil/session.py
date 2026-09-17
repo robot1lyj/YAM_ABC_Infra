@@ -106,10 +106,11 @@ class Session:
                             self.last_reply["new_vs_old_target_gripper_max"] = (
                                 buffer.last_seam_gripper_max
                             )
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError) as exc:
                         self.last_reply["discarded"] = True
-                        self.last_reply["error"] = "invalid policy response"
-                        self.arbiter.fail(state, "invalid policy response")
+                        reason = f"invalid policy response: {exc}"
+                        self.last_reply["error"] = reason
+                        self.arbiter.fail(state, reason)
         decision = self.arbiter.step(
             state, leader, now=now, dt=dt, observation_fresh=fresh,
             leader_ready=leader_ready, policy_tick=policy_tick,

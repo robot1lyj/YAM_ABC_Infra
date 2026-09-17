@@ -100,6 +100,7 @@ class Arbiter:
         expected_policy_latency: float = 0.2,
         prefetch_margin: float = 2 / 30,
         external_planner: bool = False,
+        rtc_delay_steps: int = 9,
     ):
         values = (
             max_request_age,
@@ -134,7 +135,9 @@ class Arbiter:
         self.external_planner = external_planner
         if policy_fusion not in ("raw", "tda_smooth", "sync_hold", "rtc"):
             raise ValueError("policy fusion must be raw, tda_smooth, sync_hold or rtc")
-        self.rtc_timeline = RtcTimeline() if policy_fusion == "rtc" else None
+        self.rtc_timeline = (
+            RtcTimeline(delay_steps=rtc_delay_steps) if policy_fusion == "rtc" else None
+        )
         self.action_buffer = (
             PlannedActionBuffer(action_dt, max_action_age=max_action_age, fusion=policy_fusion)
             if external_planner else

@@ -176,12 +176,15 @@ function render() {
     : state.policy_trimmed_steps == null ? "—" : `${state.policy_trimmed_steps} 步`);
   text("policy-speed", state.policy_trajectory_active
     ? `${state.policy_trajectory_hz} Hz 二阶` : "30 Hz 直达 SDK");
-  if (policyDraft && state.policy_fusion === policyDraft.fusion) policyDraft = null;
+  if (policyDraft && state.policy_fusion === policyDraft.fusion &&
+      (policyDraft.fusion !== "rtc" || state.rtc_delay_steps === policyDraft.rtc_delay_steps)) policyDraft = null;
   if (!policyDraft) {
     $("policy-fusion").value = state.policy_fusion || "tda_smooth";
+    $("rtc-delay-steps").value = state.rtc_delay_steps ?? 9;
   }
   const policyEditable = connected && paused && !latched && !recording && maint === "idle";
   $("policy-fusion").disabled = !policyEditable;
+  $("rtc-delay-steps").disabled = !policyEditable || $("policy-fusion").value !== "rtc";
   $("policy-apply").disabled = !policyEditable;
   $("policy-restart").disabled = !policyEditable || !!state.mock;
   $("planner-restart").disabled = !policyEditable || !!state.mock;
@@ -1088,13 +1091,21 @@ $("edit-task").onclick = () => {
 };
 
 function keepPolicyDraft() {
-  policyDraft = { fusion: $("policy-fusion").value };
-}
-$("policy-fusion").onchange = keepPolicyDraft;
-$("policy-form").onsubmit = async (e) => {
-  e.preventDefault();
   const fusion = $("policy-fusion").value;
   policyDraft = { fusion };
+  if (fusion === "rtc") policyDraft.rtc_delay_steps = Number($("rtc-delay-steps").value);
+  $("rtc-delay-steps").disabled = $("policy-fusion").disabled || fusion !== "rtc";
+}
+$("policy-fusion").onchange = keepPolicyDraft;
+$("rtc-delay-steps").onchange = keepPolicyDraft;
+$("policy-form").onsubmit = async (e) => {
+  e.preventDefault();
+  keepPolicyDraft();
+  if (policyDraft.fusion === "rtc" &&
+      (!Number.isInteger(policyDraft.rtc_delay_steps) || policyDraft.rtc_delay_steps < 1 || policyDraft.rtc_delay_steps > 10)) {
+    toast("RTC 前缀步数需为 1–10 的整数");
+    return;
+  }
   if (await action("/policy/settings", policyDraft)) {
     toast("设置已提交；保持状态下生效，下次模型执行使用新值");
   } else {

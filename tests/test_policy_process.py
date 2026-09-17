@@ -112,7 +112,11 @@ def test_policy_settings_api_validates_and_forwards_without_motor_calls():
         }).status_code == 200
         assert client.post("/policy/settings", headers=headers, json={
             "fusion": "rtc",
+            "rtc_delay_steps": 9,
         }).status_code == 200
+        assert client.post("/policy/settings", headers=headers, json={
+            "fusion": "rtc", "rtc_delay_steps": 11,
+        }).status_code == 422
         assert client.post("/policy/settings", headers=headers, json={
             "fusion": "ensemble",
         }).status_code == 422
@@ -124,6 +128,9 @@ def test_policy_settings_api_validates_and_forwards_without_motor_calls():
         }).status_code == 422
         assert client.post("/policy/restart", headers=headers).status_code == 200
         assert client.post("/policy/planner/restart", headers=headers).status_code == 200
-    assert configured == [{"fusion": "tda_smooth"}, {"fusion": "rtc"}]
+    assert configured == [
+        {"fusion": "tda_smooth"},
+        {"fusion": "rtc", "rtc_delay_steps": 9},
+    ]
     assert reloaded == [True]
     assert planner_reloaded == [True]

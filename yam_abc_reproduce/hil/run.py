@@ -112,6 +112,9 @@ class Runtime:
         self.io, self.cameras, self.worker, self.recorder = io, cameras, worker, recorder
         self.hz, self.prompt = hz, prompt
         settings = settings or {}
+        self.rtc_delay_steps = settings.get("rtc_delay_steps", 9)
+        if type(self.rtc_delay_steps) is not int or not 1 <= self.rtc_delay_steps <= 10:
+            raise ValueError("RTC delay must be an integer from 1 to 10 policy ticks")
         self.max_state_age = settings.get("max_state_age", 0.25)
         self.mirror_error = settings.get("mirror_error", 0.5)
         self.max_frame_age = settings.get("max_frame_age", 0.5)
@@ -135,6 +138,7 @@ class Runtime:
                 prefetch_margin=settings.get("prefetch_margin", 2 / 30),
                 policy_fusion=settings.get("policy_fusion", "tda_smooth"),
                 external_planner=worker is not None and worker.planner is not None,
+                rtc_delay_steps=self.rtc_delay_steps,
             ),
             worker,
             rtc_limit_target=getattr(io, "limit_policy_target", None),
@@ -280,7 +284,7 @@ class Runtime:
             raise ValueError("录制或紧急暂停时不可点动")
         self.jog.request(arm, joint, delta)
 
-    def configure_policy(self, *, fusion: str):
+    def configure_policy(self, *, fusion: str, rtc_delay_steps: int | None = None):
         if fusion not in ("tda_smooth", "sync_hold", "rtc"):
             raise ValueError("推理动作块模式需为同步推理、TDA 或 RTC")
         if fusion == "rtc" and (
@@ -290,9 +294,17 @@ class Runtime:
             or not hasattr(self.worker.client, "set_rtc")
         ):
             raise ValueError("RTC 需关闭 100 Hz 轨迹通道并使用可重载 Thor 通信进程")
+        if rtc_delay_steps is not None and (
+            fusion != "rtc" or type(rtc_delay_steps) is not int
+            or not 1 <= rtc_delay_steps <= 10
+        ):
+            raise ValueError("RTC 前缀步数只可在RTC模式设置为1–10")
         if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
             raise ValueError("请先暂停模型并结束本集录制")
-        self.policy_commands.put_nowait(("configure", fusion))
+        self.policy_commands.put_nowait((
+            "configure", fusion,
+            self.rtc_delay_steps if rtc_delay_steps is None else rtc_delay_steps,
+        ))
 
     def restart_policy(self):
         if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
@@ -367,10 +379,14 @@ class Runtime:
                             )
                             if not a.streaming:
                                 a.action_buffer.fusion = "sync_hold"
+                            elif policy_command[1] == "rtc" and not a.external_planner:
+                                a.action_buffer.fusion = "rtc"
                             a.rtc_timeline = (
-                                RtcTimeline(delay_steps=8)
+                                RtcTimeline(delay_steps=policy_command[2])
                                 if policy_command[1] == "rtc" else None
                             )
+                            if policy_command[1] == "rtc":
+                                self.rtc_delay_steps = policy_command[2]
                             if (old_fusion == "rtc") != (policy_command[1] == "rtc"):
                                 self.worker.request_transport_mode(policy_command[1] == "rtc")
                             self.operator_error = None
@@ -814,7 +830,9 @@ class Runtime:
             hold_errors = self.io.hold()
             if hold_errors:
                 self.status = dict(self.status, hold_errors=hold_errors)
-            if isinstance(self.recorder, RECORDING_SESSIONS) and self.recorder.mode == "collect":
+            if isinstance(self.recorder, RECORDING_SESSIONS) and (
+                self.recorder.mode == "collect" or self.status.get("phase") == "fault"
+            ):
                 self.recorder.stop_episode("aborted")
             self.recorder.metadata["terminal_status"] = dict(self.status)
             # A hardware fault keeps gravity/hold active until explicit quit.
@@ -975,6 +993,10 @@ def main(argv=None, *, service=None):
         p.error("RTC requires the trained 30 Hz policy tick")
     for key, value in hil_cfg.items():
         if key == "policy_fusion":
+            continue
+        if key == "rtc_delay_steps":
+            if type(value) is not int or not 1 <= value <= 10:
+                p.error("rtc_delay_steps must be an integer from 1 to 10")
             continue
         if key == "factory_zero_home":
             if not isinstance(value, bool):

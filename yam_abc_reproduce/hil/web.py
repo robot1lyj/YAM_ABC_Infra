@@ -48,6 +48,7 @@ class InitializationComplete(BaseModel):
 class PolicySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     fusion: Literal["sync_hold", "tda_smooth", "rtc"]
+    rtc_delay_steps: int | None = Field(default=None, strict=True, ge=1, le=10)
 
 
 def create_app(runtime):
@@ -103,7 +104,7 @@ def create_app(runtime):
 
     @app.post("/policy/settings")
     def policy_settings(body: PolicySettings):
-        invoke(runtime.configure_policy, **body.model_dump())
+        invoke(runtime.configure_policy, **body.model_dump(exclude_none=True))
         return {"queued": "policy_settings"}
 
     @app.post("/policy/restart")

@@ -28,6 +28,7 @@ hil:
   factory_zero_home: true
   # Ordinary 10w checkpoint uses TDA; trained RTC is a separate protocol.
   policy_fusion: tda_smooth
+  rtc_delay_steps: 9
   max_frame_age: 0.5
   max_frame_skew: 0.12
   warn_frame_skew: 0.04

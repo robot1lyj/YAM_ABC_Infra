@@ -119,9 +119,6 @@ class Runtime:
                 max_action_age=settings.get("action_timeout", 1.5),
                 tick_timeout=settings.get("tick_timeout", 0.5),
                 handover_error=settings.get("handover_error", 0.2),
-                max_joint_speed=settings.get("max_joint_speed", 5.0),
-                max_manual_joint_speed=settings.get("max_manual_joint_speed"),
-                max_manual_gripper_speed=settings.get("max_manual_gripper_speed"),
                 replan_period=settings.get("replan_period", 0.2),
                 expected_policy_latency=settings.get("expected_policy_latency", 0.2),
                 prefetch_margin=settings.get("prefetch_margin", 2 / 30),
@@ -508,26 +505,6 @@ class Runtime:
                 if self.maintenance.state == "gravity":
                     decision.action[[6, 13]] = self.maintenance.grippers
                     decision.selected_action = decision.action.copy()
-                # Never enlarge a motion step because this loop missed its deadline.
-                joint_speed = a.max_joint_speed
-                # Maintenance owns its own feedback-governed 0.12 rad/s
-                # interpolation and 0.15 rad tracking guard.  Applying the
-                # policy limiter again here can clip its final zero target and
-                # make the UI report completion before zero was submitted.
-                if maintenance_action is not None:
-                    joint_speed = np.inf
-                elif decision.phase == Phase.HUMAN and a.max_manual_joint_speed is None:
-                    joint_speed = np.inf
-                elif decision.phase == Phase.HUMAN:
-                    joint_speed = a.max_manual_joint_speed
-                limits = np.full(14, joint_speed * period)
-                gripper_speed = a.max_gripper_speed
-                if decision.phase == Phase.HUMAN and a.max_manual_gripper_speed is None:
-                    gripper_speed = np.inf
-                elif decision.phase == Phase.HUMAN:
-                    gripper_speed = a.max_manual_gripper_speed
-                limits[[6, 13]] = gripper_speed * period
-                decision.action = np.clip(decision.action, q - limits, q + limits)
                 decision_done = time.monotonic()
                 submitted, stamps = self.io.apply(
                     decision,
@@ -698,7 +675,10 @@ class Runtime:
                     ),
                     "policy_restart_error": self.worker.restart_error if self.worker else None,
                     "policy_tda_drop_max": getattr(a.action_buffer, "drop_max", None),
-                    "policy_joint_speed_rad_s": a.max_joint_speed,
+                    "policy_joint_speed_rad_s": (
+                        self.io.policy_joint_speed
+                        if getattr(self.io, "policy_trajectory_hz", 0) > 0 else None
+                    ),
                     "policy_replan_period_s": a.replan_period,
                     "policy_buffer_remaining": policy_remaining,
                     "policy_buffer_seconds": (
@@ -1019,7 +999,7 @@ def main(argv=None, *, service=None):
             leader_gain=hil_cfg.get("leader_gain", 0.2),
             leader_speed=hil_cfg.get("leader_speed", 0.5),
             policy_trajectory_hz=hil_cfg.get("policy_trajectory_hz", 0),
-            policy_joint_speed=hil_cfg.get("max_joint_speed", 3.0),
+            policy_joint_speed=hil_cfg.get("policy_trajectory_joint_speed", 3.0),
             policy_joint_acceleration=hil_cfg.get("policy_joint_acceleration", 30.0),
             policy_natural_frequency=hil_cfg.get("policy_natural_frequency", 10.0),
         )

@@ -85,10 +85,6 @@ class Arbiter:
         mode: Mode,
         *,
         execute_steps: int = 10,
-        max_joint_speed: float = 5.0,
-        max_manual_joint_speed: float | None = None,
-        max_gripper_speed: float = 1.0,
-        max_manual_gripper_speed: float | None = None,
         max_request_age: float = 0.5,
         max_action_age: float = 1.0,
         handover_error: float = 0.15,
@@ -103,8 +99,6 @@ class Arbiter:
         external_planner: bool = False,
     ):
         values = (
-            max_joint_speed,
-            max_gripper_speed,
             max_request_age,
             max_action_age,
             handover_error,
@@ -119,17 +113,6 @@ class Arbiter:
             not isinstance(execute_steps, int)
             or not 1 <= execute_steps <= 50
             or not all(np.isfinite(v) and v > 0 for v in values)
-            or (
-                max_manual_joint_speed is not None
-                and (not np.isfinite(max_manual_joint_speed) or max_manual_joint_speed <= 0)
-            )
-            or (
-                max_manual_gripper_speed is not None
-                and (
-                    not np.isfinite(max_manual_gripper_speed)
-                    or max_manual_gripper_speed <= 0
-                )
-            )
         ):
             raise ValueError("invalid limits")
         self.streaming = streaming and policy_fusion != "sync_hold"
@@ -160,10 +143,6 @@ class Arbiter:
         self.phase = Phase.HOLD
         self.default_execute_steps = execute_steps
         self.execute_steps = 50 if policy_fusion == "sync_hold" else execute_steps
-        self.max_joint_speed = max_joint_speed
-        self.max_manual_joint_speed = max_manual_joint_speed
-        self.max_gripper_speed = max_gripper_speed
-        self.max_manual_gripper_speed = max_manual_gripper_speed
         self.max_request_age = max_request_age
         self.max_action_age = max_action_age
         self.handover_error = handover_error
@@ -458,20 +437,9 @@ class Arbiter:
                     selected = policy.copy()
                     source = "policy"
                     self.phase = Phase.POLICY
-        # Bound commanded tracking error per nominal tick; this is not a measured velocity guarantee.
-        joint_speed = self.max_joint_speed
-        if self.phase == Phase.HUMAN and self.max_manual_joint_speed is None:
-            joint_speed = np.inf
-        elif self.phase == Phase.HUMAN:
-            joint_speed = self.max_manual_joint_speed
-        limit = np.full(14, joint_speed * dt)
-        gripper_speed = self.max_gripper_speed
-        if self.phase == Phase.HUMAN and self.max_manual_gripper_speed is None:
-            gripper_speed = np.inf
-        elif self.phase == Phase.HUMAN:
-            gripper_speed = self.max_manual_gripper_speed
-        limit[[6, 13]] = gripper_speed * dt
-        action = np.clip(selected, q - limit, q + limit)
+        # Preserve the selected policy/manual target. Hardware joint limits and
+        # gripper semantic bounds are applied at their respective interfaces.
+        action = selected.copy()
         self._hold = action.copy()
         return Decision(
             action,

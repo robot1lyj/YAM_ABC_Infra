@@ -172,7 +172,8 @@ function render() {
   text("policy-rtt", state.policy_observed_rtt_p95_s == null ? "—" : `${Math.round(state.policy_observed_rtt_p95_s * 1000)} ms`);
   text("policy-buffer", state.policy_buffer_seconds == null ? "—" : `${Math.max(0, state.policy_buffer_seconds).toFixed(2)} s`);
   text("policy-trim", state.policy_trimmed_steps == null ? "—" : `${state.policy_trimmed_steps} 步`);
-  text("policy-speed", state.policy_joint_speed_rad_s == null ? "—" : `${state.policy_joint_speed_rad_s.toFixed(1)} rad/s`);
+  text("policy-speed", state.policy_trajectory_active
+    ? `${state.policy_trajectory_hz} Hz 二阶` : "30 Hz 直达 SDK");
   if (policyDraft && state.policy_fusion === policyDraft.fusion) policyDraft = null;
   if (!policyDraft) {
     $("policy-fusion").value = state.policy_fusion || "tda_smooth";

@@ -2,6 +2,7 @@ import threading
 import time
 
 import numpy as np
+import pytest
 
 from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
 from yam_abc_reproduce.hil.planner_process import ProcessActionPlanner, build_plan
@@ -13,6 +14,24 @@ def chunk(value):
     rows = np.zeros((50, 14))
     rows[:, 0] = value
     return rows
+
+
+@pytest.mark.parametrize("mode", ["tda_smooth", "sync_hold"])
+def test_policy_plan_target_reaches_device_arbiter_without_feedback_slew(mode):
+    q = np.zeros(14)
+    rows = chunk(1.25)
+    rows[:, 6] = 1.0
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, external_planner=True,
+        policy_fusion=mode, action_dt=0.1, max_action_age=3,
+    )
+    arbiter.start(q)
+    token = arbiter.request(1, 1.0, 1.0)
+    plan = build_plan(mode, token, rows, None, 1.1, 0.1, 3)
+    assert arbiter.accept_plan(token, plan, 1.1)
+    decision = arbiter.step(q, q, now=1.1, dt=0.1, leader_ready=True)
+    assert decision.source == "policy"
+    np.testing.assert_allclose(decision.action, rows[0])
 
 
 def test_planner_process_restart_keeps_device_arbiter_and_discards_old_plan():

@@ -188,7 +188,7 @@ def test_step_ten_replan_runs_old_plan_then_time_aligns_150ms_reply():
     arbiter = Arbiter(
         Mode.INFERENCE, streaming=True, action_dt=1 / 30,
         replan_period=10 / 30, policy_fusion="raw",
-        max_joint_speed=2.5, max_action_age=1.5,
+        max_action_age=1.5,
     )
     arbiter.start(q)
     old = chunk()

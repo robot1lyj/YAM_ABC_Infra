@@ -34,14 +34,13 @@ hil:
   max_state_age: 0.25
   leader_gain: 0.2
   leader_speed: 0.5
-  # Manual tracking has no application-level slew limit, matching official GELLO.
-  # This includes the grippers; policy and automatic paths retain their bounds.
-  # Policy/automatic joint target envelope. 3rad/s reduces prolonged catch-up;
-  # this is still a feedback-relative tracking bound, not a velocity guarantee.
-  max_joint_speed: 3.0
+  # Manual and 30 Hz policy targets have no feedback-relative slew clamp.
+  # SDK joint hard limits and policy gripper [0,1] bounds still apply.
   # Publish policy targets directly at 30 Hz. Keep the
   # experimental 100 Hz second-order writer available but disabled for this run.
   policy_trajectory_hz: 0
+  # Only used if the optional second-order trajectory is explicitly enabled.
+  policy_trajectory_joint_speed: 3.0
   policy_joint_acceleration: 30.0
   policy_natural_frequency: 10.0
   handover_error: 0.2

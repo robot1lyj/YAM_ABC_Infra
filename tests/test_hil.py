@@ -57,10 +57,10 @@ def test_soft_pickup_and_absolute_identity_mapping():
     assert d.action[6] == pytest.approx(0.8)
 
 
-def test_manual_is_unclipped_while_policy_keeps_configured_speed_limit():
+def test_manual_and_policy_targets_are_not_feedback_slew_clipped():
     q = pose()
     h = q.copy()
-    a = Arbiter(Mode.COLLECT, max_joint_speed=5.0, max_manual_joint_speed=None)
+    a = Arbiter(Mode.COLLECT)
     a.start(q, h)
     h[0] = 1.0
     manual = a.step(q, h, now=0.03, dt=0.03)
@@ -73,7 +73,8 @@ def test_manual_is_unclipped_while_policy_keeps_configured_speed_limit():
     actions[:, 0] = 1.0
     assert a.accept(token, actions, 0.05)
     policy = a.step(q, q, now=0.06, dt=0.03, leader_ready=True)
-    assert policy.action[0] == pytest.approx(0.15)
+    assert policy.action[0] == pytest.approx(1.0)
+    np.testing.assert_allclose(policy.action, policy.selected_action)
 
 
 def test_normal_chunks_do_not_prefetch():
@@ -87,7 +88,7 @@ def test_normal_chunks_do_not_prefetch():
     assert a.request(2, 0.02) is None
     for t in (0.03, 0.06):
         d = a.step(q, q, now=t, dt=0.03, leader_ready=True)
-        assert d.action[0] == pytest.approx(0.15)
+        assert d.action[0] == pytest.approx(0.5)
     assert a.request(3, 0.07) is not None
 
 

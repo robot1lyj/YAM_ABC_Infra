@@ -171,7 +171,9 @@ function render() {
   text("policy-mode", state.policy_fusion === "tda_smooth" ? "TDA 推理" : state.policy_fusion === "sync_hold" ? (state.policy_waiting_for_reply ? "同步推理 · 保持" : "同步推理") : state.policy_fusion === "rtc" ? "RTC 推理" : "旧模式");
   text("policy-rtt", state.policy_observed_rtt_p95_s == null ? "—" : `${Math.round(state.policy_observed_rtt_p95_s * 1000)} ms`);
   text("policy-buffer", state.policy_buffer_seconds == null ? "—" : `${Math.max(0, state.policy_buffer_seconds).toFixed(2)} s`);
-  text("policy-trim", state.policy_trimmed_steps == null ? "—" : `${state.policy_trimmed_steps} 步`);
+  text("policy-trim", state.policy_fusion === "rtc"
+    ? `${state.rtc_delay_steps ?? "—"} 步前缀`
+    : state.policy_trimmed_steps == null ? "—" : `${state.policy_trimmed_steps} 步`);
   text("policy-speed", state.policy_trajectory_active
     ? `${state.policy_trajectory_hz} Hz 二阶` : "30 Hz 直达 SDK");
   if (policyDraft && state.policy_fusion === policyDraft.fusion) policyDraft = null;

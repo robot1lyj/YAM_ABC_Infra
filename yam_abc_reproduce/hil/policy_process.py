@@ -6,17 +6,18 @@ import multiprocessing as mp
 import time
 
 
-def _serve(conn, url: str, timeout: float):
+def _serve(conn, url: str, timeout: float, rtc: bool):
     # Import inside the spawned child so policy wire-code updates take effect
     # without importing robot drivers or replacing the device owner.
     from ..resource_qos import place_on_cpus
     from .policy import PlainPolicyClient
+    from .rtc_protocol import RtcPolicyClient
 
     place_on_cpus("POLICY")
     client = None
     try:
         try:
-            client = PlainPolicyClient(url, timeout=timeout)
+            client = (RtcPolicyClient if rtc else PlainPolicyClient)(url, timeout=timeout)
             conn.send(("ready", None, None))
         except Exception as exc:
             conn.send(("error", None, f"{type(exc).__name__}: {exc}"))
@@ -30,8 +31,16 @@ def _serve(conn, url: str, timeout: float):
                 break
             try:
                 if client is None:
-                    client = PlainPolicyClient(url, timeout=timeout)
-                result = client.infer(observation)
+                    client = (RtcPolicyClient if rtc else PlainPolicyClient)(url, timeout=timeout)
+                if rtc:
+                    if not isinstance(observation, tuple) or len(observation) != 3:
+                        raise ValueError("RTC transport requires observation, tick, prefix")
+                    result = client.infer_rtc(
+                        observation[0], target_start_tick=observation[1],
+                        committed_actions=observation[2],
+                    )
+                else:
+                    result = client.infer(observation)
                 conn.send((result, client.last_timing, None))
             except Exception as exc:
                 if client is not None:
@@ -47,9 +56,10 @@ def _serve(conn, url: str, timeout: float):
 class ProcessPolicyClient:
     """Blocking client used only by PolicyWorker's background thread."""
 
-    def __init__(self, url: str, timeout: float = 1.5):
+    def __init__(self, url: str, timeout: float = 1.5, *, rtc: bool = False):
         self.url = url
         self.timeout = timeout
+        self.rtc = rtc
         self.last_timing = None
         self._context = mp.get_context("spawn")
         self._process = None
@@ -58,7 +68,7 @@ class ProcessPolicyClient:
     def _start(self):
         parent, child = self._context.Pipe()
         process = self._context.Process(
-            target=_serve, args=(child, self.url, self.timeout), daemon=True,
+            target=_serve, args=(child, self.url, self.timeout, self.rtc), daemon=True,
             name="thor-policy",
         )
         try:
@@ -85,6 +95,12 @@ class ProcessPolicyClient:
             raise RuntimeError(error or "policy process startup failed")
 
     def infer(self, observation):
+        return self._infer(observation)
+
+    def infer_rtc(self, observation, *, target_start_tick: int, committed_actions):
+        return self._infer((observation, target_start_tick, committed_actions))
+
+    def _infer(self, observation):
         if self._process is None:
             self._start()
         if not self._process.is_alive():
@@ -109,6 +125,10 @@ class ProcessPolicyClient:
     def restart(self):
         self.close()
         self._start()
+
+    def set_rtc(self, enabled: bool):
+        self.rtc = bool(enabled)
+        self.restart()
 
     def close(self):
         process, conn = self._process, self._conn

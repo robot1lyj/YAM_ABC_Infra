@@ -12,6 +12,7 @@ import json
 import queue
 import threading
 import time
+from collections import deque
 from contextlib import nullcontext
 from importlib.util import find_spec
 from pathlib import Path
@@ -37,21 +38,31 @@ from .metrics import Latencies
 from .observation import Observations
 from .planned_buffer import PlannedActionBuffer
 from .planner_process import ProcessActionPlanner
-from .policy import PolicyWorker
+from .policy import PolicyWorker, RtcJob
 from .policy_process import ProcessPolicyClient
 from .recording import RecordingSession
 from .recording_service import RemoteRecordingSession
+from .rtc_timeline import RtcTimeline
 from .session import Session
 from .station import StationIO
 from .tda_buffer import TdaActionBuffer
 
 
 class MockPolicy:
+    def set_rtc(self, enabled):
+        self.rtc = bool(enabled)
+
     def infer(self, obs):
         time.sleep(0.08)
         actions = np.tile(obs["observation.state"], (50, 1))
         actions[:, [0, 7]] += 0.04 * np.sin(np.arange(50)[:, None] / 15)
         return {"actions": actions}
+
+    def infer_rtc(self, obs, *, target_start_tick, committed_actions):
+        result = self.infer(obs)
+        result["actions"][:len(committed_actions)] = committed_actions
+        result["server_timing"] = {"rtc_used": True}
+        return result
 
 
 RECORDING_SESSIONS = (RecordingSession, RemoteRecordingSession)
@@ -126,7 +137,14 @@ class Runtime:
                 external_planner=worker is not None and worker.planner is not None,
             ),
             worker,
+            rtc_limit_target=getattr(io, "limit_policy_target", None),
         )
+        if self.session.arbiter.rtc_timeline is not None and (
+            getattr(io, "policy_trajectory_hz", 0) > 0
+            or not callable(getattr(io, "limit_policy_target", None))
+            or hz != 30 or abs(action_dt - 1 / 30) > 1e-6
+        ):
+            raise ValueError("RTC requires 30 Hz direct SDK writes and shared hard limits")
         if worker is not None and worker.planner is not None:
             worker.plan_context = self._plan_context
         self.events = queue.Queue(maxsize=16)
@@ -263,10 +281,15 @@ class Runtime:
         self.jog.request(arm, joint, delta)
 
     def configure_policy(self, *, fusion: str):
-        if fusion == "rtc":
-            raise ValueError("RTC 尚未接入控制循环和 Thor RTC 服务，不能启动；不会退化成普通推理")
-        if fusion not in ("tda_smooth", "sync_hold"):
-            raise ValueError("推理动作块模式需为同步推理或 TDA")
+        if fusion not in ("tda_smooth", "sync_hold", "rtc"):
+            raise ValueError("推理动作块模式需为同步推理、TDA 或 RTC")
+        if fusion == "rtc" and (
+            getattr(self.io, "policy_trajectory_hz", 0) > 0
+            or self.hz != 30 or abs(self.session.arbiter.action_dt - 1 / 30) > 1e-6
+            or self.worker is None
+            or not hasattr(self.worker.client, "set_rtc")
+        ):
+            raise ValueError("RTC 需关闭 100 Hz 轨迹通道并使用可重载 Thor 通信进程")
         if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
             raise ValueError("请先暂停模型并结束本集录制")
         self.policy_commands.put_nowait(("configure", fusion))
@@ -288,6 +311,7 @@ class Runtime:
     def run(self, *, duration=None, auto_start=False, demo=False):
         period = 1 / self.hz
         start = last = deadline = time.monotonic()
+        policy_tick_times = deque(maxlen=64)
         tick, missed = 0, 0
         demo_stage = 0
         last_obs_at = None
@@ -296,6 +320,7 @@ class Runtime:
             place_on_cpus("CONTROL")
             while not self.stopping.is_set():
                 now = time.monotonic()
+                policy_tick_times.append((tick, now))
                 elapsed = now - start
                 if duration is not None and elapsed >= duration:
                     break
@@ -325,6 +350,7 @@ class Runtime:
                     else:
                         a._transition(Phase.HOLD, q)  # Invalidate any old policy reply.
                         if policy_command[0] == "configure":
+                            old_fusion = a.action_buffer.fusion
                             a.streaming = policy_command[1] != "sync_hold"
                             a.execute_steps = (
                                 50 if policy_command[1] == "sync_hold"
@@ -341,6 +367,12 @@ class Runtime:
                             )
                             if not a.streaming:
                                 a.action_buffer.fusion = "sync_hold"
+                            a.rtc_timeline = (
+                                RtcTimeline(delay_steps=8)
+                                if policy_command[1] == "rtc" else None
+                            )
+                            if (old_fusion == "rtc") != (policy_command[1] == "rtc"):
+                                self.worker.request_transport_mode(policy_command[1] == "rtc")
                             self.operator_error = None
                         elif policy_command[0] == "restart_planner":
                             self.worker.request_planner_restart()
@@ -481,6 +513,7 @@ class Runtime:
                     fresh=fresh,
                     leader_ready=(a.mode == Mode.INFERENCE or error <= a.handover_error),
                     event=event,
+                    policy_tick=tick,
                 )
                 maintenance_action = self.maintenance.step(q, leader, now=now, dt=period)
                 jog_action = self.jog.step(
@@ -519,6 +552,35 @@ class Runtime:
                     ),
                     **({"gravity": True} if self.maintenance.state == "gravity" else {}),
                 )
+                if a.rtc_timeline is not None:
+                    try:
+                        a.rtc_timeline.record_submitted(tick, submitted)
+                    except RuntimeError as exc:
+                        a.hold(submitted)
+                        self.operator_error = str(exc)
+                    if (
+                        obs is not None and fresh and self.worker is not None
+                        and self.worker.ready and a.phase in (Phase.RESUME, Phase.POLICY)
+                    ):
+                        observation_tick, mapped_at = min(
+                            policy_tick_times,
+                            key=lambda item: abs(item[1] - observed_at),
+                        )
+                        if abs(mapped_at - observed_at) <= period:
+                            try:
+                                prepared = a.request_rtc(
+                                    obs_id, now, observed_at, observation_tick, tick,
+                                    self.io.limit_policy_target,
+                                )
+                            except ValueError:
+                                prepared = None  # Too old or missing exact action history.
+                            if prepared is not None:
+                                token, commitment = prepared
+                                if self.worker.submit(token, RtcJob(obs, commitment)):
+                                    a._last_request_at = now
+                                else:
+                                    a.pending = None
+                                    a.rtc_timeline.pending = None
                 if (
                     jog_action is not None
                     or maintenance_action is not None
@@ -635,7 +697,8 @@ class Runtime:
                 else:
                     self._record_started = None
                 policy_remaining = (
-                    a.action_buffer.remaining(now) if a.streaming
+                    a.rtc_timeline.remaining(tick) if a.rtc_timeline is not None
+                    else a.action_buffer.remaining(now) if a.streaming
                     else max(0, len(a._chunk) - a._index) if a._chunk is not None else 0
                 )
                 self.status = {
@@ -682,8 +745,20 @@ class Runtime:
                     "policy_replan_period_s": a.replan_period,
                     "policy_buffer_remaining": policy_remaining,
                     "policy_buffer_seconds": (
-                        a.action_buffer.seconds_to_expiry(now) if a.streaming
+                        policy_remaining * a.action_dt if a.rtc_timeline is not None
+                        else a.action_buffer.seconds_to_expiry(now) if a.streaming
                         else policy_remaining * a.action_dt
+                    ),
+                    "rtc_delay_steps": (
+                        a.rtc_timeline.delay_steps if a.rtc_timeline is not None else None
+                    ),
+                    "rtc_accepted_replies": (
+                        a.rtc_timeline.accepted_replies
+                        if a.rtc_timeline is not None else None
+                    ),
+                    "rtc_late_replies": (
+                        a.rtc_timeline.late_replies
+                        if a.rtc_timeline is not None else None
                     ),
                     "policy_observed_rtt_p95_s": a.observed_policy_rtt_p95,
                     "policy_observation_to_ready_p95_s": (a.observed_observation_to_ready_p95),
@@ -890,10 +965,14 @@ def main(argv=None, *, service=None):
             hil_cfg[key] = option
     if args.baseline:
         hil_cfg["policy_fusion"] = "sync_hold"
-    if hil_cfg.get("policy_fusion", "tda_smooth") == "rtc":
-        p.error("RTC is not wired to the control loop or Thor RTC endpoint yet")
-    if hil_cfg.get("policy_fusion", "tda_smooth") not in ("tda_smooth", "sync_hold"):
-        p.error("policy_fusion must be tda_smooth or sync_hold")
+    if hil_cfg.get("policy_fusion", "tda_smooth") not in ("tda_smooth", "sync_hold", "rtc"):
+        p.error("policy_fusion must be tda_smooth, sync_hold or rtc")
+    if hil_cfg.get("policy_fusion") == "rtc" and hil_cfg.get("policy_trajectory_hz", 0):
+        p.error("RTC requires direct 30 Hz SDK target writes; disable 100 Hz trajectory")
+    if hil_cfg.get("policy_fusion") == "rtc" and (
+        cfg.control_hz != 30 or abs(action_dt - 1 / 30) > 1e-6
+    ):
+        p.error("RTC requires the trained 30 Hz policy tick")
     for key, value in hil_cfg.items():
         if key == "policy_fusion":
             continue
@@ -963,7 +1042,7 @@ def main(argv=None, *, service=None):
         metadata={
             "station": dataclasses.asdict(cfg),
             "mock": args.mock,
-            "rtc": False,
+            "rtc": hil_cfg.get("policy_fusion") == "rtc",
             "streaming": not args.baseline and hil_cfg.get("policy_fusion") != "sync_hold",
             "action_dt": action_dt,
             "policy_fusion": hil_cfg.get("policy_fusion", "tda_smooth"),
@@ -1006,7 +1085,10 @@ def main(argv=None, *, service=None):
         client = (
             MockPolicy()
             if args.mock
-            else ProcessPolicyClient(args.url, timeout=hil_cfg.get("request_timeout", 1.5))
+            else ProcessPolicyClient(
+                args.url, timeout=hil_cfg.get("request_timeout", 1.5),
+                rtc=hil_cfg.get("policy_fusion") == "rtc",
+            )
             if args.url
             else None
         )

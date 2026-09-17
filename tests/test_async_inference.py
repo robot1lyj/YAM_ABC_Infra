@@ -162,8 +162,8 @@ def test_station_defaults_to_tda_and_baseline_executes_full_chunk(capsys):
     assert json.loads(capsys.readouterr().out)["policy_fusion"] == "sync_hold"
     with pytest.raises(SystemExit):
         main(["--mock", "--mode", "inference", "--policy-fusion", "raw", "--check"])
-    with pytest.raises(SystemExit):
-        main(["--mock", "--mode", "inference", "--policy-fusion", "rtc", "--check"])
+    main(["--mock", "--mode", "inference", "--policy-fusion", "rtc", "--check"])
+    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "rtc"
 
 
 def test_latency_budget_uses_observation_age_not_only_request_rtt():
@@ -309,7 +309,7 @@ def test_sync_hold_full_chunk_has_its_own_execution_deadline():
 
 
 def test_retired_multi_chunk_mode_is_rejected():
-    with pytest.raises(ValueError, match="raw, tda_smooth or sync_hold"):
+    with pytest.raises(ValueError, match="raw, tda_smooth, sync_hold or rtc"):
         Arbiter(Mode.INFERENCE, streaming=True, policy_fusion="ensemble")
 
 

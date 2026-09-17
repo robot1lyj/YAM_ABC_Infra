@@ -118,15 +118,19 @@ class StationIO:
         ]
         return q, vector(np.concatenate(leaders)), buttons, ages
 
-    def apply(
-        self, decision, q, leader, *, dt, mirror=True, maintenance_leader=None, gravity=False
-    ):
-        target = vector(decision.action)
-        self._policy_trace = None
-        # Validate/clamp both arms before sending any part of this tick.
+    def limit_policy_target(self, action):
+        """The same hard-limit transform used for RTC commitments and SDK writes."""
+        target = vector(action)
         for i, limits in enumerate(self._limits):
             sl = slice(i * 7, i * 7 + 6)
             target[sl] = np.clip(target[sl], limits[:, 0], limits[:, 1])
+        return target
+
+    def apply(
+        self, decision, q, leader, *, dt, mirror=True, maintenance_leader=None, gravity=False
+    ):
+        target = self.limit_policy_target(decision.action)
+        self._policy_trace = None
         policy_trajectory = (
             self.policy_trajectory_hz > 0 and decision.source == "policy" and not gravity
         )

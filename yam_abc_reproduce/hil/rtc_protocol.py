@@ -1,7 +1,7 @@
-"""Opt-in trained-RTC wire adapter; not connected to the motor control loop yet.
+"""Strict trained-RTC wire adapter for the 30 Hz controller timeline.
 
 Thor owns the model and inverse transform. The controller will own the target
-tick and committed physical actions when the execution contract is finalized.
+    tick and committed physical actions; the server never guesses either.
 """
 
 from __future__ import annotations
@@ -75,6 +75,8 @@ class RtcPolicyClient(PlainPolicyClient):
             or not 0 < meta["rtc_max_delay_steps"] < 50
             or meta.get("action_horizon") != 50
             or meta.get("action_dim") != 14
+            or not isinstance(meta.get("action_dt_s"), (int, float))
+            or not np.isclose(meta["action_dt_s"], 1 / 30, rtol=0, atol=1e-6)
         ):
             self.close()
             raise ValueError("Thor endpoint does not advertise trained RTC H50/14D")

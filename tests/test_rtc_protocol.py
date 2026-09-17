@@ -72,7 +72,8 @@ def test_rtc_wire_refuses_ordinary_fallback_and_changed_prefix(
     def handler(ws):
         packer = msgpack_numpy.Packer()
         meta = {"rtc_mode": "trained" if valid_metadata else "off",
-                "rtc_max_delay_steps": 10, "action_horizon": 50, "action_dim": 14}
+                "rtc_max_delay_steps": 10, "action_horizon": 50,
+                "action_dim": 14, "action_dt_s": 1 / 30}
         ws.send(packer.pack(meta))
         if not valid_metadata:
             return

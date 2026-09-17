@@ -10,9 +10,10 @@ from .core import Arbiter, Phase
 
 
 class Session:
-    def __init__(self, arbiter: Arbiter, worker=None):
+    def __init__(self, arbiter: Arbiter, worker=None, *, rtc_limit_target=None):
         self.arbiter = arbiter
         self.worker = worker
+        self.rtc_limit_target = rtc_limit_target
         self.last_reply = None
 
     def tick(
@@ -28,6 +29,7 @@ class Session:
         fresh=True,
         leader_ready=False,
         event=None,
+        policy_tick=None,
     ):
         self.last_reply = None
         # Local events take precedence over a policy response arriving this tick.
@@ -48,6 +50,7 @@ class Session:
         if (
             self.worker is not None
             and not getattr(self.worker, "planner_alive", True)
+            and self.arbiter.rtc_timeline is None
             and self.arbiter.phase in (Phase.POLICY, Phase.RESUME)
         ):
             self.arbiter.hold(state)
@@ -66,6 +69,16 @@ class Session:
                     if reply.actions is not None and np.isfinite(reply.actions).all()
                     else None,
                 }
+                if reply.token.observation_policy_tick is not None:
+                    takeover = (
+                        reply.token.observation_policy_tick
+                        + reply.token.rtc_delay_steps
+                    )
+                    self.last_reply.update({
+                        "rtc_takeover_tick": takeover,
+                        "rtc_reply_tick": policy_tick,
+                        "rtc_slack_ticks": takeover - policy_tick,
+                    })
             if reply is not None and reply.token == self.arbiter.pending:
                 if reply.error:
                     if reply.planner_error:
@@ -75,6 +88,10 @@ class Session:
                 else:
                     try:
                         accepted = (
+                            self.arbiter.accept_rtc(
+                                reply.token, reply.actions, now, policy_tick,
+                                self.rtc_limit_target,
+                            ) if self.arbiter.rtc_timeline is not None else
                             self.arbiter.accept_plan(reply.token, reply.plan, now)
                             if self.arbiter.external_planner else
                             self.arbiter.accept(reply.token, reply.actions, now)
@@ -94,9 +111,11 @@ class Session:
                         self.last_reply["error"] = "invalid policy response"
                         self.arbiter.fail(state, "invalid policy response")
         decision = self.arbiter.step(
-            state, leader, now=now, dt=dt, observation_fresh=fresh, leader_ready=leader_ready
+            state, leader, now=now, dt=dt, observation_fresh=fresh,
+            leader_ready=leader_ready, policy_tick=policy_tick,
         )
-        if self.worker and fresh and observation is not None:
+        if (self.worker and fresh and observation is not None
+                and self.arbiter.rtc_timeline is None):
             token = self.arbiter.request(observation_id, now, observed_at)
             if token is not None and not self.worker.submit(token, observation):
                 # A stale RPC is still in flight. Retry on a later tick, never wait.

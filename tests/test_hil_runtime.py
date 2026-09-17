@@ -20,6 +20,12 @@ from yam_abc_reproduce.hil.storage import read_rows
 from yam_abc_reproduce.runtime import build_arm_units
 
 
+class DelayedRtcPolicy(MockPolicy):
+    def infer(self, obs):
+        time.sleep(0.219)
+        return {"actions": np.tile(obs["observation.state"], (50, 1))}
+
+
 def test_async_chunks_align_to_observation_time_and_replan_during_execution():
     q = np.zeros(14)
     a = Arbiter(Mode.HIL, streaming=True, action_dt=0.1, max_action_age=5)
@@ -174,10 +180,8 @@ def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path, 
             camera.start()
         old_epoch = runtime.session.arbiter.epoch
         runtime.configure_policy(fusion=fusion)
-        with pytest.raises(ValueError, match="同步推理或 TDA"):
+        with pytest.raises(ValueError, match="同步推理、TDA 或 RTC"):
             runtime.configure_policy(fusion="smooth")
-        with pytest.raises(ValueError, match="RTC 尚未接入"):
-            runtime.configure_policy(fusion="rtc")
         result = runtime.run(duration=0.15)
         assert result["policy_fusion"] == fusion
         assert result["policy_tda_drop_max"] == (25 if fusion == "tda_smooth" else None)
@@ -194,6 +198,74 @@ def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path, 
         worker.close()
         io.close()
         recorder.close("aborted")
+
+
+def test_mock_rtc_executes_only_post_commit_suffix_at_30hz(tmp_path):
+    cfg = StationConfig()
+    io = StationIO(build_arm_units(cfg, mock=True), mock=True)
+    recorder = Recorder(tmp_path / "rtc")
+    worker = PolicyWorker(MockPolicy())
+    cameras = [CameraWorker(MockCamera(role, role, width=32, height=32))
+               for role in ("top", "left", "right")]
+    runtime = Runtime(
+        io, cameras, worker, recorder, mode="inference",
+        settings={"policy_fusion": "rtc", "replan_period": 0.2},
+    )
+    try:
+        for camera in cameras:
+            camera.start()
+        result = runtime.run(duration=1.1, auto_start=True)
+        assert result["policy_fusion"] == "rtc"
+        assert result["rtc_delay_steps"] == 8
+        recorder.close("aborted")
+        rows = list(read_rows(recorder.path))
+        replies = [row["policy_reply"] for row in rows if row.get("policy_reply")]
+        assert any(not reply["discarded"] for reply in replies)
+        policy = [row for row in rows if row.get("policy_valid")]
+        assert policy
+        assert result["policy_trajectory_hz"] == 0
+        assert not result.get("error")
+    finally:
+        for camera in cameras:
+            camera.stop()
+        worker.close()
+        io.close()
+        if recorder._thread.is_alive():
+            recorder.close("aborted")
+
+
+@pytest.mark.parametrize("delay_steps", (8, 9))
+def test_rtc_219ms_rpc_does_not_block_control_loop(tmp_path, delay_steps):
+    cfg = StationConfig()
+    io = StationIO(build_arm_units(cfg, mock=True), mock=True)
+    recorder = Recorder(tmp_path / f"rtc-delay-{delay_steps}")
+    worker = PolicyWorker(DelayedRtcPolicy())
+    cameras = [CameraWorker(MockCamera(role, role, width=32, height=32))
+               for role in ("top", "left", "right")]
+    runtime = Runtime(
+        io, cameras, worker, recorder, mode="inference",
+        settings={"policy_fusion": "rtc", "replan_period": 0.2},
+    )
+    runtime.session.arbiter.rtc_timeline.delay_steps = delay_steps
+    try:
+        for camera in cameras:
+            camera.start()
+        result = runtime.run(duration=2.5, auto_start=True)
+        recorder.close("aborted")
+        rows = list(read_rows(recorder.path))
+        replies = [row["policy_reply"] for row in rows if row.get("policy_reply")]
+        print("RTC delay", delay_steps, "replies", len(replies), "accepted",
+              sum(not reply["discarded"] for reply in replies),
+              "policy ticks", sum(bool(row.get("policy_valid")) for row in rows))
+        assert result["deadline_misses"] == 0
+        assert not result.get("error")
+    finally:
+        for camera in cameras:
+            camera.stop()
+        worker.close()
+        io.close()
+        if recorder._thread.is_alive():
+            recorder.close("aborted")
 
 
 def test_policy_trajectory_has_one_writer_and_stops_before_hold_direct_io():

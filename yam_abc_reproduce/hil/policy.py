@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 
 from .core import Request
+from .rtc_timeline import RtcCommitment
 
 
 @dataclass
@@ -23,6 +24,12 @@ class Reply:
     client_timing: dict | None = None
     plan: dict | None = None
     planner_error: bool = False
+
+
+@dataclass(frozen=True)
+class RtcJob:
+    observation: dict[str, Any]
+    commitment: RtcCommitment
 
 
 class PolicyWorker:
@@ -41,6 +48,7 @@ class PolicyWorker:
         self._busy = threading.Event()
         self._stop = threading.Event()
         self._restart = threading.Event()
+        self._requested_rtc: bool | None = None
         self._restart_planner = threading.Event()
         self._ready = threading.Event()
         self.restart_error = None
@@ -55,7 +63,9 @@ class PolicyWorker:
         self._thread.start()
 
     def _update_ready(self):
-        if self._client_ready and self._planner_ready:
+        if self._client_ready and (
+            self._planner_ready or getattr(self.client, "rtc", False)
+        ):
             self._ready.set()
         else:
             self._ready.clear()
@@ -84,6 +94,14 @@ class PolicyWorker:
         self._update_ready()
         self._restart.set()
 
+    def request_transport_mode(self, rtc: bool):
+        if not hasattr(self.client, "set_rtc"):
+            raise ValueError("policy transport cannot switch RTC mode")
+        self._requested_rtc = bool(rtc)
+        self._client_ready = False
+        self._update_ready()
+        self._restart.set()
+
     def request_planner_restart(self):
         if self.planner is None:
             raise ValueError("action planner process is not enabled")
@@ -93,7 +111,9 @@ class PolicyWorker:
 
     @property
     def ready(self):
-        return self._ready.is_set() and self.planner_alive
+        return self._ready.is_set() and (
+            self.planner_alive or getattr(self.client, "rtc", False)
+        )
 
     @property
     def planner_alive(self):
@@ -107,7 +127,12 @@ class PolicyWorker:
                 if self._restart.is_set():
                     self._restart.clear()
                     try:
-                        self.client.restart()
+                        requested_rtc = self._requested_rtc
+                        self._requested_rtc = None
+                        if requested_rtc is None:
+                            self.client.restart()
+                        else:
+                            self.client.set_rtc(requested_rtc)
                         self.restart_error = None
                         self._client_ready = True
                     except Exception as exc:
@@ -129,10 +154,17 @@ class PolicyWorker:
                 planning = False
                 try:
                     started = time.monotonic()
-                    response = self.client.infer(observation)
+                    if isinstance(observation, RtcJob):
+                        response = self.client.infer_rtc(
+                            observation.observation,
+                            target_start_tick=observation.commitment.observation_tick,
+                            committed_actions=observation.commitment.actions,
+                        )
+                    else:
+                        response = self.client.infer(observation)
                     actions = np.array(response["actions"], copy=True)
                     plan = None
-                    if self.planner is not None:
+                    if self.planner is not None and not isinstance(observation, RtcJob):
                         planning = True
                         if self.plan_context is None:
                             raise RuntimeError("action planner context is not attached")

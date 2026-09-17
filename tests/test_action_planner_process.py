@@ -32,7 +32,7 @@ def test_policy_plan_target_reaches_device_arbiter_without_feedback_slew(mode):
     decision = arbiter.step(q, q, now=1.1, dt=0.1, leader_ready=True)
     assert decision.source == "policy"
     expected = rows[0].copy()
-    expected[13] = 0.05
+    expected[13] = 0.1
     np.testing.assert_allclose(decision.action, expected)
 
 
@@ -50,7 +50,7 @@ def test_inference_close_trick_only_changes_grippers_below_threshold(mode):
     original = rows.copy()
     plan = build_plan(mode, token, rows, None, 1.1, 0.1, 3)
     np.testing.assert_array_equal(rows, original)
-    np.testing.assert_allclose(plan["actions"][:4, 6], [0.05, 0.05, 0.3, 0.301])
+    np.testing.assert_allclose(plan["actions"][:4, 6], [0.1, 0.1, 0.3, 0.301])
     np.testing.assert_allclose(plan["actions"][:, 13], 0.8)
     np.testing.assert_allclose(plan["actions"][:, :6], 0.4)
 
@@ -101,7 +101,7 @@ def test_planner_raw_and_tda_match_existing_buffer_on_overlapping_chunks():
             expected = reference.current(now)
             assert actual is not None and expected is not None
             if mode == "tda_smooth":
-                expected[0][[6, 13]] = 0.05
+                expected[0][[6, 13]] = 0.1
             np.testing.assert_allclose(actual[0], expected[0])
             assert actual[1] == expected[1]
         second = arbiter.request(2, 1.35, 1.35)
@@ -115,7 +115,7 @@ def test_planner_raw_and_tda_match_existing_buffer_on_overlapping_chunks():
             expected = reference.current(now)
             assert actual is not None and expected is not None
             if mode == "tda_smooth":
-                expected[0][[6, 13]] = 0.05
+                expected[0][[6, 13]] = 0.1
             np.testing.assert_allclose(actual[0], expected[0])
             assert actual[1] == expected[1]
 

@@ -12,7 +12,7 @@ def _snap_close_grippers(actions):
     """Temporary inference experiment: make small close targets decisive."""
     result = np.asarray(actions, dtype=np.float64).copy()
     grippers = result[:, [6, 13]]
-    result[:, [6, 13]] = np.where(grippers < 0.3, 0.05, grippers)
+    result[:, [6, 13]] = np.where(grippers < 0.3, 0.1, grippers)
     return result
 
 

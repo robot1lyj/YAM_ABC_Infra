@@ -165,16 +165,16 @@ Thor已反馈关节输出是rad绝对目标、夹爪0关/1开，Thor完成反归
 
 页面在模型执行时显示设备进程报告的策略轨迹状态；不能由浏览器缓存或磁盘文件推断运行算法。实验性纯线性100Hz轨迹已删除，历史失败证据保留在[验收](acceptance.md#2026-09-16-线性插值推理短测与回退)。
 
-当前`configs/station_hil.yaml`默认`policy_fusion: tda_smooth`，仅用于普通10w检查点：后台单在途请求新块，请求时记下旧队列余量；新块到达时按期间已消费的步数丢弃新块前缀（最多25步），再按openarm-vr `ActionChunkQueue` 的线性权重混合旧队列尾部与新块开头的完整重叠段，14D含夹爪一起处理，旧队列剩余被新块替换。`raw`仍保留时间戳换块对照；`--baseline`关闭预取。TDA只在普通模型路径使用，训练时RTC的已承诺前缀不能经此混合。
+当前`configs/station_hil.yaml`默认`policy_fusion: raw`，作为普通非RTC模型的无融合对照：后台仍保持单在途预取，按观测时间与30Hz动作周期丢弃过期前缀；新块一旦可用便替换旧块，关节和夹爪均只执行新块，不加短时接管过渡。`--baseline`关闭预取。换块瞬间的目标不连续可能直接表现为抖动，不能把此配置称为已通过真机效果验收。`tda_smooth`仍可在HOLD下选择用于对照，不作为本站默认；训练时RTC的已承诺前缀不能经TDA混合。
 
-TDA实现从`/home/wuyan-lyj/openarm-vr/src/openarm_remote_policy/openarm_remote_policy/ws_policy_client.py::ActionChunkQueue`复用算法，默认`drop_max=25`、`min_overlap=1`、`linear`；保留YAM本有的50×14有限值检查、夹爪[0,1]裁剪、关节SDK限位和故障HOLD。它与旧YAM固定4步、夹爪不融合的`smooth`不是同一算法；旧模式已移除。TDA队列按消费步数对齐，不声称能替代RTC目标tick合同。
+TDA实现从`/home/wuyan-lyj/openarm-vr/src/openarm_remote_policy/openarm_remote_policy/ws_policy_client.py::ActionChunkQueue`复用算法，默认`drop_max=25`、`min_overlap=1`、`linear`；保留YAM本有的50×14有限值检查、夹爪[0,1]裁剪、关节SDK限位和故障HOLD。它混合完整重叠区，不能视为仅处理几步换块边界；旧YAM固定窗口`smooth`已移除。TDA队列按消费步数对齐，不声称能替代RTC目标tick合同。
 
-推理/HIL页面显示Thor往返p95、动作缓冲余量、TDA丢步数及关节限速。HOLD且未录制时可在页面切换`raw/tda_smooth`；提交后控制线程清空旧缓冲、递增epoch，下一次明确开始才执行新设置。改动只保存在当前设备会话，断开重连恢复station YAML默认。页面不开放关节限速改写。
+推理/HIL页面显示Thor往返p95、动作缓冲余量、丢步数及关节限速。HOLD且未录制时可在页面切换`raw/tda_smooth`；提交后控制线程清空旧缓冲、递增epoch，下一次明确开始才执行新设置。改动只保存在当前设备会话，断开重连恢复station YAML默认。页面不开放关节限速改写。`raw`的每个已接受回复另在录制样本的`policy_reply`记录`trimmed_steps`、`new_vs_old_target_joint_max_rad`及`new_vs_old_target_gripper_max`；后两者比较同一目标时刻的新旧计划，不是电机实际跳变量，首次无旧计划或无法对齐时为null。结合`policy_action`、`bounded_action`、`submitted_action`与后续`measured_state`判读。
 
 Thor通信/序列化现在由独立策略子进程执行，设备进程的工作线程异步传输观测，30Hz控制线程不等待网络或子进程；页面在HOLD可“重载推理通信”，不会断开CAN或释放机械臂。子进程须完成Thor握手后页面才允许开始推理。设备进程仍持有动作时间对齐、接缝融合与最终安全仲裁：修改这些控制侧代码仍需受控重启，不能把通信子进程隔离误称为整个推理控制可热替换。首次部署进程边界变更需重启`yam-device`并会释放力矩，必须先支撑四臂。
 RK3588首次拉起子进程的Python模块冷导入可能超过单次Thor请求的1.5秒超时；后台启动最多等待8秒完成握手，期间页面保持模型“未就绪”、控制线程继续HOLD。此等待与已经开始的推理请求超时是不同边界。
 
-高频轨迹写入可用`policy_trajectory_hz`显式开关；`0`是30Hz策略目标直接提交给现有YAM SDK，不加应用层100Hz轨迹。2026-09-17普通10w＋TDA对照阶段将本站配置为`0`，以便先观察TDA输出与底层跟踪；100Hz二阶执行器代码仍保留、此轮不启用。OpenArm-vr的30Hz目标发布、200Hz MIT控制器保持目标并做PD跟踪仅作为设计参照，不能声称YAM SDK具有相同的200Hz底层实现。此前100Hz、3rad/s、30rad/s²、临界阻尼10rad/s的二阶轨迹可能造成模型目标跟踪滞后；纯线性100Hz轨迹在2026-09-16现场短测被操作者判定动作明显异常，代码已删除，不重新启用。切换`policy_trajectory_hz`需要受控重启设备进程并释放力矩，须先支撑四臂。
+高频轨迹写入可用`policy_trajectory_hz`显式开关；`0`是30Hz策略目标直接提交给现有YAM SDK，不加应用层100Hz轨迹。2026-09-17无融合对照仍将本站配置为`0`，以便先观察原始动作与底层跟踪；100Hz二阶执行器代码仍保留、此轮不启用。OpenArm-vr的30Hz目标发布、200Hz MIT控制器保持目标并做PD跟踪仅作为设计参照，不能声称YAM SDK具有相同的200Hz底层实现。此前100Hz、3rad/s、30rad/s²、临界阻尼10rad/s的二阶轨迹可能造成模型目标跟踪滞后；纯线性100Hz轨迹在2026-09-16现场短测被操作者判定动作明显异常，代码已删除，不重新启用。切换`policy_trajectory_hz`需要受控重启设备进程并释放力矩，须先支撑四臂。
 
 2026-09-16旧二阶方案的82秒raw录制离线重放：4步交接使换块后4帧内关节目标最大单帧跳变的95%值从0.373降到0.140rad；8步为0.061rad但对新raw目标的95%最大关节偏差增至0.228rad。来源为IPC `session_20260916_164308_bb674f/episode_000001`，只证明接缝目标曲线变化，不是真机效果验收。纯线性插值失败短测及调度尖峰见[现场验收](acceptance.md#2026-09-16-线性插值推理短测与回退)。
 

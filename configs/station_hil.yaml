@@ -26,9 +26,9 @@ hil:
   # Follower factory home is six zero arm joints, not encoder recalibration.
   # Leaders stay manual; retain both follower grippers.
   factory_zero_home: true
-  # Ordinary 10w policy only: port of OpenArm TDA queue drop/overlap blending.
-  # Trained RTC must use its own committed-prefix path, never this fusion.
-  policy_fusion: tda_smooth
+  # First non-RTC comparison: execute only the newest time-aligned chunk.
+  # Keep TDA available for comparison, but do not blend chunks by default.
+  policy_fusion: raw
   max_frame_age: 0.5
   max_frame_skew: 0.12
   warn_frame_skew: 0.04
@@ -40,7 +40,7 @@ hil:
   # Policy/automatic joint target envelope. 3rad/s reduces prolonged catch-up;
   # this is still a feedback-relative tracking bound, not a velocity guarantee.
   max_joint_speed: 3.0
-  # 10w + TDA trial: publish policy targets directly at 30 Hz. Keep the
+  # Publish policy targets directly at 30 Hz. Keep the
   # experimental 100 Hz second-order writer available but disabled for this run.
   policy_trajectory_hz: 0
   policy_joint_acceleration: 30.0

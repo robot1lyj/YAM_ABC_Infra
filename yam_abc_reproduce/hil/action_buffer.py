@@ -44,12 +44,14 @@ class ActionBuffer:
         self.chunk: TimedChunk | None = None
         self.last_trimmed_steps: int | None = None
         self.last_seam_max_rad: float | None = None
+        self.last_seam_gripper_max: float | None = None
         self.last_selection: dict | None = None
 
     def clear(self):
         self.chunk = None
         self.last_trimmed_steps = None
         self.last_seam_max_rad = None
+        self.last_seam_gripper_max = None
         self.last_selection = None
 
     def _index_at(self, chunk: TimedChunk, now: float) -> int:
@@ -89,12 +91,16 @@ class ActionBuffer:
         rows = actions[first:].copy()
         self.last_trimmed_steps = first
         self.last_seam_max_rad = None
+        self.last_seam_gripper_max = None
         if self.chunk is not None and now - self.chunk.origin <= self.max_action_age:
             old = self.chunk
             seam_prior = self._at_target(old, origin + first * self.action_dt)
             if seam_prior is not None:
                 self.last_seam_max_rad = float(
                     np.max(np.abs(actions[first, list(JOINTS)] - seam_prior[list(JOINTS)]))
+                )
+                self.last_seam_gripper_max = float(
+                    np.max(np.abs(actions[first, list(GRIPPERS)] - seam_prior[list(GRIPPERS)]))
                 )
         self.chunk = TimedChunk(token, origin, first, rows)
         return True

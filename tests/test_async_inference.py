@@ -145,7 +145,7 @@ def test_action_dt_cli_override_is_checked_without_model_or_motors(capsys):
     assert json.loads(capsys.readouterr().out)["action_dt"] == pytest.approx(0.05)
 
 
-def test_station_defaults_to_openarm_tda_for_ordinary_policy(capsys):
+def test_station_defaults_to_time_aligned_raw_for_ordinary_policy(capsys):
     import json
     from pathlib import Path
 
@@ -154,10 +154,10 @@ def test_station_defaults_to_openarm_tda_for_ordinary_policy(capsys):
     from yam_abc_reproduce.hil.run import main
 
     station = yaml.safe_load((Path(__file__).parents[1] / "configs/station_hil.yaml").read_text())
-    assert station["hil"]["policy_fusion"] == "tda_smooth"
+    assert station["hil"]["policy_fusion"] == "raw"
     assert station["hil"]["policy_trajectory_hz"] == 0
     main(["--mock", "--mode", "inference", "--check"])
-    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "tda_smooth"
+    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "raw"
 
 
 def test_latency_budget_uses_observation_age_not_only_request_rtt():
@@ -209,6 +209,39 @@ def test_step_ten_replan_runs_old_plan_then_time_aligns_150ms_reply():
     assert decision.policy_action[0] == pytest.approx(1.0)
     assert decision.policy_action[6] == pytest.approx(0.8)
     assert arbiter.action_buffer.last_seam_max_rad == pytest.approx(0.86)
+    assert arbiter.action_buffer.last_seam_gripper_max == pytest.approx(0.8)
+
+
+def test_raw_reply_records_trim_and_target_discontinuity_without_blending():
+    from yam_abc_reproduce.hil.policy import Reply
+
+    q = np.zeros(14)
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, action_dt=1 / 30,
+        policy_fusion="raw", max_action_age=3,
+    )
+    arbiter.start(q)
+    policy(arbiter, chunk(0.2, 0.0), observed_at=0, sent_at=0, received_at=0.05)
+    token = arbiter.request(2, 10 / 30, observed_at=10 / 30)
+    assert token is not None
+
+    class RepliedWorker:
+        def poll(self):
+            return Reply(token, chunk(0.8, 1.0), worker_elapsed_ms=150)
+
+        def submit(self, _token, _observation):
+            return False
+
+    session = Session(arbiter, RepliedWorker())
+    decision = session.tick(
+        q, q, now=10 / 30 + 0.15, dt=1 / 30,
+        observation_id=3, observation=None, leader_ready=True,
+    )
+    assert decision.policy_action[0] == pytest.approx(0.8)
+    assert decision.policy_action[6] == pytest.approx(1.0)
+    assert session.last_reply["trimmed_steps"] == 4
+    assert session.last_reply["new_vs_old_target_joint_max_rad"] == pytest.approx(0.6)
+    assert session.last_reply["new_vs_old_target_gripper_max"] == pytest.approx(1.0)
 
 
 def test_retired_multi_chunk_mode_is_rejected():

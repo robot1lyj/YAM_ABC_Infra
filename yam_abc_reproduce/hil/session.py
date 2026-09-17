@@ -67,6 +67,15 @@ class Session:
                     try:
                         accepted = self.arbiter.accept(reply.token, reply.actions, now)
                         self.last_reply["discarded"] = not accepted
+                        if accepted and self.arbiter.action_buffer.fusion == "raw":
+                            buffer = self.arbiter.action_buffer
+                            self.last_reply["trimmed_steps"] = buffer.last_trimmed_steps
+                            self.last_reply["new_vs_old_target_joint_max_rad"] = (
+                                buffer.last_seam_max_rad
+                            )
+                            self.last_reply["new_vs_old_target_gripper_max"] = (
+                                buffer.last_seam_gripper_max
+                            )
                     except (ValueError, TypeError):
                         self.last_reply["discarded"] = True
                         self.last_reply["error"] = "invalid policy response"

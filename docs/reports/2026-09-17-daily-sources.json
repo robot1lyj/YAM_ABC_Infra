@@ -1,0 +1,66 @@
+{
+  "report_date": "2026-09-17",
+  "cutoff": "2026-09-17 20:15:37 +0800",
+  "method": "以YAM与condapi在9月17日最后已提交版本为边界，只读核对提交、验收文档、Thor交接记录和现场边界；未重新启动硬件、相机或模型测试。9月18日工作区未提交改动排除。",
+  "heads": {
+    "YAM": {
+      "commit": "9905ca9b9852452a7f3b63a2f9d793f8957f496b",
+      "commit_time": "2026-09-17T19:35:35+08:00",
+      "status_at_review": "工作区含9月18日未提交业务改动，报告仅引用9905ca9提交内容"
+    },
+    "condapi": {
+      "commit": "6a7f4d85473460afbc536fbc241d2090c39cf7c9",
+      "commit_time": "2026-09-17T20:15:37+08:00",
+      "status_at_review": "9月18日存在未跟踪RTC报告目录，报告仅引用6a7f4d8提交内容"
+    }
+  },
+  "yam_commits": [
+    ["c2e91f0", "Add isolated trained RTC wire adapter and contract tests"],
+    ["b5e5523", "Port TDA chunk smoothing for ordinary policy only"],
+    ["449d831", "Disable high-rate policy filter for TDA direct-control trial"],
+    ["51042a9", "Make non-RTC raw execution the default for measured trial"],
+    ["15b99f3", "Record IPC raw inference deployment boundary"],
+    ["41048c7", "Decouple action planning from device control and define inference modes"],
+    ["d4e901b", "Record IPC planner HOLD deployment validation"],
+    ["7883ce6", "Remove feedback-relative slew clipping from direct policy control"],
+    ["712dddb", "Record IPC HOLD validation after policy slew removal"],
+    ["673fed3", "Match Thor RTC observation tick envelope"],
+    ["135cb22", "Record RTC IPC probe and latency gate"],
+    ["8f07dae", "Update RTC delay estimate after Thor optimization"],
+    ["43f4d6b", "Integrate trained RTC policy timeline with committed actions"],
+    ["245cd87", "Record RTC IPC HOLD deployment acceptance"],
+    ["b6b07f0", "Fix RTC gripper validation and expose delay ticks"],
+    ["9905ca9", "Record RTC fault deployment and incomplete episode"]
+  ],
+  "condapi_commits": [
+    ["4490a07", "明确RTC策略tick合同并准备真实检查点验证"],
+    ["5f23ab2", "扩展RTC训练目标至八万步"],
+    ["fde5d93", "记录Thor五GHz切换与RTC检查点传输校验"],
+    ["fbc3274", "修复RTC容器转换器定位并记录源参数审计"],
+    ["17e2d99", "记录RTC二万步检查点FP32转换审计"],
+    ["c6bef46", "记录RTC检查点转换完成并暂缓推理测试"],
+    ["04ce14d", "补充YAM大集与RTC子集数据审计"],
+    ["0fee906", "复核源数据动作尖峰并更正审计结论"],
+    ["dc98faf", "记录RTC三万步检查点交接与十万步服务重载"],
+    ["40ee20f", "接入Thor RTC三万步推理并固定Pi服务地址"],
+    ["0afcbcd", "完善Thor RTC去噪配比测试与FP8精度边界"],
+    ["6388a72", "上线Thor RTC七步推理服务"],
+    ["6a7f4d8", "修复Thor RTC前缀分位数归一化并记录事故复测"]
+  ],
+  "source_files": [
+    {"repository": "YAM", "path": "docs/acceptance.md", "commit": "9905ca9", "sha256": "df11fb77e09a0eaa632bb8954447e35eb20d99d7a7b90e2e4a0cfe1d2f171ffc"},
+    {"repository": "YAM", "path": "docs/cache/checkpoint.md", "commit": "9905ca9", "sha256": "407a8843eb43a58034c5dcb03e983d0c7a0a845307458b5891254c0e12ea785c"},
+    {"repository": "YAM", "path": "docs/workstation.md", "commit": "9905ca9", "sha256": "d09d6b6c181eec5c140353287aad0917d9513a761ee90451d85a6486c0ae0229"},
+    {"repository": "YAM", "path": "docs/condapi_interface.md", "commit": "9905ca9", "sha256": "e5e33d60807cf6c0b6208168fdbc9b63985135942c2021533683c72e5c403ea5"},
+    {"repository": "condapi", "path": "docs/reference/thor/12_checkpoint_handoff.md", "commit": "6a7f4d8", "sha256": "bf6967f4974855cffe219c06011905b81a951cd081399085678ada34b1cd0c62"},
+    {"repository": "condapi", "path": "docs/reference/thor/13_trained_rtc_inference.md", "commit": "6a7f4d8", "sha256": "927dcdf848fe660f7a04a13fc71e9a445423cbd6a6c94b37ca1ce50f895f0051"},
+    {"repository": "condapi", "path": "docs/07_change_log.md", "commit": "6a7f4d8", "sha256": "d919a18ea996f742ad0139c4191d8c3bc2338eed054691860a2f7a294f8da861"}
+  ],
+  "key_boundaries": [
+    "设备控制与动作规划已拆分，IPC完成HOLD静止态验证；未完成运动中长时间稳定性验收。",
+    "普通推理已部署raw直达路径并移除反馈相对裁减；同一任务下的运动效果、夹爪表现和模式对照仍待完成。",
+    "训练式RTC已接入控制时间轴并完成首次真机故障定位；夹爪限幅顺序已修复，但首次episode不完整。",
+    "Thor 30000与7步候选完成离线精度/协议验证；分位数归一化事故导致服务停用，旧延迟结果不再作为当前可用性证据。",
+    "IPC NVMe/PCIe、USB-CAN和SDK反馈过期问题仍未形成统一根因，数据集平台的局域网交付与真实长时闭环仍未验收。"
+  ]
+}

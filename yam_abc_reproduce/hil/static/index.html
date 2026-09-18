@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>悟演智能 · 数据采集工作台</title>
     <link rel="stylesheet" href="/assets/style.css" />
-    <link rel="stylesheet" href="/assets/console.css?v=1" />
+    <link rel="stylesheet" href="/assets/console.css?v=2" />
   </head>
   <body>
     <svg class="icon-library" aria-hidden="true">
@@ -192,9 +192,7 @@
             <div class="left-column">
               <section class="panel camera-panel">
                 <div class="panel-heading">
-                  <h2>
-                    <svg><use href="#i-camera" /></svg>视觉工作区
-                  </h2>
+                  <details class="vision-menu"><summary aria-label="画面选项">画面选项</summary>
                   <div class="vision-actions">
                     <button
                       id="expand-vision"
@@ -206,11 +204,12 @@
                       关闭预览
                     </button>
                   </div>
+                  </details>
                 </div>
                 <div class="camera-grid">
                   <article class="camera" data-camera="top">
                     <div class="camera-label">
-                      <span>01 / 全局视角</span><i class="led"></i>
+                      <span>全局相机</span><i class="led"></i>
                     </div>
                     <img alt="全局D405实时预览" hidden />
                     <div class="camera-empty">
@@ -221,7 +220,7 @@
                   </article>
                   <article class="camera" data-camera="left">
                     <div class="camera-label">
-                      <span>02 / 左腕视角</span><i class="led"></i>
+                      <span>左腕相机</span><i class="led"></i>
                     </div>
                     <img alt="左腕D405实时预览" hidden />
                     <div class="camera-empty">
@@ -232,7 +231,7 @@
                   </article>
                   <article class="camera" data-camera="right">
                     <div class="camera-label">
-                      <span>03 / 右腕视角</span><i class="led"></i>
+                      <span>右腕相机</span><i class="led"></i>
                     </div>
                     <img alt="右腕D405实时预览" hidden />
                     <div class="camera-empty">

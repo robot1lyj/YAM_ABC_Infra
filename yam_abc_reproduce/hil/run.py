@@ -659,6 +659,23 @@ class Runtime:
                     "submitted_at": stamps,
                 }
                 if isinstance(self.recorder, RECORDING_SESSIONS):
+                    # Snapshot the running policy, not the startup YAML. Mode
+                    # changes are permitted in HOLD between recorded episodes.
+                    if not self.recorder.recording:
+                        self.recorder.metadata.update({
+                            "rtc": a.rtc_timeline is not None,
+                            "policy_fusion": a.action_buffer.fusion,
+                            "streaming": a.streaming,
+                            "action_dt": a.action_dt,
+                            "rtc_delay_steps": (
+                                a.rtc_timeline.delay_steps
+                                if a.rtc_timeline is not None else None
+                            ),
+                        })
+                    previous_mode = self.recorder.mode
+                    self.recorder.set_mode(a.mode.value, self.outcome)
+                    if previous_mode != a.mode.value:
+                        self.outcome = "unknown"
                     if (
                         original_event == "start"
                         and a.phase != Phase.HOLD
@@ -668,10 +685,6 @@ class Runtime:
                         and self.recording_allowed
                     ):
                         self.recorder.start_episode()
-                    previous_mode = self.recorder.mode
-                    self.recorder.set_mode(a.mode.value, self.outcome)
-                    if previous_mode != a.mode.value:
-                        self.outcome = "unknown"
                     if a.mode == Mode.COLLECT:
                         if recording_event == "discard":
                             self.recorder.stop_episode("discarded")

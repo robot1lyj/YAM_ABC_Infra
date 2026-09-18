@@ -19,6 +19,34 @@ def test_collection_uses_leader_without_policy_or_intervention():
     assert a.request(1, 1) is None
 
 
+def test_episode_metadata_is_frozen_before_writer_drains(tmp_path, monkeypatch):
+    gate = threading.Event()
+    original = RecordingSession._run
+
+    def delayed(self):
+        assert gate.wait(5)
+        original(self)
+
+    monkeypatch.setattr(RecordingSession, "_run", delayed)
+    rec = RecordingSession(tmp_path / "snapshots", mode="hil",
+                           metadata={"policy_fusion": "rtc", "rtc": True})
+    try:
+        rec.start_episode()
+        rec.submit({"tick": 0}, {})
+        rec.stop_episode("success")
+        rec.metadata.update(policy_fusion="tda_smooth", rtc=False)
+        rec.start_episode()
+        rec.submit({"tick": 1}, {})
+        rec.stop_episode("success")
+    finally:
+        gate.set()
+        rec.close()
+    assert not rec.error
+    manifests = [json.loads(p.read_text()) for p in sorted(rec.path.glob("episode_*/manifest.json"))]
+    assert [m["policy_fusion"] for m in manifests] == ["rtc", "tda_smooth"]
+    assert [m["rtc"] for m in manifests] == [True, False]
+
+
 def test_inference_records_rollout_from_motion_start(tmp_path):
     from yam_abc_reproduce.hil import run
 

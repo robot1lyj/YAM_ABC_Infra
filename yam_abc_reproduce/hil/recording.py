@@ -248,7 +248,7 @@ class RecordingSession:
             return False
 
     def start_episode(self):
-        if not self.recording and self._put(("start", self.mode)):
+        if not self.recording and self._put(("start", self.mode, dict(self.metadata))):
             self.recording = True
 
     def stop_episode(self, outcome="unknown"):
@@ -312,6 +312,7 @@ class RecordingSession:
 
     def _run(self):
         active = None
+        active_metadata = {}
         count = 0
 
         def finish(outcome):
@@ -319,6 +320,7 @@ class RecordingSession:
             if active is None:
                 return
             active.metadata.update(self.metadata)
+            active.metadata.update(active_metadata)
             active.close(outcome)
             self._completed_steps += active.written
             self._session_progress_at = time.monotonic()
@@ -356,12 +358,13 @@ class RecordingSession:
                     if active:
                         raise RuntimeError("episode already open")
                     count += 1
+                    active_metadata = dict(item[2], collection_mode=item[1])
                     active = Recorder(
                         self.path / f"episode_{count:06d}",
                         fps=self.fps,
                         segment_seconds=self.segment_seconds,
                         min_free_bytes=self.min_free_bytes,
-                        metadata=dict(self.metadata, collection_mode=item[1]),
+                        metadata=dict(active_metadata),
                         video_backend=self.video_backend,
                     )
                     self._active = active
@@ -384,6 +387,7 @@ class RecordingSession:
             self.error = f"{type(exc).__name__}: {exc}"
             if active:
                 active.metadata.update(self.metadata)
+                active.metadata.update(active_metadata)
                 try:
                     active.close("aborted")
                 except Exception as close_exc:

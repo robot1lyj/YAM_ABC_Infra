@@ -42,6 +42,12 @@ uv run --locked --script scripts/convert_lerobot.py /data/raw/yam --output /data
 
 ## 字段约定
 
+DAgger继续使用上述`yam_hil_v2`原始格式，策略→介入冻结→人工→交还等待→策略保存在同一集。`human_action`是原始Leader输入，HIL采用相对接管偏移，**专家训练action必须取`submitted_action`**；不能把Leader角度直接当Follower标签。夹爪为0关1开，关节为绝对rad，顺序左6+左夹爪+右6+右夹爪。介入时夹爪保持，扳机到达/跨过当前开度后取得控制权。
+
+每集开始记录实际运行的`policy_fusion`、`rtc`、`rtc_delay_steps`、`action_dt`和`streaming`，并冻结该配置快照，避免异步写盘时被下一集覆盖。此前热切换RTC的旧集manifest可能仍写启动时TDA；须结合逐帧`details.policy_fusion`及`policy_reply`审计，不能仅凭旧清单筛选，原件不自动改写。
+
+图像按主机接收时间配对，`observation_state`为该参考时间的插值反馈，`measured_state`为当前控制tick反馈，`submitted_action`为本tick提交目标。该合同保留真实软件时间差，不声称曝光与下发零延迟。观测无效帧保留审计但不作专家标签；冻结/交还等待也不作专家标签。
+
 | 字段 | 语义 |
 |---|---|
 | observation.state | 左6关节+左夹爪+右6关节+右夹爪，共14维；相机配对时刻的Follower反馈 |

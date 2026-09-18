@@ -12,7 +12,7 @@ from yam_abc_reproduce.config import StationConfig
 from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
 from yam_abc_reproduce.hil.observation import Observations
 from yam_abc_reproduce.hil.policy import PolicyWorker
-from yam_abc_reproduce.hil.recording import Recorder
+from yam_abc_reproduce.hil.recording import Recorder, RecordingSession
 from yam_abc_reproduce.hil.run import MockPolicy, Runtime, validate_station
 from yam_abc_reproduce.hil.session import Session
 from yam_abc_reproduce.hil.station import StationIO
@@ -121,25 +121,39 @@ def test_recording_backpressure_is_explicit(tmp_path, monkeypatch):
     assert json.loads((r.path / "manifest.json").read_text())["outcome"] == "aborted"
 
 
-def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
+@pytest.mark.parametrize("fusion", ["raw", "rtc"])
+def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path, fusion):
     cfg = StationConfig()
-    io = StationIO(build_arm_units(cfg, mock=True), mock=True, policy_trajectory_hz=100)
+    io = StationIO(build_arm_units(cfg, mock=True), mock=True,
+                   policy_trajectory_hz=0 if fusion == "rtc" else 100)
     cameras = [
         CameraWorker(MockCamera(role, role, width=32, height=32))
         for role in ("top", "left", "right")
     ]
-    rec = Recorder(tmp_path / "episode")
+    rec = (RecordingSession(tmp_path / "session", mode="hil",
+                            metadata={"rtc": False, "policy_fusion": "tda_smooth"})
+           if fusion == "rtc" else Recorder(tmp_path / "episode"))
     worker = PolicyWorker(MockPolicy())
     try:
         for c in cameras:
             c.start()
-        run = Runtime(io, cameras, worker, rec, settings={"policy_fusion": "raw"})
+        run = Runtime(io, cameras, worker, rec, settings={"policy_fusion": fusion})
         run.event("success")
         assert run.outcome == "unknown"  # consumed in the control owner
         result = run.run(duration=2.5, auto_start=True, demo=True)
         rec.close(run.outcome)
         assert not result["error"] and result["phase"] == "policy"
-        rows = list(read_rows(rec.path))
+        path = rec.path / "episode_000001" if fusion == "rtc" else rec.path
+        rows = list(read_rows(path))
+        if fusion == "rtc":
+            manifest = json.loads((path / "manifest.json").read_text())
+            assert manifest["rtc"] and manifest["policy_fusion"] == "rtc"
+            assert manifest["rtc_delay_steps"] == 9
+            assert manifest["collection_mode"] == "hil"
+            assert len(list(rec.path.glob("episode_*"))) == 1
+            transitions = [t for row in rows for t in row["transitions"]]
+            assert transitions == ["policy_started", "takeover_applied", "human_started",
+                                   "resume_requested", "policy_started"]
         assert {"policy", "human", "hold"} <= {r["source"] for r in rows}
         human = [r for r in rows if r["source"] == "human"]
         assert all(not r["policy_valid"] and r["policy_action"] is None for r in human)
@@ -148,9 +162,12 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path):
         assert epochs == sorted(epochs)
         assert any(r.get("policy_reply") for r in rows)
         policy_rows = [r for r in rows if r["source"] == "policy"]
-        assert any(r["policy_selection"] for r in policy_rows)
+        if fusion == "rtc":
+            assert all(r["action_index"] == r["tick"] for r in policy_rows)
+        else:
+            assert any(r["policy_selection"] for r in policy_rows)
         traces = [sample for r in rows for sample in (r.get("policy_write_trace") or {}).get("samples", [])]
-        assert traces
+        assert bool(traces) == (fusion != "rtc")
         assert all(sample["arms"]["left"]["sdk_call_started_at"] <=
                    sample["arms"]["left"]["sdk_call_returned_at"] <=
                    sample["arms"]["right"]["sdk_call_started_at"] <=

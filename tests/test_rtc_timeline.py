@@ -18,6 +18,35 @@ def limits(value):
     return out
 
 
+def test_hil_takeover_clears_rtc_and_resume_rejects_old_reply():
+    from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
+
+    q = action(.2)
+    leader = action(-.4)
+    a = Arbiter(Mode.HIL, policy_fusion="rtc")
+    a.start(q)
+    a.rtc_timeline.record_submitted(0, q)
+    token, commitment = a.request_rtc(1, 0, 0, 0, 0, limits)
+    reply = np.tile(q, (50, 1))
+    reply[:9] = commitment.actions
+    reply[9:, 0] = .8
+    a.takeover(q, leader)
+    freeze = a.step(q, leader, now=.03, dt=1/30, policy_tick=1)
+    assert freeze.phase == Phase.TAKEOVER and freeze.source == "hold"
+    np.testing.assert_allclose(freeze.action, q)
+    assert not a.accept_rtc(token, reply, .04, 1, limits)
+    human = a.step(q, leader + action(.05), now=.06, dt=1/30, policy_tick=2)
+    assert human.source == "human"
+    assert human.action[0] == pytest.approx(.25)
+    a.resume_policy(human.action)
+    assert not a.accept_rtc(token, reply, .07, 2, limits)
+    assert not a.rtc_timeline.has_accepted_plan
+    a.rtc_timeline.record_submitted(2, human.action)
+    new_token, new_prefix = a.request_rtc(2, .08, .06, 2, 2, limits)
+    assert new_token.epoch > token.epoch
+    np.testing.assert_allclose(new_prefix.actions, np.tile(human.action, (9, 1)))
+
+
 def test_prefix_uses_actual_history_and_locks_future_at_original_ticks():
     clock = RtcTimeline(delay_steps=8)
     for tick in range(100, 103):

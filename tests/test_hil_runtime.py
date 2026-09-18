@@ -592,6 +592,71 @@ def test_freeze_targets_each_leader_current_pose_before_gravity_handover():
     assert all(not np.any(call[1]) for call in calls[2:])
 
 
+@pytest.mark.parametrize("mirror", [True, False])
+def test_policy_leaders_share_submitted_joint_targets_only_in_hil(mirror):
+    calls = []
+    units = []
+    for name in ("left", "right"):
+        robot = SimpleNamespace(
+            joint_limits=lambda: np.tile([-1., 1.], (6, 1)),
+            get_joint_pos=lambda: np.zeros(7),
+            command_joint_pos=lambda target: calls.append(("follower", target.copy())),
+        )
+        agent = SimpleNamespace(
+            hil_leader_command=lambda target, **kw: calls.append(("leader", target.copy(), kw))
+        )
+        units.append(SimpleNamespace(name=name, robot=robot, agent=agent))
+    io = StationIO(units)
+    d = SimpleNamespace(action=np.r_[[2., .4, .3, -.4, -.5, -.6, .7],
+                                    [-2., -.4, -.3, .4, .5, .6, .2]],
+                        source="policy", leader_manual=False, leader_freeze=False)
+    try:
+        submitted, _ = io.apply(d, np.zeros(14), np.zeros(14), dt=1 / 30, mirror=mirror)
+        for i, (_, target, kw) in enumerate(calls[:2]):
+            assert kw["manual"] is (not mirror)
+            assert kw["gain_scale"] == .2
+            assert target.shape == (6,)
+            np.testing.assert_array_equal(target, submitted[i * 7:i * 7 + 6])
+        np.testing.assert_array_equal(submitted, np.concatenate([c[1] for c in calls[2:]]))
+        assert submitted[0] == 1 and submitted[7] == -1
+    finally:
+        io.close()
+
+
+def test_filtered_policy_leader_uses_sampled_target_not_raw_model(monkeypatch):
+    from yam_abc_reproduce.hil import station
+
+    class FakeTrajectory:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def submit(self, target):
+            self.target = target.copy() * .1
+
+        def latest(self):
+            return self.target.copy()
+
+        def drain_trace(self):
+            return None
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(station, "TrajectoryExecutor", FakeTrajectory)
+    io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True,
+                   policy_trajectory_hz=100)
+    d = SimpleNamespace(action=np.full(14, .8), source="policy",
+                        leader_manual=False, leader_freeze=False)
+    try:
+        submitted, _ = io.apply(d, np.zeros(14), np.zeros(14), dt=1 / 30)
+        for start in (0, 7):
+            np.testing.assert_allclose(io._mock_leaders[start:start + 6],
+                                       submitted[start:start + 6])
+        np.testing.assert_allclose(submitted, .08)
+    finally:
+        io.close()
+
+
 def test_panel_stop_overrides_mirror_and_holds_both_leaders_and_followers():
     from yam_abc_reproduce.hil.maintenance import Maintenance
 

@@ -135,7 +135,7 @@ python -m yam_abc_reproduce.hil.replay_policy /data/YAM/data/episodes/任务/会
 | 标记成功/失败 | g / f | 成功/失败按钮，标记当前整个episode |
 | 结束并关闭设备 | q | 结束会话 |
 
-遥操作与HIL人工阶段leader为重力补偿。HIL策略阶段镜像follower当前六关节姿态；
+遥操作与HIL人工阶段leader为重力补偿。HIL策略阶段Leader与Follower共用最终六关节目标（硬限位后），不再追随滞后的Follower反馈；手柄夹爪仍是输入，不下发模型夹爪值。30Hz直达SDK时两者关节目标相同，但不保证物理位置或总线下发时刻完全一致。若启用备用100Hz二阶通道，Leader只在30Hz采样其输出，不复制原始未滤波目标。
 扳机只作输入，接管时先保持夹爪，扳机到达/跨过当前夹爪目标才获得控制权。
 两臂一起接管。普通遥操作采用 Leader→Follower 绝对 1:1 关节映射；HIL 人工接管从主从当前位置建立相对接管偏移，不要求操作者先精确对齐，
 也不会在开始瞬间把 Follower 拉向 Leader 的旧位置。

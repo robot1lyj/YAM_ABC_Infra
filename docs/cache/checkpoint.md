@@ -11,5 +11,5 @@
 
 ## 下一步
 
-1. 固定回放已获准完成：IPC代码a8f8bb6、未重启设备进程；页面重连loopback:8002、sync_hold。新会话103824_c92b5b/000001仅40帧，Follower动0.544rad而Leader仅0.0023rad，复现不跟随。当前急停锁存/HOLD，勿自行恢复运动；排查镜像目标实测相对限幅与低增益，不先放宽保护。回放服务由SSH进程运行，退出后需按hil_quickstart重启。
+1. 固定回放会话103824_c92b5b/000001复现不跟随：Follower动0.544rad、Leader仅0.0023rad。当前急停锁存/HOLD、loopback:8002、sync_hold；回放服务由SSH进程运行，退出后按hil_quickstart重启。用户授权共用策略关节目标，已本地修改StationIO，PD与主从保护不变，待受控重启支撑确认及真机验收；运动前明确通知，未获确认不释放力矩。RESUME路径未改。详见acceptance.md末节。
 2. 若有`SDK state update stale`或CAN/NVMe异常，按[硬件事实](../workstation.md)与[验收记录](../acceptance.md)独立诊断，不放宽保护来掩盖故障。

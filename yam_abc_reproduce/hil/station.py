@@ -138,12 +138,30 @@ class StationIO:
             self._policy_trajectory.close()
             self._policy_trace = self._policy_trajectory.drain_trace()
             self._policy_trajectory = None
+        submitted = target
+        if policy_trajectory:
+            if self._policy_trajectory is None:
+                self._policy_trajectory = TrajectoryExecutor(
+                    q,
+                    lambda command: self._write_followers(command, timing=True),
+                    hz=self.policy_trajectory_hz,
+                    max_joint_speed=self.policy_joint_speed,
+                    max_joint_acceleration=self.policy_joint_acceleration,
+                    natural_frequency=self.policy_natural_frequency,
+                )
+            self._policy_trajectory.submit(target)
+            submitted = self._policy_trajectory.latest()
+            self._policy_trace = self._policy_trajectory.drain_trace()
         manual = (decision.leader_manual or not mirror) and maintenance_leader is None
         leader_targets = []
         for i, limits in enumerate(self._limits):
             sl = slice(i * 7, i * 7 + 6)
-            # Mirror actual follower pose, including limited catch-up on RESUME.
-            arm = np.clip(
+            # HIL policy arms share the final joint target, not delayed feedback.
+            # A measured-position-relative clamp caps PD error on every tick and
+            # can leave a low-gain leader stationary. Teaching handles remain inputs.
+            # Optional high-rate follower control supplies its latest sampled target;
+            # this does not make leader writes high-rate or hardware-synchronous.
+            arm = submitted[sl] if decision.source == "policy" else np.clip(
                 q[sl], leader[sl] - self.leader_speed * dt, leader[sl] + self.leader_speed * dt
             )
             if decision.leader_freeze:
@@ -165,18 +183,6 @@ class StationIO:
             stamps[f"{u.name}_leader"] = time.monotonic()
         self._manual = manual
         if policy_trajectory:
-            if self._policy_trajectory is None:
-                self._policy_trajectory = TrajectoryExecutor(
-                    q,
-                    lambda command: self._write_followers(command, timing=True),
-                    hz=self.policy_trajectory_hz,
-                    max_joint_speed=self.policy_joint_speed,
-                    max_joint_acceleration=self.policy_joint_acceleration,
-                    natural_frequency=self.policy_natural_frequency,
-                )
-            self._policy_trajectory.submit(target)
-            submitted = self._policy_trajectory.latest()
-            self._policy_trace = self._policy_trajectory.drain_trace()
             for u in self.units:
                 stamps[f"{u.name}_follower"] = time.monotonic()
         else:

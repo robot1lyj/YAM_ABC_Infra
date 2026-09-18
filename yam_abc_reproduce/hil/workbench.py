@@ -694,6 +694,13 @@ class Workbench:
         self.runtime.restart_policy()
         self.log("已请求重载推理通信子进程；机械臂保持连接")
 
+    def change_policy_source(self, *, url):
+        if self.runtime is None or self.state != "connected" or self.initializing:
+            raise ValueError("请先连接设备并退出初始化向导")
+        self.runtime.change_policy_source(url=url)
+        self.args.url = url
+        self.log("已请求切换推理来源；只重建通信子进程，机械臂保持连接")
+
     def restart_planner(self):
         if self.runtime is None or self.state != "connected" or self.initializing:
             raise ValueError("请先连接设备并退出初始化向导")

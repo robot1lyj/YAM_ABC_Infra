@@ -187,6 +187,10 @@ function render() {
   $("rtc-delay-steps").disabled = !policyEditable || $("policy-fusion").value !== "rtc";
   $("policy-apply").disabled = !policyEditable;
   $("policy-restart").disabled = !policyEditable || !!state.mock;
+  $("policy-source-apply").disabled = !policyEditable || !!state.mock;
+  $("policy-source-url").disabled = !policyEditable || !!state.mock;
+  if (!$("policy-source-url").value) $("policy-source-url").value = state.policy_url || "";
+  text("policy-source-current", `当前来源：${state.policy_url || "未配置"}`);
   $("planner-restart").disabled = !policyEditable || !!state.mock;
   $("session-summary").hidden = teleopView;
   $("recent-episodes").hidden = teleopView;
@@ -1120,6 +1124,11 @@ $("policy-form").onsubmit = async (e) => {
   } else {
     policyDraft = null;
   }
+};
+$("policy-source-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const url = $("policy-source-url").value.trim();
+  if (await action("/policy/source", { url })) toast("来源切换已提交；机械臂保持连接，不自动运动");
 };
 $("policy-restart").onclick = async () => {
   if (await action("/policy/restart")) toast("推理通信子进程正在重载；机械臂保持连接");

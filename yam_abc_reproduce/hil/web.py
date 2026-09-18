@@ -45,6 +45,11 @@ class InitializationComplete(BaseModel):
     leader_checked: bool
 
 
+class PolicySource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(min_length=1, max_length=500)
+
+
 class PolicySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     fusion: Literal["sync_hold", "tda_smooth", "rtc"]
@@ -111,6 +116,11 @@ def create_app(runtime):
     def policy_restart():
         invoke(runtime.restart_policy)
         return {"queued": "policy_restart"}
+
+    @app.post("/policy/source")
+    def policy_source(body: PolicySource):
+        invoke(runtime.change_policy_source, url=body.url)
+        return {"queued": "policy_source"}
 
     @app.post("/policy/planner/restart")
     def planner_restart():

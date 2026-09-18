@@ -50,26 +50,33 @@ class ReplayPolicy:
             raise ValueError("start tolerance must be finite and positive")
         self.tolerance = start_tolerance_rad
         self.cursor = 0
+        self.epoch = None
 
     def infer(self, observation):
         if "rtc" in observation:
             raise ValueError("recorded replay requires full-chunk sync_hold, not RTC")
-        if self.cursor == 0:
+        acknowledgement = observation.get("_replay_cursor")
+        if not isinstance(acknowledgement, dict):
+            raise ValueError("replay requires execution cursor acknowledgement")
+        start, epoch = acknowledgement.get("next_frame"), acknowledgement.get("epoch")
+        if type(start) is not int or not 0 <= start <= len(self.targets) or type(epoch) is not int:
+            raise ValueError("invalid replay execution cursor")
+        if self.epoch != epoch:
             state = np.asarray(observation["observation.state"], dtype=np.float64)
             if state.shape != (14,) or not np.isfinite(state).all():
                 raise ValueError("replay needs finite current follower state")
-            if np.max(abs(state[JOINTS] - self.targets[0, JOINTS])) > self.tolerance:
+            if np.max(abs(state[JOINTS] - self.targets[min(start, len(self.targets) - 1), JOINTS])) > self.tolerance:
                 raise ValueError("replay start pose differs from current follower pose")
-        start = self.cursor
+        self.epoch = epoch
         indices = np.minimum(np.arange(start, start + 50), len(self.targets) - 1)
-        self.cursor = min(start + 50, len(self.targets))
+        self.cursor = start
         return {
             "actions": self.targets[indices].copy(),
             "server_timing": {
                 "source": "recorded_replay", "rtc_used": False,
                 "replay_start_frame": start,
                 "replay_source_frames": len(self.targets),
-                "replay_final_block": self.cursor == len(self.targets),
+                "replay_final_block": start + 50 >= len(self.targets),
             },
         }
 

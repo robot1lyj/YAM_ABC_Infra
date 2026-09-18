@@ -15,6 +15,21 @@ class Session:
         self.worker = worker
         self.rtc_limit_target = rtc_limit_target
         self.last_reply = None
+        self.replay_next_frame = 0
+        self._replay_block = None
+
+    def submitted(self, decision):
+        """Advance replay only after the control owner successfully submits IO."""
+        if (self._replay_block is not None and decision.source == "policy"
+                and decision.request == self._replay_block[0]
+                and decision.action_index is not None):
+            self.replay_next_frame = min(
+                self._replay_block[1] + decision.action_index + 1, self._replay_block[2],
+            )
+
+    def rewind_replay(self):
+        self.replay_next_frame = 0
+        self._replay_block = None
 
     def tick(
         self,
@@ -87,6 +102,8 @@ class Session:
                         self.arbiter.fail(state, reply.error)
                 else:
                     try:
+                        if (reply.server_timing or {}).get("source") == "recorded_replay" and self.arbiter.streaming:
+                            raise ValueError("recorded replay requires sync_hold")
                         accepted = (
                             self.arbiter.accept_rtc(
                                 reply.token, reply.actions, now, policy_tick,
@@ -97,6 +114,12 @@ class Session:
                             self.arbiter.accept(reply.token, reply.actions, now)
                         )
                         self.last_reply["discarded"] = not accepted
+                        timing = reply.server_timing or {}
+                        if accepted and timing.get("source") == "recorded_replay":
+                            self._replay_block = (
+                                reply.token, int(timing["replay_start_frame"]),
+                                int(timing["replay_source_frames"]),
+                            )
                         if accepted and self.arbiter.action_buffer.fusion == "raw":
                             buffer = self.arbiter.action_buffer
                             self.last_reply["trimmed_steps"] = buffer.last_trimmed_steps
@@ -116,9 +139,14 @@ class Session:
             leader_ready=leader_ready, policy_tick=policy_tick,
         )
         if (self.worker and fresh and observation is not None
-                and self.arbiter.rtc_timeline is None):
+                and self.arbiter.rtc_timeline is None
+                and not (self._replay_block is not None and decision.source == "policy")):
             token = self.arbiter.request(observation_id, now, observed_at)
-            if token is not None and not self.worker.submit(token, observation):
+            request_observation = dict(observation)
+            request_observation["_replay_cursor"] = {
+                "next_frame": self.replay_next_frame, "epoch": self.arbiter.epoch,
+            }
+            if token is not None and not self.worker.submit(token, request_observation):
                 # A stale RPC is still in flight. Retry on a later tick, never wait.
                 self.arbiter.pending = None
             elif token is not None:

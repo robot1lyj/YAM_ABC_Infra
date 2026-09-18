@@ -97,7 +97,7 @@ def test_station_io_clamps_absolute_joint_targets_to_sdk_limits():
         target = np.zeros(14)
         target[0], target[7] = 4 * np.pi, -4 * np.pi
         decision = SimpleNamespace(
-            action=target, leader_manual=True, leader_freeze=False,
+            action=target, source="policy", leader_manual=True, leader_freeze=False,
         )
         submitted, _ = io.apply(
             decision, np.zeros(14), np.zeros(14), dt=0.03,
@@ -141,11 +141,12 @@ def test_action_dt_cli_override_is_checked_without_model_or_motors(capsys):
 
     from yam_abc_reproduce.hil.run import main
 
-    main(["--mock", "--mode", "inference", "--action-dt", "0.05", "--check"])
+    main(["--mock", "--mode", "inference", "--policy-fusion", "sync_hold",
+          "--action-dt", "0.05", "--check"])
     assert json.loads(capsys.readouterr().out)["action_dt"] == pytest.approx(0.05)
 
 
-def test_station_defaults_to_tda_and_baseline_executes_full_chunk(capsys):
+def test_station_defaults_to_rtc_and_baseline_executes_full_chunk(capsys):
     import json
     from pathlib import Path
 
@@ -154,10 +155,10 @@ def test_station_defaults_to_tda_and_baseline_executes_full_chunk(capsys):
     from yam_abc_reproduce.hil.run import main
 
     station = yaml.safe_load((Path(__file__).parents[1] / "configs/station_hil.yaml").read_text())
-    assert station["hil"]["policy_fusion"] == "tda_smooth"
+    assert station["hil"]["policy_fusion"] == "rtc"
     assert station["hil"]["policy_trajectory_hz"] == 0
     main(["--mock", "--mode", "inference", "--check"])
-    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "tda_smooth"
+    assert json.loads(capsys.readouterr().out)["policy_fusion"] == "rtc"
     main(["--mock", "--mode", "inference", "--baseline", "--check"])
     assert json.loads(capsys.readouterr().out)["policy_fusion"] == "sync_hold"
     with pytest.raises(SystemExit):

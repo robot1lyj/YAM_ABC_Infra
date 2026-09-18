@@ -317,6 +317,18 @@ class Runtime:
             raise ValueError("当前策略不支持独立重载")
         self.policy_commands.put_nowait(("restart",))
 
+    def change_policy_source(self, *, url):
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        if parsed.scheme not in ("ws", "wss") or not parsed.hostname:
+            raise ValueError("来源地址需为 ws:// 或 wss://")
+        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
+            raise ValueError("请先暂停并结束录制再切换来源")
+        if self.worker is None or not hasattr(self.worker.client, "url"):
+            raise ValueError("当前会话未创建模型通信客户端")
+        self.policy_commands.put_nowait(("source", url))
+
     def restart_planner(self):
         if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
             raise ValueError("请先暂停模型并结束本集录制")
@@ -396,6 +408,10 @@ class Runtime:
                             self.operator_error = None
                         elif policy_command[0] == "restart_planner":
                             self.worker.request_planner_restart()
+                            self.operator_error = None
+                        elif policy_command[0] == "source":
+                            self.session.rewind_replay()
+                            self.worker.request_source(policy_command[1])
                             self.operator_error = None
                         else:
                             self.worker.request_restart()
@@ -522,6 +538,8 @@ class Runtime:
                         and self.maintenance.state == "idle"
                     ),
                 )
+                if original_event in ("home", "home_leader", "gravity") and event == "hold":
+                    self.session.rewind_replay()
                 previous_phase = a.phase
                 decision = self.session.tick(
                     q,
@@ -535,6 +553,11 @@ class Runtime:
                     leader_ready=(a.mode == Mode.INFERENCE or error <= a.handover_error),
                     event=event,
                     policy_tick=tick,
+                )
+                leader_homing = (
+                    self.maintenance.state == "homing"
+                    and self.maintenance.home_leader_only
+                    and not self.maintenance.latched
                 )
                 maintenance_action = self.maintenance.step(q, leader, now=now, dt=period)
                 jog_action = self.jog.step(
@@ -571,6 +594,7 @@ class Runtime:
                         if maintenance_action is not None
                         else {}
                     ),
+                    **({"leader_homing": True} if leader_homing else {}),
                     **({"gravity": True} if self.maintenance.state == "gravity" else {}),
                 )
                 if a.rtc_timeline is not None:
@@ -579,6 +603,9 @@ class Runtime:
                     except RuntimeError as exc:
                         a.hold(submitted)
                         self.operator_error = str(exc)
+                if maintenance_action is None and jog_action is None:
+                    self.session.submitted(decision)
+                if a.rtc_timeline is not None:
                     if (
                         obs is not None and fresh and self.worker is not None
                         and self.worker.ready and a.phase in (Phase.RESUME, Phase.POLICY)
@@ -634,6 +661,7 @@ class Runtime:
                     "event": original_event,
                     "maintenance": self.maintenance.state,
                     "home_group": "leader" if self.maintenance.home_leader_only else "follower",
+                    "policy_url": getattr(self.worker.client, "url", "") if self.worker else "",
                     "stop_latched": self.maintenance.latched,
                     "epoch": decision.epoch,
                     "source": decision.source,
@@ -743,6 +771,7 @@ class Runtime:
                     "stop_latched": self.maintenance.latched,
                     "maintenance": self.maintenance.state,
                     "home_group": "leader" if self.maintenance.home_leader_only else "follower",
+                    "policy_url": getattr(self.worker.client, "url", "") if self.worker else "",
                     "maintenance_error": self.maintenance.error,
                     "operator_error": self.operator_error,
                     "ready_pose": self.maintenance.ready,

@@ -365,7 +365,12 @@
                   </label>
                   <button class="button primary" id="policy-apply" type="submit">应用</button>
                 </form>
-                <button class="button subtle policy-restart" id="policy-restart" type="button">重载 Thor 通信</button>
+                <form id="policy-source-form" class="policy-settings">
+                  <label>推理 / 回放地址<input id="policy-source-url" type="text" placeholder="ws://主机:端口" /></label>
+                  <button class="button" id="policy-source-apply" type="submit">切换来源</button>
+                </form>
+                <p class="muted" id="policy-source-current"></p>
+                <button class="button subtle policy-restart" id="policy-restart" type="button">重载推理通信</button>
                 <button class="button subtle policy-restart" id="planner-restart" type="button">重载动作规划</button>
               </section>
               <section class="panel health-panel">

@@ -49,6 +49,7 @@ class PolicyWorker:
         self._stop = threading.Event()
         self._restart = threading.Event()
         self._requested_rtc: bool | None = None
+        self._requested_url = None
         self._restart_planner = threading.Event()
         self._ready = threading.Event()
         self.restart_error = None
@@ -109,6 +110,12 @@ class PolicyWorker:
         self._update_ready()
         self._restart_planner.set()
 
+    def request_source(self, url):
+        self._requested_url = url
+        self._client_ready = False
+        self._update_ready()
+        self._restart.set()
+
     @property
     def ready(self):
         return self._ready.is_set() and (
@@ -129,6 +136,10 @@ class PolicyWorker:
                     try:
                         requested_rtc = self._requested_rtc
                         self._requested_rtc = None
+                        requested_url = self._requested_url
+                        self._requested_url = None
+                        if requested_url is not None:
+                            self.client.url = requested_url
                         if requested_rtc is None:
                             self.client.restart()
                         else:
@@ -229,6 +240,9 @@ class PlainPolicyClient:
 
     def infer(self, observation):
         try:
+            observation = dict(observation)
+            if self.metadata.get("source") != "recorded_replay":
+                observation.pop("_replay_cursor", None)
             started = time.monotonic()
             packed = self._packer.pack(observation)
             packed_at = time.monotonic()

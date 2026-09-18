@@ -316,10 +316,12 @@ class YamLeaderArm:
         return _feedback_age(self._robot)
 
     def set_manual_control(self, manual: bool, gain_scale: float = 0.2):
-        if self._hil_manual == manual:
-            return
         if not 0 < gain_scale <= 1:
             raise ValueError("leader gain scale must be in (0,1]")
+        if self._hil_manual == manual and (
+            manual or getattr(self, "_hil_gain_scale", None) == gain_scale
+        ):
+            return
         if manual:
             self._robot.update_kp_kd(kp=np.zeros(self._n), kd=np.zeros(self._n))
             self._robot.enter_gravity_comp_idle()
@@ -328,6 +330,7 @@ class YamLeaderArm:
             self._robot.update_kp_kd(kp=self._native_kp * gain_scale, kd=self._native_kd.copy())
             self._robot.command_joint_pos(current)
         self._hil_manual = manual
+        self._hil_gain_scale = gain_scale
 
     def close_hil(self):
         self._robot.close()

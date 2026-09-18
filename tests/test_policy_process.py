@@ -99,11 +99,13 @@ def test_policy_settings_api_validates_and_forwards_without_motor_calls():
     configured = []
     reloaded = []
     planner_reloaded = []
+    sources = []
     owner = SimpleNamespace(
         status={"phase": "hold"},
         configure_policy=lambda **settings: configured.append(settings),
         restart_policy=lambda: reloaded.append(True),
         restart_planner=lambda: planner_reloaded.append(True),
+        change_policy_source=lambda **settings: sources.append(settings),
     )
     headers = {"X-YAM-Control": "1"}
     with TestClient(create_app(owner)) as client:
@@ -128,9 +130,33 @@ def test_policy_settings_api_validates_and_forwards_without_motor_calls():
         }).status_code == 422
         assert client.post("/policy/restart", headers=headers).status_code == 200
         assert client.post("/policy/planner/restart", headers=headers).status_code == 200
+        assert client.post("/policy/source", headers=headers,
+                           json={"url": "ws://127.0.0.1:8002"}).status_code == 200
     assert configured == [
         {"fusion": "tda_smooth"},
         {"fusion": "rtc", "rtc_delay_steps": 9},
     ]
     assert reloaded == [True]
     assert planner_reloaded == [True]
+    assert sources == [{"url": "ws://127.0.0.1:8002"}]
+
+
+def test_source_change_only_queues_and_requires_hold():
+    import queue
+
+    from yam_abc_reproduce.hil.run import Runtime
+
+    owner = Runtime.__new__(Runtime)
+    owner.status = {"phase": "hold"}
+    owner.recorder = SimpleNamespace(recording=False)
+    owner.worker = SimpleNamespace(client=SimpleNamespace(url="ws://old:8000"))
+    owner.policy_commands = queue.Queue()
+    owner.change_policy_source(url="ws://new:8002")
+    assert owner.policy_commands.get_nowait() == ("source", "ws://new:8002")
+    assert owner.worker.client.url == "ws://old:8000"
+    owner.status["phase"] = "policy"
+    with pytest.raises(ValueError, match="暂停"):
+        owner.change_policy_source(url="ws://new:8002")
+    owner.status["phase"] = "hold"
+    with pytest.raises(ValueError, match="地址"):
+        owner.change_policy_source(url="http://invalid")

@@ -127,7 +127,8 @@ class StationIO:
         return target
 
     def apply(
-        self, decision, q, leader, *, dt, mirror=True, maintenance_leader=None, gravity=False
+        self, decision, q, leader, *, dt, mirror=True, maintenance_leader=None, gravity=False,
+        leader_homing=False,
     ):
         target = self.limit_policy_target(decision.action)
         self._policy_trace = None
@@ -178,7 +179,8 @@ class StationIO:
                     self._mock_leaders[i * 7 : i * 7 + 6] = leader_targets[i]
             else:
                 u.agent.hil_leader_command(
-                    leader_targets[i], manual=manual, gain_scale=self.leader_gain
+                    leader_targets[i], manual=manual,
+                    gain_scale=0.4 if leader_homing and maintenance_leader is not None else self.leader_gain,
                 )
             stamps[f"{u.name}_leader"] = time.monotonic()
         self._manual = manual

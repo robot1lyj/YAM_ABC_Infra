@@ -592,6 +592,45 @@ def test_freeze_targets_each_leader_current_pose_before_gravity_handover():
     assert all(not np.any(call[1]) for call in calls[2:])
 
 
+def test_panel_stop_overrides_mirror_and_holds_both_leaders_and_followers():
+    from yam_abc_reproduce.hil.maintenance import Maintenance
+
+    q, h = np.full(14, .2), np.full(14, .6)
+    calls = []
+    units = []
+    for name in ("left", "right"):
+        robot = SimpleNamespace(
+            joint_limits=lambda: np.tile([-3., 3.], (6, 1)),
+            get_joint_pos=lambda: np.zeros(7),
+            command_joint_pos=lambda target: calls.append(("follower", target.copy())),
+        )
+        agent = SimpleNamespace(
+            hil_leader_command=lambda target, **kw: calls.append(("leader", target.copy(), kw))
+        )
+        units.append(SimpleNamespace(name=name, robot=robot, agent=agent))
+    io, m, a = StationIO(units), Maintenance(), Arbiter(Mode.HIL, policy_fusion="rtc")
+    a.start(q)
+    event = m.command("stop", q, h, now=0, paused=False)
+    a.hold(q)
+    assert event == "hold" and m.latched
+    # Feedback moves after the stop. Targets must stay at the stop snapshot,
+    # not continue mirroring the follower or enter gravity-only control.
+    for tick in range(1, 4):
+        q_now, h_now = q + .01, h + .001
+        d = a.step(q_now, h_now, now=tick / 30, dt=1 / 30, policy_tick=tick)
+        target, leader_target = m.step(q_now, h_now, now=tick / 30, dt=1 / 30)
+        d.action = target
+        calls.clear()
+        io.apply(d, q_now, h_now, dt=1 / 30, mirror=True,
+                 maintenance_leader=leader_target)
+        for kind, target, kw in calls[:2]:
+            assert kind == "leader" and kw["manual"] is False
+            np.testing.assert_allclose(target, .6)
+        for kind, target in calls[2:]:
+            assert kind == "follower"
+            np.testing.assert_allclose(target, .2)
+
+
 def test_runtime_keyboard_priority_and_handle_only_hands_back(tmp_path):
     import time
 

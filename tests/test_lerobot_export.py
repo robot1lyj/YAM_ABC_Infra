@@ -42,6 +42,7 @@ def make_session(path, images=None):
             measured_state=[0.2] * 14,
             leader_state=[0.8] * 14,
             submitted_action=[0.3] * 14,
+            policy_action=[0.4] * 14 if source == "policy" else None,
             is_intervention=source == "human",
             expert_valid=source == "human",
             observation_valid=True,
@@ -75,6 +76,14 @@ def test_lerobot_keeps_hil_episode_and_signals_and_uses_follower_data(tmp_path):
     assert data["complementary_info.event"] == [8, 1, 2, 4, 8]
     assert data["complementary_info.action_source"] == [1, 2, 0, 2, 1]
     assert data["complementary_info.expert_valid"] == [False, False, True, False, False]
+    assert data["complementary_info.state"] == [0, 1, 1, 2, 0]
+    assert data["complementary_info.collector_policy_id"] == ["policy", None, "human", None, "policy"]
+    np.testing.assert_allclose(data["complementary_info.policy_action"],
+                               [[v] * 14 for v in (.4, 0, 0, 0, .4)])
+    episodes = pq.read_table(out / "meta/episodes/chunk-000/file-000.parquet").to_pydict()
+    assert episodes["episode_success"] == ["success"]
+    manifest = json.loads((source / "episode_000001/manifest.json").read_text())
+    assert manifest["episode_success"] == "success"
     np.testing.assert_allclose(data["timestamp"], np.arange(5) / 30)
     for role, fill in zip(("top", "left", "right"), (30, 90, 180)):
         with av.open(

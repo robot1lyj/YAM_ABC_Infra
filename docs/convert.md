@@ -56,6 +56,9 @@ DAgger继续使用上述`yam_hil_v2`原始格式，策略→介入冻结→人�
 | complementary_info.measured_state | 控制tick的原始Follower反馈 |
 | complementary_info.action_source | 0人工、1策略、2保持 |
 | complementary_info.is_intervention / expert_valid | HIL人工阶段 / 有完整观测的人工训练标签有效性 |
+| complementary_info.policy_action | 对齐Evo-RL：本帧策略候选14D动作；无候选时导出零，原始HDF5保留null/有效性信息 |
+| complementary_info.state | Evo-RL三态：0策略、1介入、2交还；本站冻结属于介入开始，交还等待直到新策略生效 |
+| complementary_info.collector_policy_id | policy/human来源，不保存模型名称或指纹；本站额外HOLD帧为null，不能冒充专家或策略动作 |
 | complementary_info.intervention_id | 累计干预编号，用阶段事件确定区间 |
 | complementary_info.event | 位标志：1介入冻结生效、2人工开始、4交还请求、8策略开始 |
 | complementary_info.source_tick / control_time | 原始控制帧号和RK单调时钟 |
@@ -63,6 +66,8 @@ DAgger继续使用上述`yam_hil_v2`原始格式，策略→介入冻结→人�
 | complementary_info.observation_valid | 本帧是否组成新的有效相机/状态配对 |
 
 标准timestamp使用episode内的名义帧率时间轴；实际设备/接收时刻及同步偏差保存在原始HDF5（旧集为JSONL）。无有效观测时状态回退为当前Follower反馈并标无效，不把保持/等待阶段当专家示范。
+
+`manifest.json`及LeRobot episode元数据补齐Evo-RL的`episode_success`，仅明确标注的`success`/`failure`有值；unknown/aborted不自动变成失败。上述字段按[已核对源码](reference_sources.md#evo-rl)映射，未增设奖励、干预原因、任务阶段或模型打分。原始记录已有相应来源、阶段、候选和结果，旧集可通过离线导出获得这些字段而不改原件。本站action仍取实际提交目标；Evo-RL该版写`action_values`而不是`_sent_action`，两者不能宣称完全相同。
 
 HIL的epoch变化不会拆episode，策略→人工→策略完整保留。真实帧号缺口会分段，避免伪造连续性。aborted和discarded不进入正式数据；失败但正常保存的集保留failure标签，由训练流程审核使用。训练时不能不加筛选地把所有policy/hold帧当作人工示范。
 

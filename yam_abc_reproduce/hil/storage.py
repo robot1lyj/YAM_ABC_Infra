@@ -284,6 +284,7 @@ class SegmentWriter:
                 steps=self.written,
                 segments=self.segments,
                 outcome=outcome,
+                episode_success=outcome if outcome in ("success", "failure") else None,
                 error=self.error,
                 clock="RK host monotonic; camera arrival alignment",
                 action_semantics="absolute submitted follower target after constraints",

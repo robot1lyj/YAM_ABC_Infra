@@ -115,6 +115,9 @@ class DatasetWriter:
         self.features = {
             "observation.state": {"dtype": "float32", "shape": [14], "names": NAMES},
             "action": {"dtype": "float32", "shape": [14], "names": NAMES},
+            "complementary_info.policy_action": {
+                "dtype": "float32", "shape": [14], "names": NAMES,
+            },
             "complementary_info.measured_state": {
                 "dtype": "float32",
                 "shape": [14],
@@ -128,6 +131,8 @@ class DatasetWriter:
             "index": "int64",
             "task_index": "int64",
             "complementary_info.is_intervention": "bool",
+            "complementary_info.state": "float32",
+            "complementary_info.collector_policy_id": "string",
             "complementary_info.action_source": "int64",
             "complementary_info.event": "int64",
             "complementary_info.intervention_id": "int64",
@@ -145,6 +150,7 @@ class DatasetWriter:
                     key,
                     pa.list_(pa.float32(), 14)
                     if feature["shape"] == [14]
+                    else pa.string() if feature["dtype"] == "string"
                     else pa.from_numpy_dtype(feature["dtype"]),
                 )
                 for key, feature in self.features.items()
@@ -165,6 +171,7 @@ class DatasetWriter:
         data = self.root / DATA_PATH.format(chunk_index=chunk, file_index=file)
         data.parent.mkdir(parents=True, exist_ok=True)
         stats, n, batch, first_tick, last_tick = {}, 0, [], None, None
+        intervention_state = 0.0  # Evo-RL S0 policy, S1 intervention, S2 release.
         paths = {
             role: self.root
             / VIDEO_PATH.format(
@@ -178,6 +185,13 @@ class DatasetWriter:
             decoder_stack = stack.enter_context(ExitStack())
             previous_source = None
             for _, row in rows:
+                transitions = row.get("transitions", [])
+                if row.get("is_intervention") or "takeover_applied" in transitions:
+                    intervention_state = 1.0
+                elif "resume_requested" in transitions:
+                    intervention_state = 2.0
+                elif row["source"] == "policy":
+                    intervention_state = 0.0
                 row_source = Path(row.get("_segment", source))
                 if row_source != previous_source:
                     decoder_stack.close()
@@ -197,6 +211,19 @@ class DatasetWriter:
                     .astype(np.float32)
                     .tolist(),
                     "action": vector(row["submitted_action"]).astype(np.float32).tolist(),
+                    # Evo-RL records zero when no policy prediction was made
+                    # during human intervention; the original keeps None.
+                    "complementary_info.policy_action": (
+                        np.zeros(14, dtype=np.float32)
+                        if row.get("policy_action") is None
+                        else np.asarray(row["policy_action"], dtype=np.float32)
+                    ).tolist(),
+                    "complementary_info.state": intervention_state,
+                    # HOLD is a workstation-only state, not a model/human
+                    # action. Keep it null rather than inventing provenance.
+                    "complementary_info.collector_policy_id": (
+                        row["source"] if row["source"] in ("human", "policy") else None
+                    ),
                     "complementary_info.measured_state": vector(row["measured_state"])
                     .astype(np.float32)
                     .tolist(),
@@ -229,6 +256,8 @@ class DatasetWriter:
                     "complementary_info.event_applied_at": row.get("event_applied_at") or -1.0,
                 }
                 for key, value in record.items():
+                    if self.features[key]["dtype"] == "string":
+                        continue
                     values = np.asarray(value).reshape(1, -1)
                     stats.setdefault(key, Moments()).add(values)
                     self.stats.setdefault(key, Moments()).add(values)
@@ -326,6 +355,7 @@ class DatasetWriter:
             "source_tick_from": first_tick,
             "source_tick_to": last_tick,
             "outcome": outcome,
+            "episode_success": outcome if outcome in ("success", "failure") else None,
         }
         for role in ROLES:
             key = f"videos/observation.images.{role}_rgb"

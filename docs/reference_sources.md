@@ -12,6 +12,12 @@
 
 ## Evo-RL
 
+2026-09-18复核`MINT-SJTU/Evo-RL` main `c735d69d098cdefd0fdaf8d2063af06d22dab130`：
+[recording_loop.py](https://github.com/MINT-SJTU/Evo-RL/blob/c735d69d098cdefd0fdaf8d2063af06d22dab130/src/lerobot/scripts/recording_loop.py)、
+[lerobot_record.py](https://github.com/MINT-SJTU/Evo-RL/blob/c735d69d098cdefd0fdaf8d2063af06d22dab130/src/lerobot/scripts/lerobot_record.py)、
+[recording_hil.py](https://github.com/MINT-SJTU/Evo-RL/blob/c735d69d098cdefd0fdaf8d2063af06d22dab130/src/lerobot/scripts/recording_hil.py)。
+该采集路径记录`complementary_info.policy_action/is_intervention/state`，可选`collector_policy_id`及整集`episode_success`；S0/S1/S2=0/1/2，无策略输出以零填充。本站按这些实际字段补齐[导出合同](convert.md)，不将数据卡中多信号奖励的设计描述当作采集器已实现字段。
+
 审查 `src/lerobot/utils/control_utils.py`、`scripts/recording_loop.py` 和 `scripts/recording_hil.py`。
 
 - 默认干预键为 `i`，不是握持触发。

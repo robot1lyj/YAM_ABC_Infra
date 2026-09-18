@@ -26,9 +26,11 @@ def test_replay_refuses_rtc_and_unaligned_start_without_consuming_frames():
     replay = ReplayPolicy(np.zeros((50, 14)))
     with pytest.raises(ValueError, match="sync_hold"):
         replay.infer({"rtc": {}})
-    with pytest.raises(ValueError, match="start pose"):
-        replay.infer({"observation.state": np.ones(14),
-                      "_replay_cursor": {"next_frame": 0, "epoch": 1}})
+    result = replay.infer({"observation.state": np.ones(14),
+                           "_replay_cursor": {"next_frame": 0, "epoch": 1}})
+    assert result["server_timing"]["replay_refused"]
+    np.testing.assert_array_equal(result["actions"], np.ones((50, 14)))
+    assert replay.epoch is None
     assert replay.cursor == 0
 
 
@@ -44,8 +46,8 @@ def test_replay_pause_resumes_executed_frame_not_end_of_sent_block():
     np.testing.assert_array_equal(replay.infer(request(7, 2))["actions"], targets[7:57])
     wrong_pose = request(7, 3)
     wrong_pose["observation.state"] = np.ones(14)
-    with pytest.raises(ValueError, match="start pose"):
-        replay.infer(wrong_pose)
+    assert replay.infer(wrong_pose)["server_timing"]["replay_refused"]
+    assert replay.cursor == 7 and replay.epoch == 2
 
 
 def test_session_cursor_only_acknowledges_submitted_active_decisions():

@@ -13,6 +13,7 @@ from enum import StrEnum
 
 import numpy as np
 
+from . import interaction_rules
 from .action_buffer import ActionBuffer
 from .planned_buffer import PlannedActionBuffer
 from .rtc_timeline import RtcTimeline
@@ -170,8 +171,10 @@ class Arbiter:
         self.fault_reason: str | None = None
         self._offset = np.zeros(14)
         self._leader_frozen = None
+        self.interaction_rules = interaction_rules
 
     def _transition(self, phase: Phase, state: np.ndarray):
+        self._leader_frozen = None
         self._active_request = None
         self._last_request_at = -float("inf")
         self.last_request_reason = None
@@ -207,25 +210,16 @@ class Arbiter:
         self._previous_grip = h[[6, 13]].copy()
 
     def takeover(self, state, leader):
-        if self.mode != Mode.HIL or self.phase not in (Phase.POLICY, Phase.RESUME):
-            return
-        q, h = vector(state), vector(leader)
-        self._transition(Phase.TAKEOVER, q)
-        self._leader_frozen = h.copy()
+        self.interaction_rules.takeover(self, state, leader)
 
     def manual_ready(self, state, leader):
-        if self.mode != Mode.HIL or self.phase != Phase.TAKEOVER:
-            return
-        q, h = vector(state), vector(leader)
-        self._transition(Phase.HUMAN, q)
-        self._offset = q - h
-        self._offset[[6, 13]] = 0
-        self._pickup = [False, False]
-        self._previous_grip = h[[6, 13]].copy()
+        self.interaction_rules.manual_ready(self, state, leader)
+
+    def handback_hold(self, state, leader):
+        self.interaction_rules.handback_hold(self, state, leader)
 
     def resume_policy(self, state):
-        if self.mode == Mode.HIL and self.phase == Phase.HUMAN:
-            self._transition(Phase.RESUME, state)
+        self.interaction_rules.resume_policy(self, state)
 
     def hold(self, state):
         if self.phase != Phase.FAULT:
@@ -520,11 +514,11 @@ class Arbiter:
             self.epoch,
             self.phase == Phase.HUMAN and self.mode == Mode.HIL,
             policy is not None,
-            self.phase in (Phase.HUMAN, Phase.HOLD, Phase.FAULT),
+            self.phase in (Phase.HUMAN, Phase.HOLD, Phase.FAULT) and self._leader_frozen is None,
             tuple(self._pickup),
             self._active_request if policy is not None else None,
             action_index,
-            self.phase == Phase.TAKEOVER,
+            self._leader_frozen is not None,
             self.action_buffer.last_selection if policy is not None and self.streaming else None,
-            self._leader_frozen.copy() if self.phase == Phase.TAKEOVER else None,
+            self._leader_frozen.copy() if self._leader_frozen is not None else None,
         )

@@ -694,6 +694,12 @@ class Workbench:
         self.runtime.restart_policy()
         self.log("已请求重载推理通信子进程；机械臂保持连接")
 
+    def reload_interaction(self):
+        if self.runtime is None or self.state != "connected" or self.initializing:
+            raise ValueError("请先连接设备并退出初始化向导")
+        self.runtime.reload_interaction()
+        self.log("已请求HOLD下重载交互规则；不关闭SDK或释放力矩")
+
     def change_policy_source(self, *, url):
         if self.runtime is None or self.state != "connected" or self.initializing:
             raise ValueError("请先连接设备并退出初始化向导")

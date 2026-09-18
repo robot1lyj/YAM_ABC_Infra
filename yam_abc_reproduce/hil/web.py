@@ -117,6 +117,11 @@ def create_app(runtime):
         invoke(runtime.restart_policy)
         return {"queued": "policy_restart"}
 
+    @app.post("/control/reload")
+    def interaction_reload():
+        invoke(runtime.reload_interaction)
+        return {"queued": "interaction_reload"}
+
     @app.post("/policy/source")
     def policy_source(body: PolicySource):
         invoke(runtime.change_policy_source, url=body.url)

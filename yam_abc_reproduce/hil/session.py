@@ -15,6 +15,7 @@ class Session:
         self.worker = worker
         self.rtc_limit_target = rtc_limit_target
         self.last_reply = None
+        self.notice = None
         self.replay_next_frame = 0
         self._replay_block = None
 
@@ -48,6 +49,8 @@ class Session:
     ):
         self.last_reply = None
         # Local events take precedence over a policy response arriving this tick.
+        if event in ("start", "resume_policy"):
+            self.notice = None
         if event == "start":
             self.arbiter.start(state, leader)
         elif event == "takeover":
@@ -56,6 +59,8 @@ class Session:
             self.arbiter.resume_policy(state)
         elif event == "manual_ready":
             self.arbiter.manual_ready(state, leader)
+        elif event == "handback_hold":
+            self.arbiter.handback_hold(state, leader)
         elif event == "hold":
             self.arbiter.hold(state)
         elif event and event.startswith("mode:"):
@@ -97,7 +102,13 @@ class Session:
                         "rtc_slack_ticks": takeover - policy_tick,
                     })
             if reply is not None and reply.token == self.arbiter.pending:
-                if reply.error:
+                refusal = (reply.server_timing or {}).get("replay_refused")
+                if refusal and (reply.server_timing or {}).get("source") == "recorded_replay":
+                    self.arbiter.hold(state)
+                    self.arbiter._leader_frozen = np.asarray(leader).copy()
+                    self.notice = str(refusal)
+                    self.last_reply["discarded"] = True
+                elif reply.error:
                     if reply.planner_error:
                         self.arbiter.hold(state)
                     else:

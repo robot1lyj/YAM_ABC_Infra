@@ -153,7 +153,8 @@ stateDiagram-v2
   RESUME --> POLICY: 新策略有效且Leader就绪
   POLICY --> TAKEOVER: 键盘i冻结目标
   TAKEOVER --> HUMAN: 右Leader①新按下后相对遥操作
-  HUMAN --> RESUME: 手柄①交还
+  HUMAN --> HOLD: 手柄①高增益锁定待交还
+  HOLD --> RESUME: 页面明确交还
   RESUME --> TAKEOVER: 键盘i再次介入
   POLICY --> HOLD: 保持或观测持续过期
   HUMAN --> HOLD: 保持或切换产品模式
@@ -181,10 +182,12 @@ Web/API与常驻设备进程已拆开；录制编码和Thor通信各有子进程
 1. HIL模型执行期间Leader和Follower共享硬限位后的关节目标，手柄不接收夹爪目标。当前30Hz直达SDK，不代表物理同步；备用高频滤波时Leader采样滤波后的目标。键盘 `i` 通过独立有界高优先级通道介入，不排在普通界面命令后面。手柄不负责接管。
 2. 当前周期冻结Follower和Leader目标，增加epoch使旧动作块和在途结果失效，记录事件请求和实际提交时刻。
 3. TAKEOVER持续保持介入瞬间四臂各自目标；Leader用原生Kp的40%锁定（Kd不变），不再下一周期自动松开。右Leader①的新按下沿才进入HUMAN，恢复原手动重力补偿；相对偏移按解锁瞬间重新计算，避免追赶镜像误差。夹爪仍用软接管。增益保持不是实体急停或绝对不漂移的保证。
-4. 人工阶段手柄①发出交还请求。Follower暂时保持，Leader受限镜像对齐；新观测策略有效且就绪才恢复。
+4. 人工阶段手柄①只锁定当前四臂姿态，Leader恢复40%原生Kp；不会立即对齐或请求模型。页面明确交还后才进入RESUME，Follower暂时保持，Leader受限镜像对齐；新观测策略有效且就绪才恢复。
 5. HIL全部阶段在一个episode里，冻结/等待标hold，人工标human；干预编号和阶段事件进入LeRobot附加字段。键盘空格单独暂停，两个手柄都不承担全局停止。
 
 ## 模块映射
+
+HOLD且未录制、无维护/急停锁存时，`POST /control/reload`可热替换已安装的`interaction_rules.py`（按钮、介入/解锁/交还和保持增益）。编译在请求线程进行，控制线程边界交换规则引用；保留SDK对象、冻结目标、回放确认游标，作废旧策略epoch，不自动运动。不是整个控制进程任意热更新：核心数据结构、SDK实现和安全执行器变更仍需受控部署。已有Thor通信、动作规划、录制进程保持独立重载边界。首次引入新入口仍须一次设备更新。
 
 路径均相对 `yam_abc_reproduce/`。
 

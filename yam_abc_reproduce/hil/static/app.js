@@ -190,6 +190,7 @@ function render() {
   $("policy-source-apply").disabled = !policyEditable || !!state.mock;
   $("policy-source-url").disabled = !policyEditable || !!state.mock;
   $("policy-source-local").disabled = !policyEditable || !!state.mock;
+  $("interaction-reload").disabled = !policyEditable;
   $("policy-source-thor").disabled = !policyEditable || !!state.mock;
   if (!$("policy-source-url").value) $("policy-source-url").value = state.policy_url || "";
   text("policy-source-current", `当前来源：${state.policy_url || "未配置"}`);
@@ -218,7 +219,7 @@ function render() {
         : maint === "gravity"
           ? "重力补偿"
           : connected
-            ? phases[state.phase] || state.phase
+            ? (state.phase === "hold" && state.leader_locked ? "已锁定 · 等待页面交还" : phases[state.phase] || state.phase)
             : "未就绪",
   );
   text(
@@ -257,7 +258,7 @@ function render() {
     mode === "hil" &&
     ["policy", "resume"].includes(state.phase)
   );
-  $("resume").disabled = !(canRun && mode === "hil" && state.phase === "human");
+  $("resume").disabled = !(canRun && mode === "hil" && (state.phase === "human" || (paused && state.leader_locked)));
   text(
     "handle-hint",
     teleopView
@@ -265,7 +266,7 @@ function render() {
       : mode === "collect"
       ? "手柄① 开始 / 结束录制　\n手柄② 放弃当前集"
       : mode === "hil"
-        ? "键盘 I 冻结并接管　\n手柄① 交还模型 · ② 无功能"
+        ? "I 介入锁定 → 右①遥操作 → ①锁定待交还　\n点击交还模型继续 · ② 无功能"
         : "手柄按钮不分配功能",
   );
   text(
@@ -1133,6 +1134,9 @@ $("policy-source-form").onsubmit = async (e) => {
   if (await action("/policy/source", { url })) toast("来源切换已提交；机械臂保持连接，不自动运动");
 };
 $("policy-source-local").onclick = () => { $("policy-source-url").value = "ws://127.0.0.1:8002"; };
+$("interaction-reload").onclick = async () => {
+  if (await action("/control/reload")) toast("交互规则已提交重载；设备保持连接，不自动运动");
+};
 $("policy-source-thor").onclick = () => { $("policy-source-url").value = "ws://192.168.250.1:8000"; };
 $("policy-restart").onclick = async () => {
   if (await action("/policy/restart")) toast("推理通信子进程正在重载；机械臂保持连接");

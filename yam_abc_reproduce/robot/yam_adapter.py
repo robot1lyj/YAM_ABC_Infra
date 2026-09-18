@@ -335,6 +335,16 @@ class YamLeaderArm:
     def close_hil(self):
         self._robot.close()
 
+    def control_status(self):
+        # Idle commands use _grav_comp_kd, not the configured position _kd.
+        command = getattr(self._robot, "_commands", None)
+        return {
+            "manual": self._hil_manual,
+            "kp": np.asarray(command.kp).tolist() if command is not None else None,
+            "kd": np.asarray(command.kd).tolist() if command is not None else None,
+            "friction_compensation": getattr(self._robot, "use_coulomb_friction", None),
+        }
+
     def command_arm(self, arm_joints: np.ndarray) -> None:
         """Command the leader arm joints (bilateral force feedback only)."""
         self._robot.command_joint_pos(np.asarray(arm_joints, dtype=np.float64).reshape(-1))
@@ -403,6 +413,9 @@ class YamTeleop(TeleopAgent):
         leader.set_manual_control(manual, gain_scale)
         if not manual:
             leader.command_arm(joints)
+
+    def hil_leader_status(self):
+        return self._require_leader().control_status()
 
     def close_hil(self):
         self._require_leader().close_hil()

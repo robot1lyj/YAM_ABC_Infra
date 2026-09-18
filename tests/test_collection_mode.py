@@ -148,8 +148,8 @@ def test_handle_buttons_independent_edges_and_no_hil_takeover():
 
     assert read([[True, False], [False, False]], 0) is None
     read([[False, False], [False, False]], 0.3)
-    assert read([[True, False], [False, False]], 0.6) == "resume_policy"
-    assert read([[True, False], [True, False]], 1) == "resume_policy"
+    assert read([[True, False], [False, False]], 0.6) == "handback_hold"
+    assert read([[True, False], [True, False]], 1) == "handback_hold"
     assert read([[False, True], [False, False]], 1.3) is None
     assert read([[True, True], [False, False]], 1.6, phase=Phase.POLICY) is None
 
@@ -169,7 +169,7 @@ def test_takeover_unlock_requires_fresh_right_primary_edge():
     assert read(False, True, 5) == "manual_ready"
     assert read(False, True, 6, Phase.HUMAN) is None  # no immediate handback
     assert read(False, False, 7, Phase.HUMAN) is None
-    assert read(False, True, 8, Phase.HUMAN) == "resume_policy"
+    assert read(False, True, 8, Phase.HUMAN) == "handback_hold"
     assert read(False, False, 9, Phase.FAULT) is None
     assert read(False, True, 10, Phase.FAULT) is None
 
@@ -183,12 +183,12 @@ def test_handle_primary_action_per_mode_and_discard_priority():
         assert b.read([[True, False]] * 2, now=1, mode=mode, phase=Phase.HOLD) is None
         b.read([[False, False]] * 2, now=2, mode=mode, phase=Phase.HUMAN)
         expected = (
-            "record" if mode == Mode.COLLECT else "resume_policy" if mode == Mode.HIL else None
+            "record" if mode == Mode.COLLECT else "handback_hold" if mode == Mode.HIL else None
         )
         assert b.read([[True, False]] * 2, now=3, mode=mode, phase=Phase.HUMAN) == expected
         b.read([[False, False]] * 2, now=4, mode=mode, phase=Phase.HUMAN)
         expected = (
-            "discard" if mode == Mode.COLLECT else "resume_policy" if mode == Mode.HIL else None
+            "discard" if mode == Mode.COLLECT else "handback_hold" if mode == Mode.HIL else None
         )
         assert b.read([[True, True]] * 2, now=5, mode=mode, phase=Phase.HUMAN) == expected
 

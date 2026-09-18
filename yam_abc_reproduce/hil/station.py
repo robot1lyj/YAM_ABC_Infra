@@ -6,11 +6,16 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from ..resource_qos import place_on_cpus
+from . import interaction_rules
 from .core import vector
 from .trajectory import TrajectoryExecutor
 
 
 class StationIO:
+    def leader_control_status(self):
+        return [{"name": u.name, **u.agent.hil_leader_status()}
+                for u in self.units if hasattr(u.agent, "hil_leader_status")]
+
     def __init__(
         self,
         units,
@@ -153,7 +158,7 @@ class StationIO:
             self._policy_trajectory.submit(target)
             submitted = self._policy_trajectory.latest()
             self._policy_trace = self._policy_trajectory.drain_trace()
-        manual = (decision.leader_manual or not mirror) and maintenance_leader is None
+        manual = (decision.leader_manual or not mirror) and maintenance_leader is None and not decision.leader_freeze
         leader_targets = []
         for i, limits in enumerate(self._limits):
             sl = slice(i * 7, i * 7 + 6)
@@ -181,7 +186,7 @@ class StationIO:
             else:
                 u.agent.hil_leader_command(
                     leader_targets[i], manual=manual,
-                    gain_scale=0.4 if (
+                    gain_scale=getattr(self, "interaction_rules", interaction_rules).HOLD_GAIN if (
                         (leader_homing and maintenance_leader is not None)
                         or (decision.leader_freeze and maintenance_leader is None)
                     ) else self.leader_gain,

@@ -81,6 +81,9 @@ class DeviceClient:
     def restart_policy(self):
         return self._request("POST", "/policy/restart")
 
+    def reload_interaction(self):
+        return self._request("POST", "/control/reload")
+
     def change_policy_source(self, *, url):
         return self._request("POST", "/policy/source", {"url": url})
 

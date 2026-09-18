@@ -757,6 +757,9 @@ def test_runtime_keyboard_priority_and_handle_only_hands_back(tmp_path):
         wait(lambda: runtime.status["tick"] > tick + 2)
         assert runtime.status["phase"] == "human"
         keys[1][0] = True
+        wait(lambda: runtime.status["phase"] == "hold")
+        assert runtime.status["leader_locked"]
+        runtime.event("resume_policy")
         wait(lambda: runtime.status["phase"] == "policy")
         keys[1][1] = True
         tick = runtime.status["tick"]

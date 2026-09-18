@@ -65,8 +65,18 @@ class ReplayPolicy:
             state = np.asarray(observation["observation.state"], dtype=np.float64)
             if state.shape != (14,) or not np.isfinite(state).all():
                 raise ValueError("replay needs finite current follower state")
-            if np.max(abs(state[JOINTS] - self.targets[min(start, len(self.targets) - 1), JOINTS])) > self.tolerance:
-                raise ValueError("replay start pose differs from current follower pose")
+            error = np.max(abs(state[JOINTS] - self.targets[min(start, len(self.targets) - 1), JOINTS]))
+            if error > self.tolerance:
+                return {
+                    "actions": np.tile(state, (50, 1)),
+                    "server_timing": {
+                        "source": "recorded_replay",
+                        "replay_refused": (
+                            f"回放保持：当前姿态距第{start}帧最大差{error:.3f}rad，"
+                            f"超过{self.tolerance:.3f}rad。请先安全对齐或切换模型来源；未推进回放。"
+                        ),
+                    },
+                }
         self.epoch = epoch
         indices = np.minimum(np.arange(start, start + 50), len(self.targets) - 1)
         self.cursor = start

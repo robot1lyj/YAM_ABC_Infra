@@ -1,5 +1,6 @@
 """Mode-specific official handles. HIL takeover is never a handle event."""
 
+from . import interaction_rules
 from .core import Mode, Phase
 
 
@@ -8,6 +9,7 @@ class HandleButtons:
         self.previous = None
         self.last = [-float("inf"), -float("inf")]
         self.debounce = debounce
+        self.interaction_rules = interaction_rules
 
     def read(self, buttons, *, now, mode, phase):
         pairs = [buttons] if buttons and isinstance(buttons[0], bool) else buttons
@@ -21,15 +23,13 @@ class HandleButtons:
                 self.last[i] = now
         if phase == Phase.FAULT:
             return None
-        if mode == Mode.HIL and phase == Phase.TAKEOVER:
+        if mode == Mode.HIL:
             right_edge = len(current) == 2 and current[1][0] and not old[1][0]
-            return "manual_ready" if right_edge and pressed[0] else None
+            return self.interaction_rules.button_event(mode, phase, right_edge, pressed[0])
         if mode == Mode.COLLECT:
             # A held discard also suppresses a simultaneous/overlapping start.
             if any(p[1] for p in current):
                 return "discard" if pressed[1] else None
             if pressed[0] and phase == Phase.HUMAN:
                 return "record"
-        if mode == Mode.HIL and phase == Phase.HUMAN and pressed[0]:
-            return "resume_policy"
         return None

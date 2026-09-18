@@ -317,6 +317,15 @@ class Runtime:
             raise ValueError("当前策略不支持独立重载")
         self.policy_commands.put_nowait(("restart",))
 
+    def reload_interaction(self):
+        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
+            raise ValueError("请先暂停并结束录制，再重载交互规则")
+        if self.maintenance.latched or self.maintenance.state != "idle":
+            raise ValueError("请先结束维护并解除紧急暂停锁存")
+        from .interaction_rules import load_rules
+        candidate = load_rules()  # File IO/compilation outside control tick.
+        self.policy_commands.put_nowait(("interaction", candidate))
+
     def change_policy_source(self, *, url):
         from urllib.parse import urlparse
 
@@ -373,11 +382,22 @@ class Runtime:
                 except queue.Empty:
                     policy_command = None
                 if policy_command is not None:
-                    if a.phase != Phase.HOLD or getattr(self.recorder, "recording", False):
+                    if (a.phase != Phase.HOLD or getattr(self.recorder, "recording", False)
+                            or (policy_command[0] == "interaction" and
+                                (self.maintenance.latched or self.maintenance.state != "idle"))):
                         self.operator_error = "推理设置未应用：设备已离开保持状态"
                     else:
-                        a._transition(Phase.HOLD, q)  # Invalidate any old policy reply.
-                        if policy_command[0] == "configure":
+                        frozen = a._leader_frozen
+                        a._transition(Phase.HOLD, a._hold if policy_command[0] == "interaction" else q)
+                        if frozen is not None:
+                            a._leader_frozen = frozen
+                        if policy_command[0] == "interaction":
+                            candidate = policy_command[1]
+                            a.interaction_rules = candidate
+                            self.io.interaction_rules = candidate
+                            self.handle_buttons.interaction_rules = candidate
+                            self.operator_error = None
+                        elif policy_command[0] == "configure":
                             old_fusion = a.action_buffer.fusion
                             a.streaming = policy_command[1] != "sync_hold"
                             a.execute_steps = (
@@ -645,7 +665,9 @@ class Runtime:
                     transitions.append("takeover_applied")
                 if a.phase == Phase.HUMAN and previous_phase == Phase.TAKEOVER:
                     transitions.append("human_started")
-                if a.phase == Phase.RESUME and previous_phase == Phase.HUMAN:
+                if a.phase == Phase.HOLD and event == "handback_hold":
+                    transitions.append("handback_locked")
+                if a.phase == Phase.RESUME and event == "resume_policy":
                     transitions.append("resume_requested")
                 if a.phase == Phase.POLICY and previous_phase != Phase.POLICY:
                     transitions.append("policy_started")
@@ -775,7 +797,10 @@ class Runtime:
                     "home_group": "leader" if self.maintenance.home_leader_only else "follower",
                     "policy_url": getattr(self.worker.client, "url", "") if self.worker else "",
                     "maintenance_error": self.maintenance.error,
-                    "operator_error": self.operator_error,
+                    "operator_error": self.operator_error or self.session.notice,
+                    "interaction_revision": getattr(a.interaction_rules, "revision", "bundled"),
+                    "leader_locked": a._leader_frozen is not None,
+                    "leader_control": self.io.leader_control_status() if hasattr(self.io, "leader_control_status") else [],
                     "ready_pose": self.maintenance.ready,
                     "ready_version": self.maintenance.ready_version,
                     "updated_at": time.monotonic(),

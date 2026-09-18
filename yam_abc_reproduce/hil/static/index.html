@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>悟演智能 · 数据采集工作台</title>
     <link rel="stylesheet" href="/assets/style.css" />
+    <link rel="stylesheet" href="/assets/console.css?v=1" />
   </head>
   <body>
     <svg class="icon-library" aria-hidden="true">
@@ -356,6 +357,7 @@
                   <div><span>新块丢步</span><strong id="policy-trim">—</strong></div>
                   <div><span>下发路径</span><strong id="policy-speed">—</strong></div>
                 </div>
+                <details class="policy-disclosure"><summary>推理设置</summary>
                 <form id="policy-form" class="policy-settings">
                   <label>动作块模式
                     <select id="policy-fusion"><option value="sync_hold">同步推理 · 完整 50 步</option><option value="tda_smooth">TDA 推理</option><option value="rtc">RTC 推理 · 原生</option></select>
@@ -375,6 +377,7 @@
                 <p class="muted" id="policy-source-current"></p>
                 <button class="button subtle policy-restart" id="policy-restart" type="button">重载推理通信</button>
                 <button class="button subtle policy-restart" id="planner-restart" type="button">重载动作规划</button>
+                </details>
               </section>
               <section class="panel health-panel">
                 <div class="panel-heading">
@@ -401,7 +404,8 @@
           </div>
         </div>
         <div id="devices-page" hidden>
-          <section class="panel initialization-panel">
+          <details class="panel initialization-panel">
+            <summary>设备初始化 <span>新设备接入与验收</span></summary>
             <div class="panel-heading initialization-heading">
               <div>
                 <div class="eyebrow">NEW DEVICE COMMISSIONING</div>
@@ -446,7 +450,7 @@
               </article>
             </div>
             <p class="maintenance-note">任何异常先按顶部软件急停；现场危险使用物理急停。退出重力补偿后机械臂保持，再保存验收记录。</p>
-          </section>
+          </details>
           <div class="device-layout">
             <section class="panel">
               <div class="panel-heading">

@@ -977,6 +977,7 @@ def main(argv=None, *, service=None):
     )
     p.add_argument("--prefetch-margin", type=float, help="extra deadline reserve in seconds")
     p.add_argument("--web-port", type=int, help="optional local dashboard port")
+    p.add_argument("--executor-socket", help="persistent SDK owner socket; session exit holds, never releases")
     p.add_argument(
         "--device-socket",
         default="/tmp/yam-device.sock",
@@ -1096,7 +1097,9 @@ def main(argv=None, *, service=None):
     if args.web_port:
         required.update(("fastapi", "uvicorn", "cv2"))
     if not args.mock:
-        required.update(("i2rt", "pyrealsense2", "cv2"))
+        required.update(("pyrealsense2", "cv2"))
+        if not args.executor_socket:
+            required.add("i2rt")
         if args.url:
             required.update(("openpi_client", "websockets", "msgpack"))
     missing = sorted(name for name in required if find_spec(name) is None)
@@ -1162,16 +1165,21 @@ def main(argv=None, *, service=None):
                 worker.start()
         else:
             workers = list(service.camera_slots)
-        if not args.mock:
+        if not args.mock and not args.executor_socket:
             can_output = prepare_station_can(cfg)
             print(f"CAN ready: {can_output}", flush=True)
             print(
                 "Opening four YAM arms: motors may energize and grippers may calibrate. Keep leader buttons released.",
                 flush=True,
             )
-        units = build_arm_units(cfg, mock=args.mock)
-        io = StationIO(
-            units,
+        if args.executor_socket:
+            from .remote_station import RemoteStationIO
+            io_type, io_source = RemoteStationIO, args.executor_socket
+        else:
+            units = build_arm_units(cfg, mock=args.mock)
+            io_type, io_source = StationIO, units
+        io = io_type(
+            io_source,
             mock=args.mock,
             leader_gain=hil_cfg.get("leader_gain", 0.2),
             leader_speed=hil_cfg.get("leader_speed", 0.5),
@@ -1220,9 +1228,8 @@ def main(argv=None, *, service=None):
         with Keyboard(runtime.event) if service is None else nullcontext():
             result = runtime.run(duration=args.duration, auto_start=args.demo, demo=args.demo)
         print(json.dumps(result), flush=True)
-        # Release motor control before a potentially slow encoder drain. On a
-        # recording fault this prevents joints or grippers remaining energized
-        # while queued MP4/HDF5 data is finalized.
+        # Legacy IO closes SDKs; remote IO only detaches into persistent HOLD
+        # unless the operator explicitly requested a supported disconnect.
         if io:
             close_errors = io.close()
             io = None

@@ -10,6 +10,8 @@
 
 ## 数据集工作台
 
+机械臂SDK常驻执行层已提供独立`yam-executor`及`--executor-socket`会话接口（**离线通过、尚未迁移IPC**）：会话进程重启只保持四臂，不关闭SDK。启动、迁移与安全边界见[执行层解耦](docs/environment.md#独立sdk执行层待现场迁移)。
+
 ```bash
 uv run --no-sync python -m yam_abc_reproduce.dataset_workbench.web --port 8767
 ```
@@ -24,11 +26,10 @@ uv run --no-sync python -m yam_abc_reproduce.dataset_workbench.web --port 8767
 |---|---|---|
 | 遥操作 `teleop` | 人工输入 | 重力补偿，读取关节与扳机 |
 | 推理 `inference` | Thor 策略 | 不参与控制，不镜像 |
-| DAgger/HIL `hil` | 策略与人工本地切换 | 策略时受限镜像，接管时重力补偿 |
+| DAgger/HIL `hil` | 策略与人工本地切换 | 策略时原生增益跟随；介入锁定后右①解锁人工 |
 | 数据采集 `collect` | 人工输入，手动分段录制 | 重力补偿；①开始/结束，②放弃 |
 
-HIL 通过键盘 `i` 冻结并介入，人工阶段通过手柄①交还模型，不靠握持或力矩猜测。默认双臂一起切换；切换时废弃旧请求和动作缓冲，交还策略时重新取观测推理。推理使用**非RTC单在途异步预取**：执行有效动作时后台向Thor请求最新观测的新块，按本机观测时刻和模型`action_dt`裁掉过期前缀；保留`raw`直接换块和可调的两块短接缝`smooth`，夹爪采用最新预测。`--baseline`保留普通分块基准，不要求模型修改。
-正常约每10个30Hz动作重新请求，并按缓冲剩余时间、观测到动作可用p95和安全余量动态提前；控制循环不等网络。推理/自动运动按3rad/s反馈相对目标包络执行，人工遥操作不受该包络限制；该配置不是底层速度或加速度保证。三相机本地打包短测、condapi协议及真实Thor测量见[验收](docs/acceptance.md)和[接口](docs/condapi_interface.md#推理周期与产物)。
+HIL 通过键盘`i`或页面介入锁定，右①解锁为相对遥操作；人工①再次锁定，页面明确交还模型。推理保留同步完整50步、TDA、训练时RTC三种路径，默认30Hz直接SDK；不再使用旧的反馈相对速度包络。切换作废旧请求和动作缓冲，录制保存实际模式与提交目标。三相机、condapi合同及现场证据见[验收](docs/acceptance.md)和[接口](docs/condapi_interface.md#推理周期与产物)。
 
 ## 五分钟体验
 

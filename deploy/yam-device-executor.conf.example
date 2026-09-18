@@ -1,0 +1,9 @@
+# Opt-in override matching the bundled yam-device.service; inspect local overrides first.
+# Do NOT add PartOf/BindsTo/Requires linking executor lifetime to yam-device.
+[Unit]
+Wants=yam-executor.service
+After=yam-executor.service
+
+[Service]
+ExecStart=
+ExecStart=/data/YAM/.venv/bin/yam-workstation --device-daemon --device-socket=%t/yam-device.sock --executor-socket=%t/yam-executor/owner.sock --station /data/YAM/configs/station_hil.yaml --mode collect --url ws://192.168.250.1:8000

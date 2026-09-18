@@ -1,5 +1,31 @@
 # 中国工作站环境复现
 
+## 独立SDK执行层（待现场迁移）
+
+2026-09-18新增可选架构，尚未在IPC启用；不改变当前测试服务。`yam-executor.service`独占四臂SDK；原`yam-device`变为可重启会话owner（相机、Runtime、维护规划、上层增益选择），Web/模型通信/动作规划/录制沿用已有边界。会话与执行层只通过0600 Unix socket传递协议v1的完整四臂目标、手动标记、增益和执行确认，不传SDK对象。SDK硬限位、反馈时效、指令租约与失联保持在执行层；页面状态断开不等于SDK已释放。
+
+本地无硬件体验，两个终端分别执行：
+
+```bash
+.venv/bin/python -m yam_abc_reproduce.hil.executor_service --station configs/station_hil.yaml --socket /tmp/yam-executor-test.sock --mock
+.venv/bin/yam-workstation --station configs/station_hil.yaml --executor-socket /tmp/yam-executor-test.sock --mock --mode teleop --web-port 8878
+```
+
+协议v1仅支持现有30Hz直达路径；100Hz备用滤波明确拒绝，不悄悄改变其语义。每次`apply`必须收到对应seq的实际写入确认才推进录制/回放；本机单调时间校验有效期。默认250ms无命令即撤销租约、冻结最近可靠反馈位置，不关闭SDK；普通read/status不续命。旧seq、旧租约、过期/未来时间和非法向量拒绝。上层退出、SIGKILL或重启后，新会话显式重新连接，首态HOLD，不恢复旧动作。SDK读写故障锁存；通信恢复不自动解锁硬件故障。持续物理保持仍取决于控制器和总线健康，软件不是实体急停。
+
+正式迁移必须待现场停止测试、支撑四臂后执行：先停止旧会话/设备服务，确保旧SDK全部关闭，才能启用新owner，禁止两者同时写CAN。安装`deploy/yam-executor.service`到用户unit目录，按`deploy/yam-device-executor.conf.example`为现有yam-device添加完整ExecStart覆盖（保留现场额外参数），执行daemon-reload，依次启动executor、device、Web。首次迁移会释放力矩；不授权自动执行。不得用PartOf/BindsTo将executor绑定到会话生命周期。owner启动不构造机器人，显式连接才构造；Restart=no，不能故障后自动重新使能。
+
+迁移后：重启Web或yam-device仅影响上层，SDK继续保持；重启/停止yam-executor仍释放力矩。页面明确“断开”且确认支撑才发送release；普通会话结束/上层服务退出只detach。录制owner仍跟随会话收尾，**不保证活动集跨上层重启无损续写**，但不再因此重建机械臂SDK。相机可随会话重连，不承诺重启期间录像不断帧。
+
+上层不可用时，可独立查看或锁存停止（不构造SDK、不获取控制租约）：
+
+```bash
+.venv/bin/python -m yam_abc_reproduce.hil.executor_ctl --socket "$XDG_RUNTIME_DIR/yam-executor/owner.sock" status
+.venv/bin/python -m yam_abc_reproduce.hil.executor_ctl --socket "$XDG_RUNTIME_DIR/yam-executor/owner.sock" stop
+```
+
+`reset_stop`只清软件锁存，不恢复旧租约或运动；之后重新连接上层。`release --supported`会释放力矩，必须现场支撑；如仍有会话租约，应先stop。socket已存在时owner拒绝启动，不自动unlink另一个owner；异常退出的残留socket须确认无存活owner后由维护人员处理。现场验收需测额外Unix往返耗时、A76负载、上层强杀后的四臂保持、恢复不跳动和断开确实释放；离线模拟不替代这些验收。
+
 ## 项目与依赖
 
 主仓库为 YAM-ABC-Reproduce 的本地工作站分支，保留上游历史。

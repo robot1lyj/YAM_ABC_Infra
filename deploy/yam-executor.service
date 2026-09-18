@@ -1,0 +1,17 @@
+[Unit]
+Description=YAM persistent SDK executor (independent of session service)
+
+[Service]
+Type=simple
+WorkingDirectory=/data/YAM
+ExecStart=/data/YAM/.venv/bin/python -m yam_abc_reproduce.hil.executor_service --station /data/YAM/configs/station_hil.yaml --socket %t/yam-executor/owner.sock
+RuntimeDirectory=yam-executor
+RuntimeDirectoryMode=0700
+UMask=0077
+CPUAffinity=4 5 6 7
+# Never restart/energize hardware automatically after a driver failure.
+Restart=no
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

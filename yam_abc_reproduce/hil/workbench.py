@@ -557,6 +557,8 @@ class Workbench:
             argv.extend(("--url", self.args.url))
         if self.args.baseline:
             argv.append("--baseline")
+        if getattr(self.args, "executor_socket", None):
+            argv.extend(("--executor-socket", self.args.executor_socket))
         for option, value in (
             ("--policy-fusion", getattr(self.args, "policy_fusion", None)),
             ("--action-dt", getattr(self.args, "action_dt", None)),
@@ -623,10 +625,16 @@ class Workbench:
         )
 
     def saved(self):
+        retained = bool(getattr(self.args, "executor_socket", None)) and not getattr(
+            getattr(self.runtime, "io", None), "release_on_close", False
+        )
         self.recording_error = self.runtime.recording_error if self.runtime else None
         self.runtime = None
         self._previews = {}
         self.state = "disconnected"
+        if retained:
+            self.log("会话已结束；SDK执行层未随会话关闭，请检查执行层保持状态后重新接入")
+            return
         self.log(
             "录制中断，机械臂已断开；请检查本集错误与已写入数据"
             if self.recording_error
@@ -724,6 +732,8 @@ class Workbench:
             if not self.initializing:
                 self.mode = self.runtime.status.get("mode", self.mode)
             self.state = "disconnecting"
+            if hasattr(self.runtime.io, "release_on_close"):
+                self.runtime.io.release_on_close = True
             self.runtime.event("quit")
             self.log("正在断开并保存当前会话")
 

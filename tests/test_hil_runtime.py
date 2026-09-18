@@ -389,6 +389,13 @@ def test_official_leader_switches_gains_and_clears_active_commands(monkeypatch):
     before = len(device.calls)
     leader.set_manual_control(True)
     assert len(device.calls) == before
+    leader.set_manual_control(False, 1.0)
+    np.testing.assert_array_equal(device.calls[-2][1], np.ones(6) * 10)
+    np.testing.assert_array_equal(device.calls[-2][2], np.ones(6) * 2)
+    leader.set_manual_control(False, .4)
+    np.testing.assert_array_equal(device.calls[-2][1], np.ones(6) * 4)
+    leader.set_manual_control(True)
+    assert device.calls[-1][0] == "gravity"
 
 
 def test_i2rt_hil_snapshot_copies_one_published_state_without_lock():
@@ -622,7 +629,7 @@ def test_policy_leaders_share_submitted_joint_targets_only_in_hil(mirror):
         submitted, _ = io.apply(d, np.zeros(14), np.zeros(14), dt=1 / 30, mirror=mirror)
         for i, (_, target, kw) in enumerate(calls[:2]):
             assert kw["manual"] is (not mirror)
-            assert kw["gain_scale"] == .2
+            assert kw["gain_scale"] == (1.0 if mirror else .2)
             assert target.shape == (6,)
             np.testing.assert_array_equal(target, submitted[i * 7:i * 7 + 6])
         np.testing.assert_array_equal(submitted, np.concatenate([c[1] for c in calls[2:]]))

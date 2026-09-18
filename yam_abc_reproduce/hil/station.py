@@ -179,6 +179,13 @@ class StationIO:
                 arm = maintenance_leader[sl]
             leader_targets.append(np.clip(arm, limits[:, 0], limits[:, 1]))
         stamps = {}
+        rules = getattr(self, "interaction_rules", interaction_rules)
+        gain = self.leader_gain
+        if mirror and decision.source == "policy" and maintenance_leader is None:
+            gain = rules.POLICY_GAIN
+        if ((leader_homing and maintenance_leader is not None)
+                or (decision.leader_freeze and maintenance_leader is None)):
+            gain = rules.HOLD_GAIN
         for i, u in enumerate(self.units):
             if self.mock:
                 if not manual:
@@ -186,10 +193,7 @@ class StationIO:
             else:
                 u.agent.hil_leader_command(
                     leader_targets[i], manual=manual,
-                    gain_scale=getattr(self, "interaction_rules", interaction_rules).HOLD_GAIN if (
-                        (leader_homing and maintenance_leader is not None)
-                        or (decision.leader_freeze and maintenance_leader is None)
-                    ) else self.leader_gain,
+                    gain_scale=gain,
                 )
             stamps[f"{u.name}_leader"] = time.monotonic()
         self._manual = manual

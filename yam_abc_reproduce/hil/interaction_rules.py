@@ -6,6 +6,7 @@ reference at a tick boundary. SDK lifecycle and emergency handling stay fixed.
 
 API_VERSION = 1
 HOLD_GAIN = .4
+POLICY_GAIN = 1.0  # Native position Kp during HIL policy/replay following only.
 
 
 def button_event(mode, phase, right_edge, primary_edge):
@@ -64,7 +65,8 @@ def load_rules():
     module.__package__ = __package__
     module.__file__ = str(path)
     exec(compile(source, str(path), "exec"), module.__dict__)
-    if module.API_VERSION != 1 or not 0 < module.HOLD_GAIN <= 1:
+    if (module.API_VERSION != 1 or not 0 < module.HOLD_GAIN <= 1
+            or not 0 < module.POLICY_GAIN <= 1):
         raise ValueError("incompatible interaction rules")
     for name in ("button_event", "takeover", "manual_ready", "handback_hold", "resume_policy"):
         if not callable(getattr(module, name, None)):

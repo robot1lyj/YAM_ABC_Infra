@@ -8,4 +8,12 @@
 - Tested: navigation, teleop excludes recording/policy UI, collection shows recording controls, DAgger shows policy settings; settings expand/collapse; browser error log empty. Runtime regression 29 passed. No physical movement or control-code changes.
 - Remaining: focused comparison of final live camera geometry and smaller-screen post-fix check. Full keyboard/accessibility and all running/fault states not certified.
 
-final result: blocked
+## Final parity check — 2026-09-18
+
+- IPC and local index.html, app.js, style.css and console.css hashes matched after static deployment. Device PID remained 66762; no control service restart or motion commands.
+- Live IPC three-camera layout inspected at 1600×900. Images are contained, rounded and correctly arranged; main document does not overflow. Advanced settings/right status area may scroll on smaller heights.
+- Live device page inspected at 1920×1080: no document overflow; Follower/Leader home and gravity controls present. Maintenance buttons follow column width (287–298 px in this viewport) with 48 px height, not oversized vertically.
+- Mock intentionally disables factory-zero maintenance, so it shows generic preparation-position controls; identical frontend does not imply identical hardware-state labels or availability.
+- Visual acceptance is scoped to these pages and states; keyboard accessibility and all fault/running states remain outside this visual check. Runtime regression: 29 passed.
+
+final result: passed (scoped visual/parity check)

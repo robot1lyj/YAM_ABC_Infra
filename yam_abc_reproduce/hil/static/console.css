@@ -87,9 +87,12 @@ body { background: #fff; font-size: 14px; }
   #devices-page .arm-angles strong { font-size: 16px; font-variant-numeric: tabular-nums; }
   #devices-page .maintenance-groups { padding: 0; gap: 12px; }
   #devices-page .maintenance-status { margin: 0 0 12px; padding: 6px 0; background: transparent; }
-  #devices-page .maintenance-buttons { height: auto; grid-template-rows: repeat(2,48px); align-content: start; gap: 10px; }
-  #devices-page .maintenance-action { height: 48px; min-height: 48px; width: 100%; padding: 10px 14px; border-radius: 6px; }
-  #devices-page .maintenance-groups { flex: 0 0 auto; }
+  #devices-page .maintenance-panel { display: flex; flex-direction: column; min-height: 0; }
+  #devices-page .maintenance-groups { flex: 1 1 0; min-height: 0; padding-bottom: 0; }
+  #devices-page .maintenance-groups > section { display: flex; flex-direction: column; min-height: 0; }
+  #devices-page .maintenance-buttons { flex: 1; height: auto; min-height: 0; grid-template-rows: repeat(2,minmax(0,1fr)); align-content: stretch; gap: 12px; }
+  #devices-page .maintenance-action { height: 100%; min-height: 64px; width: 100%; padding: 16px; border-radius: 6px; justify-content: center; }
+  #devices-page .maintenance-action strong { font-size: 15px; }
   #devices-page .device-cards { grid-template-rows: repeat(4,minmax(0,1fr)); }
   #devices-page .jog-panel { border-top: 1px solid var(--border); }
   #devices-page #joint-controls { gap: 0 28px; padding: 0; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3,1fr); }

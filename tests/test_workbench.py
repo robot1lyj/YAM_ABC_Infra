@@ -47,6 +47,33 @@ def test_home_exclusive_coordinated_and_gripper_retained():
     assert m.state == "idle"
 
 
+def test_leader_zero_keeps_followers_and_grippers_and_stop_cancels():
+    m = Maintenance(factory_zero=True)
+    q, h = np.full(14, .3), np.full(14, -.4)
+    h[[6, 13]] = [.6, .8]
+    initial_q = q.copy()
+    joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
+    m.command("home_leader", q, h, now=0, paused=True)
+    for tick in range(1, 300):
+        result = m.step(q, h, now=tick / 30, dt=1 / 30)
+        if result is None:
+            break
+        q_next, h_next = result
+        np.testing.assert_array_equal(q_next, initial_q)
+        assert np.max(abs(h_next[joints] - h[joints])) <= .12 / 30 + 1e-10
+        np.testing.assert_array_equal(h_next[[6, 13]], [.6, .8])
+        q, h = q_next, h_next
+    assert m.state == "idle" and m.error is None
+    assert np.max(abs(h[joints])) <= .015
+    m.command("home_leader", q, h + .1, now=20, paused=True)
+    m.command("stop", q, h, now=20.1, paused=True)
+    np.testing.assert_array_equal(m.step(q, h, now=20.2, dt=1 / 30)[1], h)
+    m.command("reset_stop", q, h, now=20.3, paused=True)
+    assert m.step(q, h, now=20.4, dt=1 / 30) is None
+    with pytest.raises(ValueError):
+        Maintenance().command("home_leader", q, h, now=0, paused=True)
+
+
 def test_factory_zero_home_full_offline_trajectory_and_stop():
     """Replay the observed held pose without opening grippers or touching hardware."""
     m = Maintenance(factory_zero=True)

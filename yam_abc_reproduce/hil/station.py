@@ -167,9 +167,9 @@ class StationIO:
             if decision.leader_freeze:
                 arm = leader[sl]
             if maintenance_leader is not None:
-                arm = np.clip(
-                    maintenance_leader[sl], leader[sl] - 0.12 * dt, leader[sl] + 0.12 * dt
-                )
+                # Maintenance owns its bounded trajectory and tracking guard;
+                # re-clamping against feedback here would prevent it progressing.
+                arm = maintenance_leader[sl]
             leader_targets.append(np.clip(arm, limits[:, 0], limits[:, 1]))
         stamps = {}
         for i, u in enumerate(self.units):

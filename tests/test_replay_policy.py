@@ -38,6 +38,7 @@ def test_replay_loading_uses_submitted_not_leader_or_model(tmp_path, monkeypatch
              "leader_state": [.8] * 14, "policy_action": [.5] * 14} for n in range(3)]
     monkeypatch.setattr(replay_policy, "read_rows", lambda _: iter(rows))
     np.testing.assert_allclose(load_targets(tmp_path, start=1, steps=2), .1)
+    assert load_targets(tmp_path, steps=None).shape == (3, 14)
     rows[-1]["tick"] = 4
     with pytest.raises(ValueError, match="tick gap"):
         load_targets(tmp_path)

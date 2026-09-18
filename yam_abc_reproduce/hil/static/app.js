@@ -546,10 +546,13 @@ function render() {
   $("capture-home").disabled = factoryZero || !(canMaintain && idle);
   $("home").disabled = !!homeBlockReason;
   $("home").title = homeBlockReason;
+  $("home-leader").hidden = !factoryZero;
+  $("home-leader").disabled = !!homeBlockReason;
+  $("home-leader").title = homeBlockReason;
   $("gravity").disabled = !(canMaintain && idle);
   $("gravity-exit").disabled = !(connected && !latched && maint === "gravity");
-  text("maintenance-title", factoryZero ? "Follower 零位与重力补偿" : "准备位与重力补偿");
-  text("home-group-title", factoryZero ? "Follower 回零" : "准备位");
+  text("maintenance-title", factoryZero ? "零位与重力补偿" : "准备位与重力补偿");
+  text("home-group-title", factoryZero ? "关节回零" : "准备位");
   text(
     "home-group-copy",
     factoryZero ? "两台 Follower 回到官方关节零位，Leader 不主动运动。" : "保存合适的四臂姿态，供下一次采集恢复。",
@@ -569,13 +572,13 @@ function render() {
           ? "录制中 · 结束录制后可执行设备维护"
           : maint === "homing"
       ? factoryZero
-        ? "Follower 正在回零，完成后保持"
+        ? `${state.home_group === "leader" ? "Leader" : "Follower"} 正在回零`
         : "正在回准备位，完成后保持不动"
       : maint === "gravity"
         ? "重力补偿中：请手扶机械臂调整姿态"
         : state.home_available
           ? factoryZero
-            ? "Follower 零位可用 · 回零前请清空完整运动路径"
+            ? "零位可用 · 回零前请清空完整运动路径"
             : "准备位已保存 · 回位前请清空完整运动路径"
           : "尚未保存准备位",
   );
@@ -797,6 +800,12 @@ $("home").onclick = () =>
       ? "两台 Follower 将沿关节插值路径回到六关节零位；Leader 不接收位置目标，夹爪保持。请确认完整路径没有人员或障碍，可随时按暂停。"
       : "回位将独占四臂控制，并沿关节插值路径运动。请确认完整路径没有人员或障碍；夹爪保持当前开度。可随时按暂停。",
     () => action("/event/home"),
+  );
+$("home-leader").onclick = () =>
+  confirmAction(
+    "两台 Leader 回零？",
+    "仅两台 Leader 六关节沿插值路径回到零位，Follower 与夹爪保持。请确认长手柄到桌面的完整路径间隙；可随时暂停或急停。完成后 Leader 恢复重力补偿。",
+    () => action("/event/home_leader"),
   );
 $("gravity").onclick = () =>
   confirmAction(

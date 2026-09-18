@@ -36,6 +36,7 @@ class Maintenance:
         self.home_duration = 0.0
         self.home_progress = 0.0
         self.home_stalled_at = None
+        self.home_leader_only = False
 
     def capture(self, q, leader):
         if self.factory_zero:
@@ -79,26 +80,32 @@ class Maintenance:
                 raise ValueError("请先暂停并结束录制，再保存准备位")
             self.capture(q, leader)
             return "hold"
-        if event in ("home", "gravity"):
+        if event in ("home", "home_leader", "gravity"):
             if not paused:
                 raise ValueError("请先暂停并结束录制")
+            if event == "home_leader" and not self.factory_zero:
+                raise ValueError("Leader独立回零仅适用于固定零位站点")
             if event == "home" and self.ready is None:
                 raise ValueError("请先示教并保存准备位")
-            self.state = "homing" if event == "home" else "gravity"
+            self.state = "gravity" if event == "gravity" else "homing"
             self.started = now
             self.error = None
             self.grippers = q[[6, 13]].copy()
-            if event == "home":
-                target = vector(self.ready["follower"])
+            if event in ("home", "home_leader"):
+                self.home_leader_only = event == "home_leader"
+                target = q.copy() if self.home_leader_only else vector(self.ready["follower"])
                 lead_target = vector(self.ready["leader"])
                 joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
                 distance = np.max(np.abs(target[joints] - q[joints]))
-                if not self.factory_zero:
+                if not self.factory_zero or self.home_leader_only:
                     distance = max(
                         distance,
                         np.max(np.abs(lead_target[joints] - leader[joints])),
                     )
-                self.home_start = (q.copy(), None if self.factory_zero else leader.copy())
+                self.home_start = (
+                    q.copy(),
+                    None if self.factory_zero and not self.home_leader_only else leader.copy(),
+                )
                 self.home_duration = distance / self.HOME_SPEED
                 self.home_progress = 0.0
                 self.home_stalled_at = None
@@ -119,12 +126,14 @@ class Maintenance:
             self.error = "回准备位超时，已暂停；请检查阻挡和反馈"
             return None
         target, lead_target = vector(self.ready["follower"]), vector(self.ready["leader"])
+        if self.home_leader_only:
+            target = self.home_start[0].copy()
         # Home arm joints only. Never open a gripper holding a part.
         target[[6, 13]] = self.grippers
         lead_target[[6, 13]] = leader[[6, 13]]
         joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
         distance = np.max(np.abs(target[joints] - q[joints]))
-        if not self.factory_zero:
+        if not self.factory_zero or self.home_leader_only:
             distance = max(
                 distance,
                 np.max(np.abs(lead_target[joints] - leader[joints])),
@@ -137,7 +146,7 @@ class Maintenance:
         current = start + (target - start) * self.home_progress
         lead_current = (
             None
-            if self.factory_zero
+            if lead_start is None
             else lead_start + (lead_target - lead_start) * self.home_progress
         )
 
@@ -176,7 +185,7 @@ class Maintenance:
         candidate = start + (target - start) * candidate_progress
         lead_candidate = (
             None
-            if self.factory_zero
+            if lead_start is None
             else lead_start + (lead_target - lead_start) * candidate_progress
         )
         candidate_error, candidate_joint = tracking_error(candidate, lead_candidate)

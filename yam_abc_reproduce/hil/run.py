@@ -199,6 +199,7 @@ class Runtime:
             "stop",
             "reset_stop",
             "home",
+            "home_leader",
             "capture_home",
             "gravity",
             "takeover",
@@ -226,6 +227,7 @@ class Runtime:
                 "quit",
                 "reset_stop",
                 "home",
+                "home_leader",
                 "gravity",
                 "mode:teleop",
             )
@@ -234,7 +236,9 @@ class Runtime:
             raise ValueError("录制已中断；可进行设备恢复、切换为遥操作或断开机械臂")
         if self.maintenance.latched and event not in ("stop", "hold", "quit", "reset_stop"):
             raise ValueError("紧急暂停已锁存，请先检查现场并解除锁存")
-        if event in ("home", "capture_home", "gravity"):
+        if event in ("home", "home_leader", "capture_home", "gravity"):
+            if event == "home_leader" and not self.maintenance.factory_zero:
+                raise ValueError("Leader独立回零仅适用于固定零位站点")
             if event == "capture_home" and self.maintenance.factory_zero:
                 raise ValueError("此设备固定使用官方关节零位，无需保存准备位")
             if self.maintenance.state != "idle":
@@ -455,6 +459,7 @@ class Runtime:
                         "hold",
                         "reset_stop",
                         "home",
+                        "home_leader",
                         "gravity",
                         "mode:teleop",
                     )
@@ -487,7 +492,7 @@ class Runtime:
                 if event in ("record", "discard"):
                     recording_event, event = event, None
                 original_event = event
-                if event in ("home", "capture_home", "gravity") and (
+                if event in ("home", "home_leader", "capture_home", "gravity") and (
                     a.phase != Phase.HOLD
                     or getattr(self.recorder, "recording", False)
                     or self.maintenance.state != "idle"
@@ -497,7 +502,7 @@ class Runtime:
                     event = None
                 elif event is not None:
                     self.operator_error = None
-                if event in ("stop", "home", "gravity", "capture_home", "reset_stop", "hold"):
+                if event in ("stop", "home", "home_leader", "gravity", "capture_home", "reset_stop", "hold"):
                     if isinstance(self.recorder, RECORDING_SESSIONS):
                         self.recorder.stop_episode(
                             "aborted"
@@ -628,6 +633,7 @@ class Runtime:
                     "phase": decision.phase.value,
                     "event": original_event,
                     "maintenance": self.maintenance.state,
+                    "home_group": "leader" if self.maintenance.home_leader_only else "follower",
                     "stop_latched": self.maintenance.latched,
                     "epoch": decision.epoch,
                     "source": decision.source,
@@ -736,6 +742,7 @@ class Runtime:
                     else now - self._record_started,
                     "stop_latched": self.maintenance.latched,
                     "maintenance": self.maintenance.state,
+                    "home_group": "leader" if self.maintenance.home_leader_only else "follower",
                     "maintenance_error": self.maintenance.error,
                     "operator_error": self.operator_error,
                     "ready_pose": self.maintenance.ready,

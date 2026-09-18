@@ -19,20 +19,24 @@ JOINTS = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
 
 def load_targets(episode, *, start=0, steps=50):
     episode = Path(episode).resolve()
-    if start < 0 or not 1 <= steps <= 900:
-        raise ValueError("select a nonnegative start and 1..900 replay frames")
+    if start < 0 or (steps is not None and steps < 1):
+        raise ValueError("select a nonnegative start and positive replay frame count")
     manifest = json.loads((episode / "manifest.json").read_text())
     if manifest.get("error") or manifest.get("outcome") not in ("success", "failure", "unknown"):
         raise ValueError("replay requires a completed, non-aborted source episode")
     if manifest.get("fps") != 30:
         raise ValueError("replay requires a 30 Hz source")
-    rows = list(itertools.islice(read_rows(episode), start, start + steps))
-    if not rows:
+    rows = itertools.islice(read_rows(episode), start, None if steps is None else start + steps)
+    targets, previous_tick = [], None
+    for row in rows:
+        if previous_tick is not None and row["tick"] != previous_tick + 1:
+            raise ValueError("selected replay has a control tick gap")
+        previous_tick = row["tick"]
+        targets.append(row["submitted_action"])
+    if not targets:
         raise ValueError("no frames at selected start")
-    if any(b["tick"] != a["tick"] + 1 for a, b in zip(rows, rows[1:])):
-        raise ValueError("selected replay has a control tick gap")
-    targets = np.asarray([r["submitted_action"] for r in rows], dtype=np.float64)
-    if targets.shape != (len(rows), 14) or not np.isfinite(targets).all():
+    targets = np.asarray(targets, dtype=np.float64)
+    if targets.shape != (len(targets), 14) or not np.isfinite(targets).all():
         raise ValueError("replay needs finite 14D submitted targets")
     if np.any((targets[:, [6, 13]] < 0) | (targets[:, [6, 13]] > 1)):
         raise ValueError("recorded gripper targets outside [0,1]")
@@ -74,11 +78,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("episode", type=Path)
     parser.add_argument("--start", type=int, default=0)
-    parser.add_argument("--steps", type=int, default=50)
+    length = parser.add_mutually_exclusive_group()
+    length.add_argument("--steps", type=int, default=50)
+    length.add_argument("--all", action="store_true", help="replay the entire remaining episode once")
     parser.add_argument("--port", type=int, default=8002)
     parser.add_argument("--start-tolerance-rad", type=float, default=.2)
     args = parser.parse_args()
-    targets = load_targets(args.episode, start=args.start, steps=args.steps)
+    targets = load_targets(args.episode, start=args.start, steps=None if args.all else args.steps)
     from openpi_client import msgpack_numpy
     from websockets.exceptions import ConnectionClosed
     from websockets.sync.server import serve

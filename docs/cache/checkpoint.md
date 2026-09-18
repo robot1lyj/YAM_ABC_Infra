@@ -11,7 +11,7 @@
 
 ## 下一步
 
-最新现场：f964c19已获准部署重启。10:52:56相机启动期间SDK stale，三条CAN链报告loss communication、相机同时uvcvideo -71；当前FAULT，未开始新回放或回零。先恢复设备通信并确认支撑，不能把connected当有效HOLD；本轮共目标修正仍未真机验证。
+最新现场：c115794获准部署重启，先相机后四臂连接，HOLD无错误。Leader独立回零按钮已上线；loopback:8002改为乐高分拣3最长RTC集093240_c22760/000004 --all，9504帧约5分17秒，完整无电机wire核验一致。sync_hold，不调用Thor。未执行新回零或长回放，由用户点击。Leader短回放用户反馈会动，精度仍待验收。10:52:56历史SDK/USB同秒故障根因未定。
 
 1. 固定回放会话103824_c92b5b/000001复现不跟随：Follower动0.544rad、Leader仅0.0023rad。当前急停锁存/HOLD、loopback:8002、sync_hold；回放服务由SSH进程运行，退出后按hil_quickstart重启。用户授权共用策略关节目标，已本地修改StationIO，PD与主从保护不变，待受控重启支撑确认及真机验收；运动前明确通知，未获确认不释放力矩。RESUME路径未改。详见acceptance.md末节。
 2. 若有`SDK state update stale`或CAN/NVMe异常，按[硬件事实](../workstation.md)与[验收记录](../acceptance.md)独立诊断，不放宽保护来掩盖故障。

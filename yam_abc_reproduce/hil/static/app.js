@@ -246,9 +246,11 @@ function render() {
       ? "▶ 开始遥操作"
       : "▶ 开始模型执行",
   );
-  $("start").disabled = !(canRun && paused && idle);
+  const intervening = mode === "hil" && (state.intervention_pending || ["takeover", "human"].includes(state.phase));
+  $("start").disabled = !(canRun && paused && idle) || intervening;
   $("start").title = ["inference", "hil"].includes(mode) && !state.policy_ready
     ? "推理通信尚未就绪；可在保持状态重载推理通信" : "";
+  if (intervening) $("start").title = "介入期间只能暂停或明确交还模型";
   $("header-stop").disabled =
     !online || state.connection !== "connected" || latched;
   $("header-reset").hidden = !latched;
@@ -258,7 +260,7 @@ function render() {
     mode === "hil" &&
     ["policy", "resume"].includes(state.phase)
   );
-  $("resume").disabled = !(canRun && mode === "hil" && (state.phase === "human" || (paused && state.leader_locked)));
+  $("resume").disabled = !(canRun && mode === "hil" && (intervening || (paused && state.leader_locked)));
   text(
     "handle-hint",
     teleopView
@@ -527,7 +529,10 @@ function render() {
   document
     .querySelectorAll(".jog-button")
     .forEach(
-      (el) => (el.disabled = !(canMaintain && idle && mode === "collect")),
+      (el) => {
+        el.disabled = !(canMaintain && idle && !intervening);
+        el.title = el.disabled ? "需连接、暂停、结束录制/介入并退出维护；无需切换模式" : "小步关节调试";
+      },
     );
   text(
     "gripper-value",

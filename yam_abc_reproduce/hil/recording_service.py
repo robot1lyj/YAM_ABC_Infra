@@ -48,7 +48,8 @@ def _serve_recording(connection, ready, progress, options):
                     recorder.metadata.update(args[0])
                     recorder.start_episode()
                 elif kind == "stop":
-                    recorder.stop_episode(*args)
+                    recorder.metadata.update(args[1])
+                    recorder.stop_episode(args[0])
                 elif kind == "abort":
                     recorder.abort_episode()
                 elif kind == "mode":
@@ -288,7 +289,7 @@ class RemoteRecordingSession:
             self.recording = True
 
     def stop_episode(self, outcome="unknown"):
-        if self.recording and self._enqueue("stop", outcome):
+        if self.recording and self._enqueue("stop", outcome, dict(self.metadata)):
             self.recording = False
 
     def abort_episode(self):

@@ -9,7 +9,7 @@ from yam_abc_reproduce.hil.lerobot_export import export_session
 from yam_abc_reproduce.hil.recording import RecordingSession
 
 
-def make_session(path, images=None):
+def make_session(path, images=None, *, locked=False):
     rec = RecordingSession(
         path, mode="collect", metadata={"mock": True, "station": {"task_name": "test task"}}
     )
@@ -29,7 +29,7 @@ def make_session(path, images=None):
                 "policy_started",
                 "takeover_applied",
                 "human_started",
-                "resume_requested",
+                "handback_locked" if locked else "resume_requested",
                 "policy_started",
             ),
         )
@@ -59,6 +59,16 @@ def make_session(path, images=None):
     rec.close()
     assert not rec.error
     return path
+
+
+def test_lerobot_exports_handback_lock_without_losing_intervention_state(tmp_path):
+    source = make_session(tmp_path / "session", locked=True)
+    out = tmp_path / "lerobot"
+    report = export_session(source, out)
+    assert report["event_bits"]["16"] == "handback_locked"
+    data = pq.read_table(out / "data/chunk-000/file-000.parquet").to_pydict()
+    assert data["complementary_info.event"] == [8, 1, 2, 16, 8]
+    assert data["complementary_info.state"] == [0, 1, 1, 1, 0]
 
 
 def test_lerobot_keeps_hil_episode_and_signals_and_uses_follower_data(tmp_path):

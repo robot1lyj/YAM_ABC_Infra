@@ -152,7 +152,7 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path, fusion):
             assert manifest["collection_mode"] == "hil"
             assert len(list(rec.path.glob("episode_*"))) == 1
             transitions = [t for row in rows for t in row["transitions"]]
-            assert transitions == ["policy_started", "takeover_applied", "human_started",
+            assert transitions == ["policy_started", "human_started",
                                    "resume_requested", "policy_started"]
         assert {"policy", "human", "hold"} <= {r["source"] for r in rows}
         human = [r for r in rows if r["source"] == "human"]
@@ -776,11 +776,11 @@ def test_runtime_keyboard_priority_and_handle_only_hands_back(tmp_path):
         thread.join(2)
         rec.close()
         rows = list(read_rows(rec.path))
-        freeze = next(r for r in rows if "takeover_applied" in r["transitions"])
-        assert freeze["source"] == "hold"
-        assert freeze["event_applied_at"] >= freeze["event_requested_at"]
-        following = next(r for r in rows if r["tick"] == freeze["tick"] + 1)
-        assert following["source"] in ("hold", "human")
+        assert not any(r["phase"] == "takeover" for r in rows)
+        human = next(r for r in rows if "human_started" in r["transitions"])
+        gap = human["omitted_intervention_wait"]
+        assert gap["event_applied_at"] >= gap["event_requested_at"]
+        assert gap["last_tick"] < human["tick"]
         assert any("human_started" in r["transitions"] for r in rows)
         assert any("resume_requested" in r["transitions"] for r in rows)
     finally:

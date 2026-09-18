@@ -321,6 +321,8 @@ class RecordingSession:
                 return
             active.metadata.update(self.metadata)
             active.metadata.update(active_metadata)
+            if "omitted_intervention_waits" in self.metadata:
+                active.metadata["omitted_intervention_waits"] = self.metadata["omitted_intervention_waits"]
             active.close(outcome)
             self._completed_steps += active.written
             self._session_progress_at = time.monotonic()

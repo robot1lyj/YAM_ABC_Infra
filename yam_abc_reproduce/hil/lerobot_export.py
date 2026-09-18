@@ -242,6 +242,7 @@ class DatasetWriter:
                             "human_started": 2,
                             "resume_requested": 4,
                             "policy_started": 8,
+                            "handback_locked": 16,
                         }[e]
                         for e in row.get("transitions", [])
                     ),
@@ -502,6 +503,7 @@ def export_session(source: Path, output: Path, *, expert_only=False, allow_recov
             "2": "human_started",
             "4": "resume_requested",
             "8": "policy_started",
+            "16": "handback_locked",
         },
         "timestamps": "nominal fps; original host/device timestamps retained in source HDF5 or legacy JSONL",
         "mock": session.get("mock"),

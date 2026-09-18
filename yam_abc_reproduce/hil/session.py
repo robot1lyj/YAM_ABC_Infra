@@ -63,6 +63,8 @@ class Session:
             self.arbiter.handback_hold(state, leader)
         elif event == "hold":
             self.arbiter.hold(state)
+            if self.arbiter.intervention_pending:
+                self.arbiter._leader_frozen = np.asarray(leader).copy()
         elif event and event.startswith("mode:"):
             self.arbiter.change_mode(event.split(":", 1)[1], state)
         elif event == "stop":

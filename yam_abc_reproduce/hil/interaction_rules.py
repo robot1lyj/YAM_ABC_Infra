@@ -23,6 +23,8 @@ def takeover(a, state, leader):
     from .core import Mode, Phase, vector
     if a.mode == Mode.HIL and a.phase in (Phase.POLICY, Phase.RESUME):
         a._transition(Phase.TAKEOVER, vector(state))
+        a.intervention_pending = True
+        a.intervention_waiting = True
         a._leader_frozen = vector(leader)
 
 
@@ -32,6 +34,7 @@ def manual_ready(a, state, leader):
         return
     q, h = vector(state), vector(leader)
     a._transition(Phase.HUMAN, q)
+    a.intervention_waiting = False
     a._offset = q - h
     a._offset[[6, 13]] = 0
     a._pickup = [False, False]
@@ -48,9 +51,12 @@ def handback_hold(a, state, leader):
 def resume_policy(a, state):
     from .core import Mode, Phase
     if a.mode == Mode.HIL and (
-        a.phase == Phase.HUMAN or (a.phase == Phase.HOLD and a._leader_frozen is not None)
+        a.phase == Phase.HUMAN or (a.phase in (Phase.HOLD, Phase.TAKEOVER)
+                                  and (a.intervention_pending or a._leader_frozen is not None))
     ):
         a._transition(Phase.RESUME, state)
+        a.intervention_pending = False
+        a.intervention_waiting = False
 
 
 def load_rules():

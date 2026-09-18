@@ -60,7 +60,7 @@ DAgger继续使用上述`yam_hil_v2`原始格式，策略→介入冻结→人�
 | complementary_info.state | Evo-RL三态：0策略、1介入、2交还；本站冻结属于介入开始，交还等待直到新策略生效 |
 | complementary_info.collector_policy_id | policy/human来源，不保存模型名称或指纹；本站额外HOLD帧为null，不能冒充专家或策略动作 |
 | complementary_info.intervention_id | 累计干预编号，用阶段事件确定区间 |
-| complementary_info.event | 位标志：1介入冻结生效、2人工开始、4交还请求、8策略开始 |
+| complementary_info.event | 位标志：1介入冻结生效、2人工开始、4交还请求、8策略开始、16人工结束锁定待交还 |
 | complementary_info.source_tick / control_time | 原始控制帧号和RK单调时钟 |
 | complementary_info.event_requested_at / event_applied_at | 请求入队/阶段转换提交时间；无对应事件为-1 |
 | complementary_info.observation_valid | 本帧是否组成新的有效相机/状态配对 |
@@ -114,3 +114,8 @@ uv run --no-sync yam-export data/recovered/新目录 --output data/rebuilt/审�
 | [异常恢复](../yam_abc_reproduce/hil/recovery.py) | 本文“异常恢复”命令；项目pyproject.toml/uv.lock；停止录制后，原集→新recovered目录，保留共同可解码前缀 | [录制测试](../tests/test_segmented_storage.py)中的恢复案例（`uv run --no-sync pytest -q tests/test_segmented_storage.py -k recover`）及 [历史验收](acceptance.md)；恢复后人工审核、回读，再决定allow-recovered；没有真断电零丢失保证 |
 
 帧率/分辨率不一致、媒体缺失或输出冲突属于待排查症状，不能在没有报告时断言具体成因。记录实际检查/干预和结果；重试条件是输入修复或重新筛选、必要兼容条件已确认、使用新输出目录。保留旧partial和失败报告，不覆盖原件，不对同一未变输入盲目重复转换。恢复工具不能修复所有异常；无法恢复的范围与原因未知时如实记录。
+# DAgger 介入等待段（2026-09-18）
+
+点击介入到右①解锁、实际进入 HUMAN 的等待阶段，不提交样本或图像；控制与姿态保持不停止。首个恢复样本的 `omitted_intervention_wait` 及 manifest 的 `omitted_intervention_waits` 记录省略区间、原 tick、时间和介入编号。保留原始 tick/time，因此有意产生 tick 间隙，不应伪装成连续控制轨迹；要求连续 tick 的回放工具仍应拒绝这种片段。人工解锁后的再次锁定不属于本次省略范围。旧数据不改写。
+
+介入期间禁止“开始模型执行”，包括暂停后的 HOLD；须明确交还模型。关节调试不再限定采集模式，但仍要求 HOLD、无活动录制、无介入、无急停和维护占用。

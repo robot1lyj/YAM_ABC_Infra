@@ -49,6 +49,51 @@ def test_reload_rules_is_fresh_module_and_has_no_hardware():
     assert first.button_event("hil", "human", True, True) == "handback_hold"
 
 
+def test_intervention_start_cannot_bypass_pause_or_handback():
+    a = Arbiter(Mode.HIL)
+    q = np.zeros(14)
+    a.start(q)
+    a.takeover(q, q)
+    s = Session(a)
+    d = s.tick(q, q, now=.1, dt=1/30, observation_id=1, event="hold")
+    assert d.leader_freeze and a.intervention_pending
+    a.start(q, q)
+    assert a.phase == Phase.HOLD
+    a.resume_policy(q)
+    assert a.phase == Phase.RESUME and not a.intervention_pending
+
+
+def test_jog_available_in_all_paused_modes_but_not_during_intervention():
+    import threading
+
+    import pytest
+
+    from yam_abc_reproduce.hil.run import Runtime
+    r = object.__new__(Runtime)
+    calls = []
+    r.recorder = SimpleNamespace(recording=False)
+    r.emergency = threading.Event()
+    r.maintenance = SimpleNamespace(latched=False, state="idle")
+    r.session = SimpleNamespace(arbiter=SimpleNamespace(intervention_pending=False))
+    r.jog = SimpleNamespace(request=lambda *args: calls.append(args))
+    for mode in Mode:
+        r.status = {"mode": mode.value, "phase": "hold"}
+        r.request_jog("left", 0, .01)
+    assert len(calls) == 4
+    r.session.arbiter.intervention_pending = True
+    with pytest.raises(ValueError, match="介入"):
+        r.request_jog("left", 0, .01)
+    r.session.arbiter.intervention_pending = False
+    r.recorder.recording = True
+    with pytest.raises(ValueError):
+        r.request_jog("left", 0, .01)
+    r.recorder.recording = False
+    r.emergency.set()
+    with pytest.raises(ValueError):
+        r.request_jog("left", 0, .01)
+    assert len(calls) == 4
+
+
 def test_runtime_reload_keeps_io_owner_and_locked_targets(tmp_path):
     from yam_abc_reproduce.camera.mock_camera import MockCamera
     from yam_abc_reproduce.camera.worker import CameraWorker

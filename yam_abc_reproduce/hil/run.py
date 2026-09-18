@@ -32,6 +32,7 @@ from ..runtime import build_arm_units, build_cameras_from_config
 from .action_buffer import ActionBuffer
 from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
+from .intervention_recording import InterventionRecordingGate
 from .jog import Jog
 from .maintenance import Maintenance
 from .metrics import Latencies
@@ -155,6 +156,7 @@ class Runtime:
         self.policy_commands = queue.Queue(maxsize=4)
         self.takeovers = queue.Queue(maxsize=1)
         self.intervention_id = 0
+        self.intervention_recording = InterventionRecordingGate()
         self.stopping = threading.Event()
         self.holding = queue.Queue(maxsize=1)
         self.status = {"phase": "hold", "mode": mode, "tick": 0}
@@ -217,6 +219,8 @@ class Runtime:
         }
         if event not in allowed:
             raise ValueError("unknown event")
+        if event == "start" and self.session.arbiter.intervention_pending:
+            raise ValueError("DAgger介入尚未结束，请选择暂停或交还模型")
         if event in ("record", "discard") and not self.recording_allowed:
             raise ValueError("standalone teleoperation does not record data")
         if self.recording_error and not (
@@ -275,10 +279,10 @@ class Runtime:
             self.events.put_nowait((event, time.monotonic()))
 
     def request_jog(self, arm, joint, delta):
-        if self.recording_error:
-            raise ValueError("录制已中断；请先断开机械臂，再进入设备调试")
-        if self.status.get("mode") != "collect" or self.status.get("phase") != "hold":
-            raise ValueError("关节点动仅在采集模式暂停状态可用")
+        if self.status.get("phase") != "hold":
+            raise ValueError("请先暂停运动，再进行关节调试（无需切换工作模式）")
+        if self.session.arbiter.intervention_pending:
+            raise ValueError("DAgger介入尚未交还，请先结束介入再调试")
         if (
             getattr(self.recorder, "recording", False)
             or self.emergency.is_set()
@@ -586,7 +590,7 @@ class Runtime:
                     q,
                     allowed=(
                         event is None
-                        and a.mode == Mode.COLLECT
+                        and not a.intervention_pending
                         and a.phase == Phase.HOLD
                         and not getattr(self.recorder, "recording", False)
                         and not self.maintenance.latched
@@ -677,6 +681,7 @@ class Runtime:
                     "event_applied_at": apply_done if transitions else None,
                     "transitions": transitions,
                     "intervention_id": self.intervention_id,
+                    "intervention_pending": a.intervention_pending,
                     "tick": tick,
                     "policy_reply": self.session.last_reply,
                     "time": now,
@@ -758,7 +763,12 @@ class Runtime:
                 if images:
                     last_record_images = images
                 row["observation_valid"] = snapshot is not None
-                if not self.recorder.submit(row, images or last_record_images):
+                record_row = self.intervention_recording.filter(
+                    row, a.mode == Mode.HIL and a.intervention_waiting
+                    and a.phase != Phase.FAULT and getattr(self.recorder, "recording", True),
+                )
+                self.recorder.metadata["omitted_intervention_waits"] = self.intervention_recording.audit()
+                if record_row is not None and not self.recorder.submit(record_row, images or last_record_images):
                     if isinstance(self.recorder, RECORDING_SESSIONS):
                         self._recording_failed(q, self.recorder.error or "recorder unavailable")
                     else:
@@ -800,6 +810,7 @@ class Runtime:
                     "operator_error": self.operator_error or self.session.notice,
                     "interaction_revision": getattr(a.interaction_rules, "revision", "bundled"),
                     "leader_locked": a._leader_frozen is not None,
+                    "intervention_pending": a.intervention_pending,
                     "leader_control": self.io.leader_control_status() if hasattr(self.io, "leader_control_status") else [],
                     "ready_pose": self.maintenance.ready,
                     "ready_version": self.maintenance.ready_version,

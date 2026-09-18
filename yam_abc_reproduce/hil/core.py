@@ -172,6 +172,8 @@ class Arbiter:
         self._offset = np.zeros(14)
         self._leader_frozen = None
         self.interaction_rules = interaction_rules
+        self.intervention_pending = False
+        self.intervention_waiting = False
 
     def _transition(self, phase: Phase, state: np.ndarray):
         self._leader_frozen = None
@@ -194,6 +196,8 @@ class Arbiter:
             raise RuntimeError("fault requires explicit session rebuild")
         if self.phase != Phase.HOLD:
             return
+        if self.mode == Mode.HIL and self.intervention_pending:
+            return  # Only explicit handback may end an intervention, even after HOLD.
         self._transition(Phase.RESUME, state)
         if self.mode in (Mode.TELEOP, Mode.COLLECT):
             self._human(state, leader)
@@ -229,6 +233,8 @@ class Arbiter:
         if self.phase == Phase.FAULT:
             raise RuntimeError("rebuild session after fault")
         self.mode = Mode(mode)
+        self.intervention_pending = False
+        self.intervention_waiting = False
         self._transition(Phase.HOLD, state)
 
     def fail(self, state, reason: str):

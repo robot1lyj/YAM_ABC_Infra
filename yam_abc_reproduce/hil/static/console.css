@@ -1,6 +1,9 @@
 /* Continuous-surface console. Layout only: control ownership stays in Runtime. */
 :root { --sidebar: 190px; --bg: #fff; --border: #e2e6ec; --muted: #626d80; }
 body { background: #fff; font-size: 14px; }
+.sidebar nav { margin-top: 28px; }
+.eyebrow, main > footer, .log-panel summary small { display: none; }
+.initialization-panel > summary span { display: none; }
 .panel, .task-card, .mode-card, .device-card, .joint { box-shadow: none; border-radius: 0; }
 .panel { border: 0; background: transparent; }
 .sidebar { background: #f6f7f9; border-right: 1px solid var(--border); }

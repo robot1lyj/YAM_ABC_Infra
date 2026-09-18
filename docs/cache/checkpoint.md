@@ -11,5 +11,5 @@
 
 ## 下一步
 
-1. 先验证本地回放服务，不调用Thor；当前URL不可热切换，确认支撑后断开重连到loopback回放源、sync_hold。固定动作复现Leader跟随不足，不先放宽保护；不将离线模拟当真机验收。
+1. 固定回放已获准完成：IPC代码a8f8bb6、未重启设备进程；页面重连loopback:8002、sync_hold。新会话103824_c92b5b/000001仅40帧，Follower动0.544rad而Leader仅0.0023rad，复现不跟随。当前急停锁存/HOLD，勿自行恢复运动；排查镜像目标实测相对限幅与低增益，不先放宽保护。回放服务由SSH进程运行，退出后需按hil_quickstart重启。
 2. 若有`SDK state update stale`或CAN/NVMe异常，按[硬件事实](../workstation.md)与[验收记录](../acceptance.md)独立诊断，不放宽保护来掩盖故障。

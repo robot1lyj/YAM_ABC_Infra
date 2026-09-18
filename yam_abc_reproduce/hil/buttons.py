@@ -21,6 +21,9 @@ class HandleButtons:
                 self.last[i] = now
         if phase == Phase.FAULT:
             return None
+        if mode == Mode.HIL and phase == Phase.TAKEOVER:
+            right_edge = len(current) == 2 and current[1][0] and not old[1][0]
+            return "manual_ready" if right_edge and pressed[0] else None
         if mode == Mode.COLLECT:
             # A held discard also suppresses a simultaneous/overlapping start.
             if any(p[1] for p in current):

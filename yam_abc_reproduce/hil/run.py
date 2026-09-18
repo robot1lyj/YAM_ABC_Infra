@@ -451,7 +451,9 @@ class Runtime:
                 if demo and demo_stage == 1 and elapsed > 1:
                     event, demo_stage = "takeover", 2
                 elif demo and demo_stage == 2 and elapsed > 2:
-                    event, demo_stage = "resume_policy", 3
+                    event, demo_stage = "manual_ready", 3
+                elif demo and demo_stage == 3 and elapsed > 3:
+                    event, demo_stage = "resume_policy", 4
                 if hold_requested:
                     while not self.events.empty():
                         self.events.get_nowait()

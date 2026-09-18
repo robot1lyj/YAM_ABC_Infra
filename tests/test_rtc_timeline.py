@@ -35,6 +35,7 @@ def test_hil_takeover_clears_rtc_and_resume_rejects_old_reply():
     assert freeze.phase == Phase.TAKEOVER and freeze.source == "hold"
     np.testing.assert_allclose(freeze.action, q)
     assert not a.accept_rtc(token, reply, .04, 1, limits)
+    a.manual_ready(q, leader)
     human = a.step(q, leader + action(.05), now=.06, dt=1/30, policy_tick=2)
     assert human.source == "human"
     assert human.action[0] == pytest.approx(.25)

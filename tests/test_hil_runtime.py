@@ -140,7 +140,7 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path, fusion):
         run = Runtime(io, cameras, worker, rec, settings={"policy_fusion": fusion})
         run.event("success")
         assert run.outcome == "unknown"  # consumed in the control owner
-        result = run.run(duration=2.5, auto_start=True, demo=True)
+        result = run.run(duration=3.5, auto_start=True, demo=True)
         rec.close(run.outcome)
         assert not result["error"] and result["phase"] == "policy"
         path = rec.path / "episode_000001" if fusion == "rtc" else rec.path
@@ -589,7 +589,15 @@ def test_freeze_targets_each_leader_current_pose_before_gravity_handover():
     for call in calls[:2]:
         assert call[0] == "leader" and not call[2]["manual"]
         assert call[1][0] == 0.1
+        assert call[2]["gain_scale"] == .4
     assert all(not np.any(call[1]) for call in calls[2:])
+    calls.clear()
+    io.apply(a.step(q, h + .02, now=.1, dt=1/30), q, h + .02, dt=1/30)
+    assert all(call[1][0] == .1 for call in calls[:2])
+    a.manual_ready(q, h)
+    calls.clear()
+    io.apply(a.step(q, h, now=.2, dt=1/30), q, h, dt=1/30)
+    assert all(call[2]["manual"] and call[2]["gain_scale"] == .2 for call in calls[:2])
 
 
 @pytest.mark.parametrize("mirror", [True, False])
@@ -738,7 +746,11 @@ def test_runtime_keyboard_priority_and_handle_only_hands_back(tmp_path):
             runtime.event("start")
         runtime.event("takeover")  # succeeds even with full ordinary event queue
         release.set()
+        wait(lambda: runtime.status["phase"] == "takeover")
+        keys[1][0] = True
         wait(lambda: runtime.status["phase"] == "human")
+        keys[1][0] = False
+        time.sleep(.3)
         assert runtime.events.empty()
         runtime.event("takeover")  # repeated i cannot resume
         tick = runtime.status["tick"]
@@ -758,8 +770,8 @@ def test_runtime_keyboard_priority_and_handle_only_hands_back(tmp_path):
         assert freeze["source"] == "hold"
         assert freeze["event_applied_at"] >= freeze["event_requested_at"]
         following = next(r for r in rows if r["tick"] == freeze["tick"] + 1)
-        assert following["source"] == "human" and following["expert_valid"]
-        assert "human_started" in following["transitions"]
+        assert following["source"] in ("hold", "human")
+        assert any("human_started" in r["transitions"] for r in rows)
         assert any("resume_requested" in r["transitions"] for r in rows)
     finally:
         release.set()

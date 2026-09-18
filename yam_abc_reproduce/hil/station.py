@@ -166,7 +166,8 @@ class StationIO:
                 q[sl], leader[sl] - self.leader_speed * dt, leader[sl] + self.leader_speed * dt
             )
             if decision.leader_freeze:
-                arm = leader[sl]
+                frozen = getattr(decision, "leader_hold_target", None)
+                arm = leader[sl] if frozen is None else frozen[sl]
             if maintenance_leader is not None:
                 # Maintenance owns its bounded trajectory and tracking guard;
                 # re-clamping against feedback here would prevent it progressing.
@@ -180,7 +181,10 @@ class StationIO:
             else:
                 u.agent.hil_leader_command(
                     leader_targets[i], manual=manual,
-                    gain_scale=0.4 if leader_homing and maintenance_leader is not None else self.leader_gain,
+                    gain_scale=0.4 if (
+                        (leader_homing and maintenance_leader is not None)
+                        or (decision.leader_freeze and maintenance_leader is None)
+                    ) else self.leader_gain,
                 )
             stamps[f"{u.name}_leader"] = time.monotonic()
         self._manual = manual

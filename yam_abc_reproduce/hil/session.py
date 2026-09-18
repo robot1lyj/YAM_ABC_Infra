@@ -54,6 +54,8 @@ class Session:
             self.arbiter.takeover(state, leader)
         elif event == "resume_policy":
             self.arbiter.resume_policy(state)
+        elif event == "manual_ready":
+            self.arbiter.manual_ready(state, leader)
         elif event == "hold":
             self.arbiter.hold(state)
         elif event and event.startswith("mode:"):

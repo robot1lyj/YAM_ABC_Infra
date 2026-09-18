@@ -26,6 +26,7 @@ def test_takeover_invalidates_inflight_and_requires_new_response():
     assert not a.accept(old, np.tile(q, (50, 1)), 0.01)
     a.step(q, q, now=0.011, dt=0.03)
     a.step(q, q, now=0.012, dt=0.03)
+    a.manual_ready(q, q)
     a.resume_policy(q)
     assert a.phase == Phase.RESUME
     token = a.request(2, 0.02)
@@ -132,7 +133,7 @@ def test_slow_network_does_not_block_manual_event():
         deadline = time.monotonic() + 1
         while worker._replies.empty() and time.monotonic() < deadline:
             time.sleep(0.001)
-        d = session.tick(**kw, now=0.06)
+        d = session.tick(**kw, now=0.06, event="manual_ready")
         assert d.source == "human" and not d.policy_valid
     finally:
         release.set()
@@ -202,7 +203,12 @@ def test_takeover_freezes_then_uses_relative_leader_motion_and_does_not_toggle_b
     freeze = a.step(q, h, now=0.03, dt=0.03)
     assert freeze.source == "hold" and freeze.leader_freeze
     np.testing.assert_array_equal(freeze.action, q)
-    manual = a.step(q, h, now=0.06, dt=0.03)
+    waiting = a.step(q + .01, h + .01, now=1, dt=0.03)
+    assert waiting.leader_freeze and waiting.source == "hold"
+    np.testing.assert_array_equal(waiting.action, q)
+    np.testing.assert_array_equal(waiting.leader_hold_target, h)
+    a.manual_ready(q, h)
+    manual = a.step(q, h, now=1.03, dt=0.03)
     assert manual.source == "human" and not manual.leader_freeze
     np.testing.assert_allclose(manual.action, q)
     h[[0, 7]] += 0.01

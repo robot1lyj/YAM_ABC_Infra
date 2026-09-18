@@ -154,6 +154,26 @@ def test_handle_buttons_independent_edges_and_no_hil_takeover():
     assert read([[True, True], [False, False]], 1.6, phase=Phase.POLICY) is None
 
 
+def test_takeover_unlock_requires_fresh_right_primary_edge():
+    from yam_abc_reproduce.hil.buttons import HandleButtons
+
+    b = HandleButtons()
+    def read(left, right, t, phase=Phase.TAKEOVER):
+        return b.read([[left, False], [right, False]], now=t, mode=Mode.HIL, phase=phase)
+
+    assert read(False, True, 0, Phase.POLICY) is None
+    assert read(False, True, 1) is None  # held before intervention
+    assert read(False, False, 2) is None
+    assert read(True, False, 3) is None  # left cannot unlock
+    assert read(False, False, 4) is None
+    assert read(False, True, 5) == "manual_ready"
+    assert read(False, True, 6, Phase.HUMAN) is None  # no immediate handback
+    assert read(False, False, 7, Phase.HUMAN) is None
+    assert read(False, True, 8, Phase.HUMAN) == "resume_policy"
+    assert read(False, False, 9, Phase.FAULT) is None
+    assert read(False, True, 10, Phase.FAULT) is None
+
+
 def test_handle_primary_action_per_mode_and_discard_priority():
     from yam_abc_reproduce.hil.buttons import HandleButtons
 

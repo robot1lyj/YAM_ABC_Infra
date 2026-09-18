@@ -63,6 +63,7 @@ class Decision:
     action_index: int | None = None
     leader_freeze: bool = False
     policy_selection: dict | None = None
+    leader_hold_target: np.ndarray | None = None
 
 
 def vector(value) -> np.ndarray:
@@ -168,7 +169,7 @@ class Arbiter:
         self._previous_grip: np.ndarray | None = None
         self.fault_reason: str | None = None
         self._offset = np.zeros(14)
-        self._freeze_tick = False
+        self._leader_frozen = None
 
     def _transition(self, phase: Phase, state: np.ndarray):
         self._active_request = None
@@ -210,11 +211,17 @@ class Arbiter:
             return
         q, h = vector(state), vector(leader)
         self._transition(Phase.TAKEOVER, q)
+        self._leader_frozen = h.copy()
+
+    def manual_ready(self, state, leader):
+        if self.mode != Mode.HIL or self.phase != Phase.TAKEOVER:
+            return
+        q, h = vector(state), vector(leader)
+        self._transition(Phase.HUMAN, q)
         self._offset = q - h
         self._offset[[6, 13]] = 0
         self._pickup = [False, False]
         self._previous_grip = h[[6, 13]].copy()
-        self._freeze_tick = True
 
     def resume_policy(self, state):
         if self.mode == Mode.HIL and self.phase == Phase.HUMAN:
@@ -435,11 +442,6 @@ class Arbiter:
             self._transition(Phase.HOLD, q)
         if not observation_fresh and self.phase in (Phase.RESUME, Phase.POLICY):
             self._transition(Phase.HOLD, q)
-        if self.phase == Phase.TAKEOVER:
-            if self._freeze_tick:
-                self._freeze_tick = False
-            else:
-                self.phase = Phase.HUMAN
         policy = None
         action_index = None
         source = "hold"
@@ -524,4 +526,5 @@ class Arbiter:
             action_index,
             self.phase == Phase.TAKEOVER,
             self.action_buffer.last_selection if policy is not None and self.streaming else None,
+            self._leader_frozen.copy() if self.phase == Phase.TAKEOVER else None,
         )

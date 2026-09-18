@@ -10,7 +10,7 @@ const phases = {
   hold: "已保持",
   human: "人工控制",
   policy: "模型执行",
-  takeover: "冻结接管",
+  takeover: "已锁定 · 右 Leader ①开启遥操作",
   resume: "准备交还",
   fault: "故障锁存",
 };
@@ -189,6 +189,8 @@ function render() {
   $("policy-restart").disabled = !policyEditable || !!state.mock;
   $("policy-source-apply").disabled = !policyEditable || !!state.mock;
   $("policy-source-url").disabled = !policyEditable || !!state.mock;
+  $("policy-source-local").disabled = !policyEditable || !!state.mock;
+  $("policy-source-thor").disabled = !policyEditable || !!state.mock;
   if (!$("policy-source-url").value) $("policy-source-url").value = state.policy_url || "";
   text("policy-source-current", `当前来源：${state.policy_url || "未配置"}`);
   $("planner-restart").disabled = !policyEditable || !!state.mock;
@@ -1130,6 +1132,8 @@ $("policy-source-form").onsubmit = async (e) => {
   const url = $("policy-source-url").value.trim();
   if (await action("/policy/source", { url })) toast("来源切换已提交；机械臂保持连接，不自动运动");
 };
+$("policy-source-local").onclick = () => { $("policy-source-url").value = "ws://127.0.0.1:8002"; };
+$("policy-source-thor").onclick = () => { $("policy-source-url").value = "ws://192.168.250.1:8000"; };
 $("policy-restart").onclick = async () => {
   if (await action("/policy/restart")) toast("推理通信子进程正在重载；机械臂保持连接");
 };

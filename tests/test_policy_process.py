@@ -147,12 +147,15 @@ def test_source_change_only_queues_and_requires_hold():
     from yam_abc_reproduce.hil.run import Runtime
 
     owner = Runtime.__new__(Runtime)
+    owner.task_switching = False
     owner.status = {"phase": "hold"}
     owner.recorder = SimpleNamespace(recording=False)
     owner.worker = SimpleNamespace(client=SimpleNamespace(url="ws://old:8000"))
     owner.policy_commands = queue.Queue()
     owner.change_policy_source(url="ws://new:8002")
-    assert owner.policy_commands.get_nowait() == ("source", "ws://new:8002")
+    envelope, command, receipt = owner.policy_commands.get_nowait()
+    assert envelope == "command" and command == ("source", "ws://new:8002")
+    assert receipt["state"] == "queued" and receipt is owner.policy_command_status
     assert owner.worker.client.url == "ws://old:8000"
     owner.status["phase"] = "policy"
     with pytest.raises(ValueError, match="暂停"):

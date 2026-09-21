@@ -272,7 +272,11 @@ class RecordingSession:
         result = {"done": threading.Event()}
         if not self._put(("rotate", Path(path), metadata, result)):
             raise RuntimeError(self.error or "recording unavailable")
+        deadline = time.monotonic() + getattr(self, "command_timeout_s", 2.5)
         while not result["done"].wait(0.1):
+            if time.monotonic() >= deadline:
+                self.error = "recording rotation acknowledgement timed out; outcome uncertain"
+                raise RuntimeError(self.error)
             if not self._thread.is_alive():
                 raise RuntimeError(self.error or "recording writer stopped")
         if result.get("error"):

@@ -75,8 +75,11 @@ class DeviceClient:
     def event(self, event):
         return self._request("POST", f"/event/{quote(event, safe=':')}")
 
-    def configure_policy(self, *, fusion):
-        return self._request("POST", "/policy/settings", {"fusion": fusion})
+    def configure_policy(self, *, fusion, rtc_delay_steps=None):
+        body = {"fusion": fusion}
+        if rtc_delay_steps is not None:
+            body["rtc_delay_steps"] = rtc_delay_steps
+        return self._request("POST", "/policy/settings", body)
 
     def restart_policy(self):
         return self._request("POST", "/policy/restart")

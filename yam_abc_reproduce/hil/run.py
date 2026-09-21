@@ -154,6 +154,8 @@ class Runtime:
             worker.plan_context = self._plan_context
         self.events = queue.Queue(maxsize=16)
         self.policy_commands = queue.Queue(maxsize=4)
+        self.task_releases = queue.SimpleQueue()
+        self.policy_command_status = None
         self.task_switching = False
         self.takeovers = queue.Queue(maxsize=1)
         self.intervention_id = 0
@@ -297,6 +299,13 @@ class Runtime:
             raise ValueError("录制或紧急暂停时不可点动")
         self.jog.request(arm, joint, delta)
 
+    def _queue_policy_command(self, command):
+        if self.task_switching:
+            raise ValueError("任务切换中，设置未提交；完成后可重试")
+        receipt = {"kind": command[0], "state": "queued", "submitted_at": time.monotonic()}
+        self.policy_commands.put_nowait(("command", command, receipt))
+        self.policy_command_status = receipt
+
     def configure_policy(self, *, fusion: str, rtc_delay_steps: int | None = None):
         if fusion not in ("tda_smooth", "sync_hold", "rtc"):
             raise ValueError("推理动作块模式需为同步推理、TDA 或 RTC")
@@ -314,7 +323,7 @@ class Runtime:
             raise ValueError("RTC 前缀步数只可在RTC模式设置为1–10")
         if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
             raise ValueError("请先暂停模型并结束本集录制")
-        self.policy_commands.put_nowait((
+        self._queue_policy_command((
             "configure", fusion,
             self.rtc_delay_steps if rtc_delay_steps is None else rtc_delay_steps,
         ))
@@ -324,7 +333,7 @@ class Runtime:
             raise ValueError("请先暂停模型并结束本集录制")
         if self.worker is None or not hasattr(self.worker.client, "restart"):
             raise ValueError("当前策略不支持独立重载")
-        self.policy_commands.put_nowait(("restart",))
+        self._queue_policy_command(("restart",))
 
     def reload_interaction(self):
         if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
@@ -333,7 +342,7 @@ class Runtime:
             raise ValueError("请先结束维护并解除紧急暂停锁存")
         from .interaction_rules import load_rules
         candidate = load_rules()  # File IO/compilation outside control tick.
-        self.policy_commands.put_nowait(("interaction", candidate))
+        self._queue_policy_command(("interaction", candidate))
 
     def change_policy_source(self, *, url):
         from urllib.parse import urlparse
@@ -345,14 +354,14 @@ class Runtime:
             raise ValueError("请先暂停并结束录制再切换来源")
         if self.worker is None or not hasattr(self.worker.client, "url"):
             raise ValueError("当前会话未创建模型通信客户端")
-        self.policy_commands.put_nowait(("source", url))
+        self._queue_policy_command(("source", url))
 
     def restart_planner(self):
         if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
             raise ValueError("请先暂停模型并结束本集录制")
         if self.worker is None or self.worker.planner is None:
             raise ValueError("当前会话未启用独立动作规划进程")
-        self.policy_commands.put_nowait(("restart_planner",))
+        self._queue_policy_command(("restart_planner",))
 
     def run(self, *, duration=None, auto_start=False, demo=False):
         period = 1 / self.hz
@@ -387,9 +396,18 @@ class Runtime:
                     event, requested_at = None, None
                 a = self.session.arbiter
                 try:
-                    policy_command = self.policy_commands.get_nowait()
+                    policy_command = self.task_releases.get_nowait()
                 except queue.Empty:
-                    policy_command = None
+                    try:
+                        policy_command = self.policy_commands.get_nowait()
+                    except queue.Empty:
+                        policy_command = None
+                command_receipt = None
+                if policy_command is not None and policy_command[0] == "command":
+                    _, policy_command, command_receipt = policy_command
+                    if now - command_receipt["submitted_at"] > 2:
+                        command_receipt.update(state="rejected", error="设置请求已过期，请重试")
+                        policy_command = None
                 if policy_command is not None and policy_command[0] == "task_barrier":
                     receipt = policy_command[1]
                     if (a.phase != Phase.HOLD or self.recorder.recording
@@ -419,12 +437,16 @@ class Runtime:
                         policy_command[2].set()
                     policy_command = None
                 if self.task_switching:
+                    if command_receipt is not None:
+                        command_receipt.update(state="rejected", error="任务切换中，设置未应用")
                     policy_command = None
                 if policy_command is not None:
                     if (a.phase != Phase.HOLD or getattr(self.recorder, "recording", False)
                             or (policy_command[0] == "interaction" and
                                 (self.maintenance.latched or self.maintenance.state != "idle"))):
                         self.operator_error = "推理设置未应用：设备已离开保持状态"
+                        if command_receipt is not None:
+                            command_receipt.update(state="rejected", error=self.operator_error)
                     else:
                         frozen = a._leader_frozen
                         a._transition(Phase.HOLD, a._hold if policy_command[0] == "interaction" else q)
@@ -475,6 +497,8 @@ class Runtime:
                         else:
                             self.worker.request_restart()
                             self.operator_error = None
+                        if command_receipt is not None:
+                            command_receipt.update(state="accepted", applied_at=time.monotonic())
                 button_event = self.handle_buttons.read(
                     buttons, now=now, mode=a.mode, phase=a.phase
                 )
@@ -877,6 +901,7 @@ class Runtime:
                         self.worker._client_ready if self.worker else False
                     ),
                     "policy_restart_error": self.worker.restart_error if self.worker else None,
+                    "policy_command": dict(self.policy_command_status) if self.policy_command_status else None,
                     "policy_tda_drop_max": getattr(a.action_buffer, "drop_max", None),
                     "policy_joint_speed_rad_s": (
                         self.io.policy_joint_speed

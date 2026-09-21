@@ -1,4 +1,6 @@
 "use strict";
+const controlSession = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+let controlToken = sessionStorage.getItem("yam-control-token") || "";
 const $ = (id) => document.getElementById(id),
   names = {
     collect: "数据采集",
@@ -32,13 +34,25 @@ function toast(message) {
   toastTimer = setTimeout(() => ($("toast").hidden = true), 4500);
 }
 async function post(path, body) {
+  if (state.control_auth_required && !controlToken) {
+    if (path === "/heartbeat") return {ok: false};
+    const entered = window.prompt("工作台控制口令");
+    if (!entered) throw Error("操作未提交：未输入控制口令");
+    controlToken = entered;
+    sessionStorage.setItem("yam-control-token", entered);
+  }
   const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-YAM-Control": "1" },
+    headers: { "Content-Type": "application/json", "X-YAM-Control": "1",
+      "X-YAM-Session": controlSession, "X-YAM-Token": controlToken },
     body: JSON.stringify(body || {}),
     signal: AbortSignal.timeout(5000),
   });
   const result = await response.json();
+  if (response.status === 401) {
+    controlToken = "";
+    sessionStorage.removeItem("yam-control-token");
+  }
   if (!response.ok)
     throw Error(
       typeof result.detail === "string" ? result.detail : "请求参数无效",
@@ -255,9 +269,9 @@ function render() {
     ? "推理通信尚未就绪；可在保持状态重载推理通信" : "";
   if (intervening) $("start").title = "介入期间只能暂停或明确交还模型";
   $("header-stop").disabled =
-    !online || state.connection !== "connected" || latched;
+    online && state.connection === "disconnected";
   $("header-reset").hidden = !latched;
-  $("hold").disabled = !online || state.connection !== "connected";
+  $("hold").disabled = online && state.connection === "disconnected";
   $("takeover").disabled = !(
     canRun &&
     mode === "hil" &&
@@ -405,6 +419,14 @@ function render() {
     camerasConnected() && healthy === 3,
   );
   if (!teleopView) {
+    if (state.policy_command) {
+      const commandState = state.policy_command.state;
+      healthRow("设置请求", {
+        queued: "等待控制确认",
+        accepted: "控制已接收",
+        rejected: "未应用 · 见提示",
+      }[commandState] || "待确认", commandState === "accepted");
+    }
     healthRow(
       "Thor 模型",
       state.policy_configured
@@ -448,6 +470,8 @@ function render() {
     maint !== "idle" ? state.maintenance_error : null,
     state.operator_error,
     ["inference", "hil"].includes(mode) ? state.policy_restart_error : null,
+    state.policy_command?.state === "rejected" ? state.policy_command.error : null,
+    state.health_error ? `健康采样暂不可用：${state.health_error}` : null,
     state.operator_lost
       ? "操作台失联已触发暂停；重新连接不会自动恢复运动。"
       : null,

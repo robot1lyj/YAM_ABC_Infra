@@ -52,7 +52,8 @@ class PolicyWorker:
         self._requested_url = None
         self._restart_planner = threading.Event()
         self._ready = threading.Event()
-        self.restart_error = None
+        self.transport_error = None
+        self.planner_restart_error = None
         self._client_ready = not hasattr(client, "restart")
         self._planner_ready = planner is None
         if not self._client_ready and auto_connect:
@@ -117,6 +118,10 @@ class PolicyWorker:
         self._restart.set()
 
     @property
+    def restart_error(self):
+        return "; ".join(x for x in (self.transport_error, self.planner_restart_error) if x) or None
+
+    @property
     def ready(self):
         return self._ready.is_set() and (
             self.planner_alive or getattr(self.client, "rtc", False)
@@ -144,19 +149,19 @@ class PolicyWorker:
                             self.client.restart()
                         else:
                             self.client.set_rtc(requested_rtc)
-                        self.restart_error = None
+                        self.transport_error = None
                         self._client_ready = True
                     except Exception as exc:
-                        self.restart_error = str(exc)
+                        self.transport_error = str(exc)
                     self._update_ready()
                 if self._restart_planner.is_set():
                     self._restart_planner.clear()
                     try:
                         self.planner.restart()
-                        self.restart_error = None
+                        self.planner_restart_error = None
                         self._planner_ready = True
                     except Exception as exc:
-                        self.restart_error = str(exc)
+                        self.planner_restart_error = str(exc)
                     self._update_ready()
                 try:
                     token, observation = self._requests.get(timeout=0.05)

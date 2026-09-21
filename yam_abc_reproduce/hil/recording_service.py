@@ -254,6 +254,7 @@ class RemoteRecordingSession:
         completion = {"event": threading.Event()}
         observed = self.save_progress_at()
         idle_since = time.monotonic()
+        deadline = idle_since + getattr(self, "command_timeout_s", 3.0)
         if kind == "close":
             while True:
                 if not self._thread.is_alive():
@@ -271,6 +272,9 @@ class RemoteRecordingSession:
         elif not self._enqueue(kind, *args, completion=completion):
             raise RuntimeError(self.error or "recorder command queue full")
         while not completion["event"].wait(0.2):
+            if kind != "close" and time.monotonic() >= deadline:
+                self._error = f"recorder {kind} acknowledgement timed out; outcome uncertain; reconnect recording before reuse"
+                raise RuntimeError(self._error)
             if not self._thread.is_alive():
                 raise RuntimeError(self.error or "recording transport stopped")
             if kind == "close":

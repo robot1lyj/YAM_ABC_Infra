@@ -1,7 +1,10 @@
 """Same-origin local operator API; device writes belong to the runtime owner."""
 
+import os
 import queue
+import secrets
 import threading
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -56,9 +59,26 @@ class PolicySettings(BaseModel):
     rtc_delay_steps: int | None = Field(default=None, strict=True, ge=1, le=10)
 
 
-def create_app(runtime):
+def create_app(runtime, *, control_access=False):
     app = FastAPI(title="悟演智能采集工作台")
     owner_args = getattr(runtime, "args", None)
+    token = os.environ.get("YAM_CONTROL_TOKEN", "") if control_access else ""
+    if control_access and not token:
+        token_path = Path("data/workstation/control.token")
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            token = token_path.read_text().strip()
+            if len(token) < 32:
+                raise ValueError("控制口令文件无效，请在本机修复 data/workstation/control.token")
+        else:
+            token = secrets.token_urlsafe(32)
+            with os.fdopen(fd, "w") as stream:
+                stream.write(token + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+    lease = {"owner": None, "at": 0.0}
     listen_host = getattr(owner_args, "web_host", "127.0.0.1")
     allowed_hosts = ["127.0.0.1", "localhost", "[::1]", "testserver"]
     if listen_host not in ("0.0.0.0", "::"):
@@ -77,6 +97,24 @@ def create_app(runtime):
             expected = str(request.base_url).rstrip("/")
             if request.headers.get("x-yam-control") != "1" or (origin and origin != expected):
                 return JSONResponse({"detail": "拒绝跨站控制请求"}, status_code=403)
+            if control_access:
+                if token and not secrets.compare_digest(request.headers.get("x-yam-token", "").encode(), token.encode()):
+                    return JSONResponse({"detail": "请输入工作台控制口令"}, status_code=401)
+                client = request.headers.get("x-yam-session", "")
+                if not client or len(client) > 128:
+                    return JSONResponse({"detail": "请刷新页面以建立控制会话"}, status_code=409)
+                now = time.monotonic()
+                path = request.url.path
+                stop = path in ("/event/hold", "/event/stop")
+                if path == "/heartbeat":
+                    if lease["owner"] != client or now - lease["at"] > 3:
+                        return JSONResponse({"ok": True, "operator": False})
+                elif not stop:
+                    if lease["owner"] not in (None, client) and now - lease["at"] <= 3:
+                        return JSONResponse({"detail": "另一页面正在操作；请关闭该页面或停止其心跳后重试。暂停仍可使用。"}, status_code=409)
+                    lease["owner"] = client
+                if lease["owner"] == client:
+                    lease["at"] = now
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Frame-Options"] = "DENY"
@@ -85,7 +123,7 @@ def create_app(runtime):
     def invoke(fn, *args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except (ValueError, queue.Full) as exc:
+        except (ValueError, RuntimeError, OSError, queue.Full) as exc:
             raise HTTPException(409, str(exc) or "指令队列忙，请稍后重试") from exc
 
     @app.get("/")
@@ -94,7 +132,7 @@ def create_app(runtime):
 
     @app.get("/status")
     def status():
-        return runtime.status
+        return {**runtime.status, "control_auth_required": bool(token)}
 
     @app.post("/event/{event}")
     def event(event: str):

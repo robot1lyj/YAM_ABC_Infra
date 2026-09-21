@@ -74,12 +74,14 @@ class Tasks:
         items = [item if t["id"] == item["id"] else t for t in self.items]
         if existing is None:
             items.append(item)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp = self.path.with_suffix(".tmp")
-        temp.write_text(json.dumps(items, ensure_ascii=False, indent=2) + "\n")
-        temp.replace(self.path)
-        self.items = items
+        self.replace(items)
         return dict(item)
+
+    def replace(self, items):
+        from .storage import atomic_json
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_json(self.path, items)
+        self.items = [dict(item) for item in items]
 
     def get(self, task_id):
         for task in self.items:

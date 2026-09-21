@@ -70,6 +70,7 @@ def test_jog_available_in_all_paused_modes_but_not_during_intervention():
 
     from yam_abc_reproduce.hil.run import Runtime
     r = object.__new__(Runtime)
+    r.task_switching = False
     calls = []
     r.recorder = SimpleNamespace(recording=False)
     r.emergency = threading.Event()

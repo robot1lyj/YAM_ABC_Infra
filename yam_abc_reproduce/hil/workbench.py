@@ -13,6 +13,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from contextlib import contextmanager
 from pathlib import Path
 from shutil import disk_usage
 from urllib.parse import urlparse
@@ -46,6 +47,8 @@ class Workbench:
         self._heartbeat = 0.0
         self._operator_lost = False
         self._snapshot = {}
+        self._inventory_snapshot = {}
+        self._health_error = None
         self._previews = {}
         self._camera_previous = {}
         self._log = deque(maxlen=40)
@@ -136,6 +139,7 @@ class Workbench:
         from .run import validate_station
 
         inventory = self._station_inventory()
+        self._inventory_snapshot = inventory
         errors = []
         try:
             cfg = build_station_config(self._station_path())
@@ -279,6 +283,9 @@ class Workbench:
             "cleanup_error": self.cleanup_error,
             "control_age_s": age,
             "operator_lost": self._operator_lost,
+            "health_error": self._health_error,
+            "health_age_s": max(0, time.monotonic() - sampled) if sampled else None,
+            "health_monitor_alive": self._monitor.is_alive(),
             "policy_configured": bool(self.args.mock or self.args.url),
             "policy_url": live.get("policy_url", self.args.url or ""),
             "output": None if self.output is None else str(self.output),
@@ -297,7 +304,7 @@ class Workbench:
             "initializing": self.initializing,
             "taskless_teleop": self.taskless_teleop,
             "task_switching": bool(runtime and runtime.task_switching),
-            "initialization": {**self._initialization, "inventory": self._station_inventory()},
+            "initialization": {**self._initialization, "inventory": dict(self._inventory_snapshot)},
         }
 
     def heartbeat(self):
@@ -353,7 +360,7 @@ class Workbench:
         self.runtime.policy_commands.put_nowait(("task_barrier", receipt))
         if not receipt["done"].wait(2):
             receipt["cancelled"] = True
-            self.runtime.policy_commands.put(("task_release", False), timeout=2)
+            self.runtime.task_releases.put(("task_release", False))
             raise ValueError("控制线程未确认任务切换，请检查设备状态")
         if receipt.get("error"):
             raise ValueError(receipt["error"])
@@ -372,35 +379,60 @@ class Workbench:
             switched = True
         finally:
             released = threading.Event()
-            self.runtime.policy_commands.put(("task_release", switched, released), timeout=2)
-            released.wait(2)
+            self.runtime.task_releases.put(("task_release", switched, released))
+            if not released.wait(2):
+                raise ValueError("数据会话已处理，但控制线程未确认解除切换；请查看状态，不要重复创建任务")
         self.log("已切换数据会话；机械臂与相机保持连接")
 
     def create_task(self, name, instruction, task):
-        with self._lock:
+        with self._editing():
             self._task_editable(first_binding=True)
+            previous = [dict(t) for t in self.tasks.items]
             selected = self.tasks.create(name, instruction, task)
-            self._bind_task(selected)
+            self._bind_catalog_task(selected, previous)
             self.selected_task = selected
             self.log("已创建并选择任务：" + self.selected_task["name"])
             return dict(self.selected_task)
 
     def update_task(self, task_id, name, instruction, task):
-        with self._lock:
+        with self._editing():
             self._task_editable(first_binding=True)
+            previous = [dict(t) for t in self.tasks.items]
             selected = self.tasks.update(task_id, name, instruction, task)
-            self._bind_task(selected)
+            self._bind_catalog_task(selected, previous)
             self.selected_task = selected
             self.log("已更新并选择任务：" + self.selected_task["name"])
             return dict(self.selected_task)
 
+    @contextmanager
+    def _editing(self):
+        if not self._lock.acquire(blocking=False):
+            raise ValueError("另一个设备或任务操作正在处理；本次未提交，状态查看和暂停仍可用")
+        try:
+            yield
+        finally:
+            self._lock.release()
+
+    def _bind_catalog_task(self, selected, previous):
+        old_session = self._session_task
+        try:
+            self._bind_task(selected)
+        except Exception:
+            if self._session_task is not old_session:
+                # Rotation committed, but release acknowledgement failed. Keep
+                # catalog and selected identity consistent with the new session.
+                self.selected_task = selected
+            else:
+                self.tasks.replace(previous)
+            raise
+
     def select_task(self, task_id):
-        with self._lock:
+        with self._editing():
             self._task_editable(first_binding=True)
             selected = self.tasks.get(task_id)
             if not selected.get("task"):
                 raise ValueError("请先补填当前任务的英文 task")
-            self._bind_task(selected)
+            self._bind_catalog_task(selected, [dict(t) for t in self.tasks.items])
             self.selected_task = selected
             self.log("已选择任务：" + self.selected_task["name"])
             return dict(self.selected_task)
@@ -784,28 +816,38 @@ class Workbench:
         return self._previews.get(role)
 
     def _watchdog(self):
+        last_error = None
         while not self._closing.wait(0.2):
             runtime = self.runtime
             if runtime and time.monotonic() - self._heartbeat > 3 and not self._operator_lost:
+                try:
+                    runtime.event("hold")
+                except Exception as exc:
+                    if str(exc) != last_error:
+                        self.log("心跳暂停请求失败，请使用实体急停：" + str(exc))
+                    last_error = str(exc)
+                    continue
                 self._operator_lost = True
-                runtime.event("hold")
+                last_error = None
                 self.log("操作台心跳中断：已请求软件暂停，恢复连接不会自动运动")
 
     def _observe(self):
-        try:
-            self._observe_loop()
-        except Exception as exc:
-            self._previews = {}
-            self.preview_enabled = False
-            self.log("预览/健康采样已停止：" + str(exc))
-            if self._encoder:
-                self._encoder.close()
-                self._encoder = None
+        while not self._closing.is_set():
+            try:
+                self._observe_loop()
+            except Exception as exc:
+                self._previews = {}
+                message = str(exc)
+                if message != self._health_error:
+                    self.log("健康采样异常，稍后重试：" + message)
+                self._health_error = message
+                self._closing.wait(1)
 
     def _observe_loop(self):
         # Bound preview load independently of the 30 Hz acquisition/control streams.
         while not self._closing.wait(0.2):
             runtime = self.runtime
+            self._inventory_snapshot = self._station_inventory()
             if runtime is None and self.camera_state != "connected":
                 if self._encoder:
                     self._encoder.close()
@@ -912,6 +954,7 @@ class Workbench:
                     e["outcome"] not in ("aborted", "discarded") for e in episodes
                 ),
             }
+            self._health_error = None
 
     def close(self):
         self._closing.set()
@@ -938,7 +981,7 @@ def serve(args):
     workbench = Workbench(args)
     try:
         uvicorn.run(
-            create_app(workbench), host=args.web_host, port=args.web_port, log_level="warning"
+            create_app(workbench, control_access=not args.mock), host=args.web_host, port=args.web_port, log_level="warning"
         )
     finally:
         workbench.close()
@@ -958,7 +1001,7 @@ def serve_device(args):
         pass
     workbench = Workbench(args)
     try:
-        uvicorn.run(create_app(workbench), uds=str(socket_path), log_level="warning")
+        uvicorn.run(create_app(workbench, control_access=False), uds=str(socket_path), log_level="warning")
     finally:
         workbench.close()
         try:
@@ -977,5 +1020,5 @@ def serve_web(args):
     client = DeviceClient(args.device_socket, args)
     client.hold_on_attach()
     uvicorn.run(
-        create_app(client), host=args.web_host, port=args.web_port, log_level="warning"
+        create_app(client, control_access=not args.mock), host=args.web_host, port=args.web_port, log_level="warning"
     )

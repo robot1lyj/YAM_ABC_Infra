@@ -414,17 +414,21 @@ def test_official_leader_switches_gains_and_clears_active_commands(monkeypatch):
     assert device.calls[-1][0] == "position"
     leader.set_manual_control(True)
     np.testing.assert_array_equal(device.calls[-2][1], np.zeros(6))
-    assert device.calls[-1][0] == "gravity"
+    np.testing.assert_array_equal(device.calls[-2][2], np.zeros(6))
+    assert device.calls[-1][0] == "position"
+    assert device.use_coulomb_friction is False
     before = len(device.calls)
     leader.set_manual_control(True)
     assert len(device.calls) == before
     leader.set_manual_control(False, 1.0)
+    assert device.use_coulomb_friction is True
     np.testing.assert_array_equal(device.calls[-2][1], np.ones(6) * 10)
     np.testing.assert_array_equal(device.calls[-2][2], np.ones(6) * 2)
     leader.set_manual_control(False, .4)
     np.testing.assert_array_equal(device.calls[-2][1], np.ones(6) * 4)
     leader.set_manual_control(True)
-    assert device.calls[-1][0] == "gravity"
+    assert device.calls[-1][0] == "position"
+    assert device.use_coulomb_friction is False
 
 
 def test_i2rt_hil_snapshot_copies_one_published_state_without_lock():

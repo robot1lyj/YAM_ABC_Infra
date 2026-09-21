@@ -14,6 +14,69 @@ from yam_abc_reproduce.hil.maintenance import Maintenance
 from yam_abc_reproduce.hil.web import create_app
 
 
+def test_policy_source_can_be_configured_without_constructing_devices(tmp_path):
+    from yam_abc_reproduce.hil.workbench import Workbench
+    service = Workbench(SimpleNamespace(
+        mode="collect", mock=True, url=None, task_root=tmp_path / "tasks",
+    ))
+    try:
+        service.change_policy_source(url="ws://192.168.250.1:8000")
+        assert service.runtime is None and service.thread is None
+        assert service.status["policy_url"] == "ws://192.168.250.1:8000"
+        with pytest.raises(ValueError):
+            service.change_policy_source(url="http://invalid")
+        service.state = "connecting"
+        with pytest.raises(ValueError):
+            service.change_policy_source(url="ws://localhost:8002")
+        assert service.args.url == "ws://192.168.250.1:8000"
+    finally:
+        service.close()
+
+
+def test_workbench_forwards_rtc_prefix_setting(tmp_path):
+    from yam_abc_reproduce.hil.workbench import Workbench
+    service = Workbench(SimpleNamespace(
+        mode="collect", mock=True, url=None, task_root=tmp_path / "tasks",
+    ))
+    received = []
+    try:
+        service.state = "connected"
+        service.runtime = SimpleNamespace(configure_policy=lambda **kw: received.append(kw))
+        with TestClient(create_app(service)) as client:
+            response = client.post("/policy/settings", json={"fusion": "rtc", "rtc_delay_steps": 7},
+                                   headers={"X-YAM-Control": "1"})
+        assert response.status_code == 200
+        assert received == [{"fusion": "rtc", "rtc_delay_steps": 7}]
+    finally:
+        service.runtime = None
+        service.close()
+
+
+def test_preview_failure_does_not_stop_health_sampling(tmp_path):
+    from yam_abc_reproduce.hil.workbench import Workbench
+    service = Workbench(SimpleNamespace(
+        mode="collect", mock=True, url=None, task_root=tmp_path / "tasks",
+    ))
+    closed = []
+    try:
+        service._encoder = SimpleNamespace(
+            process=SimpleNamespace(is_alive=lambda: False),
+            close=lambda: closed.append(True),
+        )
+        service._preview_runtime = service._camera_generation
+        service.camera_state = "connected"
+        deadline = time.monotonic() + 3
+        while service.preview_enabled and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not service.preview_enabled and closed
+        first = service.status["health_sample_at"]
+        time.sleep(0.3)
+        assert service.status["health_sample_at"] > first
+        assert service._monitor.is_alive()
+    finally:
+        service.close()
+
+
 def test_jog_bounded_steps_cancel_and_no_queue_growth():
     jog = Jog()
     jog.request("left", 0, np.deg2rad(2))

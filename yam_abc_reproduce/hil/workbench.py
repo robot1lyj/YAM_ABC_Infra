@@ -280,6 +280,7 @@ class Workbench:
             "control_age_s": age,
             "operator_lost": self._operator_lost,
             "policy_configured": bool(self.args.mock or self.args.url),
+            "policy_url": live.get("policy_url", self.args.url or ""),
             "output": None if self.output is None else str(self.output),
             "events": list(self._log),
             "home_available": bool(live.get("ready_pose")),
@@ -719,10 +720,10 @@ class Workbench:
             raise ValueError("操作台心跳已断开")
         self.runtime.request_jog(arm, joint, delta)
 
-    def configure_policy(self, *, fusion):
+    def configure_policy(self, *, fusion, rtc_delay_steps=None):
         if self.runtime is None or self.state != "connected" or self.initializing:
             raise ValueError("请先连接设备并退出初始化向导")
-        self.runtime.configure_policy(fusion=fusion)
+        self.runtime.configure_policy(fusion=fusion, rtc_delay_steps=rtc_delay_steps)
         self.log(f"推理动作块设置已提交：{fusion}")
 
     def restart_policy(self):
@@ -738,11 +739,19 @@ class Workbench:
         self.log("已请求HOLD下重载交互规则；不关闭SDK或释放力矩")
 
     def change_policy_source(self, *, url):
-        if self.runtime is None or self.state != "connected" or self.initializing:
-            raise ValueError("请先连接设备并退出初始化向导")
-        self.runtime.change_policy_source(url=url)
-        self.args.url = url
-        self.log("已请求切换推理来源；只重建通信子进程，机械臂保持连接")
+        parsed = urlparse(url)
+        if parsed.scheme not in ("ws", "wss") or not parsed.hostname:
+            raise ValueError("来源地址需为 ws:// 或 wss://")
+        with self._lock:
+            if self.initializing or self.state not in ("disconnected", "connected"):
+                raise ValueError("请等待设备操作完成并退出初始化向导")
+            if self.runtime is None and self.state == "disconnected":
+                self.args.url = url
+                self.log("已配置推理来源；尚未连接或验证模型服务")
+                return
+            self.runtime.change_policy_source(url=url)
+            self.args.url = url
+            self.log("已请求切换推理来源；只重建通信子进程，机械臂保持连接")
 
     def restart_planner(self):
         if self.runtime is None or self.state != "connected" or self.initializing:
@@ -840,16 +849,28 @@ class Workbench:
                 if rgb is not None and age <= (runtime.max_frame_age if runtime else 0.5):
                     frames[camera.role] = rgb
             if self.preview_enabled:
-                if self._encoder is None:
-                    from .preview import Preview
+                try:
+                    if self._encoder is None:
+                        from .preview import Preview
 
-                    self._encoder = Preview()
-                if not self._encoder.process.is_alive():
-                    raise RuntimeError("预览编码进程已退出；控制和原始录制继续")
-                self._encoder.submit(frames)
-                result = self._encoder.poll()
-                if result:
-                    self._preview_at, self._previews = result
+                        self._encoder = Preview()
+                    if not self._encoder.process.is_alive():
+                        raise RuntimeError("预览编码进程已退出")
+                    self._encoder.submit(frames)
+                    result = self._encoder.poll()
+                    if result:
+                        self._preview_at, self._previews = result
+                except Exception as exc:
+                    self.preview_enabled = False
+                    self._previews = {}
+                    self._preview_at = 0.0
+                    self.log("预览已停止，健康采样和控制继续：" + str(exc))
+                    encoder, self._encoder = self._encoder, None
+                    if encoder:
+                        try:
+                            encoder.close()
+                        except Exception as close_exc:
+                            self.log("预览清理失败：" + str(close_exc))
             elif self._encoder:
                 self._encoder.close()
                 self._encoder = None

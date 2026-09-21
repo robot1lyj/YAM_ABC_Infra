@@ -91,7 +91,7 @@ function render() {
       maint === "idle" && !recording && !state.recording_saving &&
       !state.recording_error,
     canRun =
-      connected && !state.initializing && !latched &&
+      connected && !state.task_switching && !state.initializing && !latched &&
       (mode === "teleop" || (collectionReady && !state.recording_error &&
         (!["inference", "hil"].includes(mode) || state.policy_ready))),
     canRecord =
@@ -154,6 +154,7 @@ function render() {
     b.disabled =
       !online ||
       transitional ||
+      !!state.task_switching ||
       !!state.initializing ||
       latched ||
       state.phase === "fault" ||
@@ -182,16 +183,18 @@ function render() {
     $("policy-fusion").value = state.policy_fusion || "tda_smooth";
     $("rtc-delay-steps").value = state.rtc_delay_steps ?? 9;
   }
-  const policyEditable = connected && paused && !latched && !recording && maint === "idle";
+  const policyEditable = connected && !state.task_switching && paused && !latched && !recording && maint === "idle";
+  const sourceEditable = online && !state.initializing && !state.mock &&
+    (state.connection === "disconnected" || policyEditable);
   $("policy-fusion").disabled = !policyEditable;
   $("rtc-delay-steps").disabled = !policyEditable || $("policy-fusion").value !== "rtc";
   $("policy-apply").disabled = !policyEditable;
   $("policy-restart").disabled = !policyEditable || !!state.mock;
-  $("policy-source-apply").disabled = !policyEditable || !!state.mock;
-  $("policy-source-url").disabled = !policyEditable || !!state.mock;
-  $("policy-source-local").disabled = !policyEditable || !!state.mock;
+  $("policy-source-apply").disabled = !sourceEditable;
+  $("policy-source-url").disabled = !sourceEditable;
+  $("policy-source-local").disabled = !sourceEditable;
   $("interaction-reload").disabled = !policyEditable;
-  $("policy-source-thor").disabled = !policyEditable || !!state.mock;
+  $("policy-source-thor").disabled = !sourceEditable;
   if (!$("policy-source-url").value) $("policy-source-url").value = state.policy_url || "";
   text("policy-source-current", `当前来源：${state.policy_url || "未配置"}`);
   $("planner-restart").disabled = !policyEditable || !!state.mock;

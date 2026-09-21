@@ -1,6 +1,5 @@
 "use strict";
 const controlSession = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-let controlToken = sessionStorage.getItem("yam-control-token") || "";
 const $ = (id) => document.getElementById(id),
   names = {
     collect: "数据采集",
@@ -34,25 +33,14 @@ function toast(message) {
   toastTimer = setTimeout(() => ($("toast").hidden = true), 4500);
 }
 async function post(path, body) {
-  if (state.control_auth_required && !controlToken) {
-    if (path === "/heartbeat") return {ok: false};
-    const entered = window.prompt("工作台控制口令");
-    if (!entered) throw Error("操作未提交：未输入控制口令");
-    controlToken = entered;
-    sessionStorage.setItem("yam-control-token", entered);
-  }
   const response = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-YAM-Control": "1",
-      "X-YAM-Session": controlSession, "X-YAM-Token": controlToken },
+      "X-YAM-Session": controlSession },
     body: JSON.stringify(body || {}),
     signal: AbortSignal.timeout(5000),
   });
   const result = await response.json();
-  if (response.status === 401) {
-    controlToken = "";
-    sessionStorage.removeItem("yam-control-token");
-  }
   if (!response.ok)
     throw Error(
       typeof result.detail === "string" ? result.detail : "请求参数无效",

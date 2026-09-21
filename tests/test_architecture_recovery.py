@@ -32,14 +32,13 @@ def test_only_operator_heartbeat_and_stop_from_other_tab(monkeypatch):
     from yam_abc_reproduce.hil import web
     clock = [100.0]
     monkeypatch.setattr(web, "time", SimpleNamespace(monotonic=lambda: clock[0]))
-    monkeypatch.setenv("YAM_CONTROL_TOKEN", "test-secret")
     events, beats = [], []
     owner = SimpleNamespace(status={}, event=events.append, heartbeat=lambda: beats.append(1))
     app = create_app(owner, control_access=True)
-    base = {"X-YAM-Control": "1", "X-YAM-Token": "test-secret"}
+    base = {"X-YAM-Control": "1"}
     a, b = {**base, "X-YAM-Session": "a"}, {**base, "X-YAM-Session": "b"}
     with TestClient(app) as client:
-        assert client.post("/event/start", headers={"X-YAM-Control": "1"}).status_code == 401
+        assert client.post("/event/start", headers={"X-YAM-Control": "1"}).status_code == 409
         assert client.post("/event/start", headers=a).status_code == 200
         assert client.post("/heartbeat", headers=b).json()["operator"] is False
         assert not beats
@@ -144,14 +143,13 @@ def test_busy_task_edit_fails_fast_and_status_has_no_file_io(tmp_path):
         service.close()
 
 
-def test_generated_control_token_persists_with_private_permissions(tmp_path, monkeypatch):
+def test_control_never_requires_or_creates_token(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("YAM_CONTROL_TOKEN", raising=False)
+    monkeypatch.setenv("YAM_CONTROL_TOKEN", "obsolete-setting")
     owner = SimpleNamespace(status={})
-    create_app(owner, control_access=True)
+    app = create_app(owner, control_access=True)
     path = tmp_path / "data/workstation/control.token"
-    first = path.read_text()
-    assert len(first.strip()) >= 32
-    assert path.stat().st_mode & 0o777 == 0o600
-    create_app(owner, control_access=True)
-    assert path.read_text() == first
+    assert not path.exists()
+    with TestClient(app) as client:
+        assert client.get("/status").json()["control_auth_required"] is False
+        assert client.post("/heartbeat", headers={"X-YAM-Control": "1", "X-YAM-Session": "a"}).status_code == 200

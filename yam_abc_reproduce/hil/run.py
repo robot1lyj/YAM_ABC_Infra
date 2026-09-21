@@ -221,9 +221,15 @@ class Runtime:
             "record",
             "success",
             "failure",
+            "end_intervention:teleop",
+            "end_intervention:inference",
+            "end_intervention:hil",
+            "end_intervention:collect",
         }
         if event not in allowed:
             raise ValueError("unknown event")
+        if event.startswith("mode:") and self.session.arbiter.intervention_pending:
+            raise ValueError("介入尚未结束，请明确确认结束介入并切换模式")
         if event == "start" and self.session.arbiter.intervention_pending:
             raise ValueError("DAgger介入尚未结束，请选择暂停或交还模型")
         if event in ("record", "discard") and not self.recording_allowed:
@@ -305,6 +311,45 @@ class Runtime:
         receipt = {"kind": command[0], "state": "queued", "submitted_at": time.monotonic()}
         self.policy_commands.put_nowait(("command", command, receipt))
         self.policy_command_status = receipt
+
+    def _prepare_policy_recording(self, event, state):
+        """Admit the ordered start marker before allowing policy execution.
+
+        This is nonblocking queue admission, not a disk-flush acknowledgement.
+        Any later writer failure still follows the existing recording HOLD path.
+        """
+        a = self.session.arbiter
+        starts = event == "start" and a.phase == Phase.HOLD and not a.intervention_pending
+        resumes = event == "resume_policy" and a.mode == Mode.HIL and (
+            a.phase == Phase.HUMAN or (
+                a.phase in (Phase.HOLD, Phase.TAKEOVER)
+                and (a.intervention_pending or a._leader_frozen is not None)
+            )
+        )
+        if not (starts or resumes) or a.mode not in (Mode.HIL, Mode.INFERENCE):
+            return True
+        if not isinstance(self.recorder, RECORDING_SESSIONS):
+            return True
+        if not self.recording_allowed:
+            self.operator_error = "当前会话不可录制，未恢复模型运动"
+            return False
+        if not self.recorder.recording:
+            self.outcome = "unknown"
+            self.recorder.set_mode(a.mode.value, self.outcome)
+            self.recorder.metadata.update({
+                "rtc": a.rtc_timeline is not None,
+                "policy_fusion": a.action_buffer.fusion,
+                "streaming": a.streaming,
+                "action_dt": a.action_dt,
+                "rtc_delay_steps": a.rtc_timeline.delay_steps if a.rtc_timeline is not None else None,
+            })
+            self.recorder.start_episode()
+        if not self.recorder.recording or self.recorder.error:
+            frozen = a._leader_frozen
+            self._recording_failed(state, self.recorder.error or "episode start was not admitted")
+            a._leader_frozen = frozen
+            return False
+        return True
 
     def configure_policy(self, *, fusion: str, rtc_delay_steps: int | None = None):
         if fusion not in ("tda_smooth", "sync_hold", "rtc"):
@@ -605,7 +650,9 @@ class Runtime:
                     event = None
                 elif event is not None:
                     self.operator_error = None
-                if event in ("stop", "home", "home_leader", "gravity", "capture_home", "reset_stop", "hold"):
+                if event in ("stop", "home", "home_leader", "gravity", "capture_home", "reset_stop", "hold") or (
+                    event and event.startswith("end_intervention:")
+                ):
                     if isinstance(self.recorder, RECORDING_SESSIONS):
                         self.recorder.stop_episode(
                             "aborted"
@@ -628,6 +675,11 @@ class Runtime:
                 if original_event in ("home", "home_leader", "gravity") and event == "hold":
                     self.session.rewind_replay()
                 previous_phase = a.phase
+                if event and event.startswith("mode:") and a.intervention_pending:
+                    self.operator_error = "介入状态已变化，模式切换未执行；请明确确认结束介入"
+                    event = None
+                if not self._prepare_policy_recording(event, q):
+                    event = None
                 decision = self.session.tick(
                     q,
                     leader,
@@ -800,15 +852,6 @@ class Runtime:
                     self.recorder.set_mode(a.mode.value, self.outcome)
                     if previous_mode != a.mode.value:
                         self.outcome = "unknown"
-                    if (
-                        original_event == "start"
-                        and a.phase != Phase.HOLD
-                        # Inference rollout and HIL intervention both record
-                        # from motion start; collection remains explicit.
-                        and a.mode in (Mode.HIL, Mode.INFERENCE)
-                        and self.recording_allowed
-                    ):
-                        self.recorder.start_episode()
                     if a.mode == Mode.COLLECT:
                         if recording_event == "discard":
                             self.recorder.stop_episode("discarded")

@@ -67,6 +67,9 @@ class Session:
                 self.arbiter._leader_frozen = np.asarray(leader).copy()
         elif event and event.startswith("mode:"):
             self.arbiter.change_mode(event.split(":", 1)[1], state)
+        elif event and event.startswith("end_intervention:"):
+            self.arbiter.change_mode(event.split(":", 1)[1], state)
+            self.arbiter._leader_frozen = np.asarray(leader).copy()
         elif event == "stop":
             self.arbiter.fail(state, "operator stop")
         elif event is not None:

@@ -788,7 +788,14 @@ document
   .forEach((b) => (b.onclick = () => switchPage(b.dataset.page)));
 document
   .querySelectorAll("[data-mode]")
-  .forEach((b) => (b.onclick = () => action("/event/mode:" + b.dataset.mode)));
+  .forEach((b) => (b.onclick = () => {
+    if (state.intervention_pending) {
+      confirmAction("结束介入并切换模式？", "当前录制将结束，两边保持当前位置；切换后不会自动运动。", () =>
+        action("/event/end_intervention:" + b.dataset.mode));
+    } else {
+      action("/event/mode:" + b.dataset.mode);
+    }
+  }));
 document
   .querySelectorAll("[data-event]")
   .forEach((b) => (b.onclick = () => action("/event/" + b.dataset.event)));

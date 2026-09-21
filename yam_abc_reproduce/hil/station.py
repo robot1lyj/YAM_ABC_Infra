@@ -183,8 +183,11 @@ class StationIO:
         gain = self.leader_gain
         if mirror and decision.source == "policy" and maintenance_leader is None:
             gain = rules.POLICY_GAIN
-        if ((leader_homing and maintenance_leader is not None)
-                or (decision.leader_freeze and maintenance_leader is None)):
+        if leader_homing and maintenance_leader is not None:
+            # Homing uses native SDK position gains, as follower positioning does.
+            # Keep manual gravity compensation and ordinary HOLD independent.
+            gain = 1.0
+        elif decision.leader_freeze and maintenance_leader is None:
             gain = rules.HOLD_GAIN
         for i, u in enumerate(self.units):
             if self.mock:

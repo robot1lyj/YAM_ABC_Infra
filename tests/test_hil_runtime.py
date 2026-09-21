@@ -26,6 +26,31 @@ class DelayedRtcPolicy(MockPolicy):
         return {"actions": np.tile(obs["observation.state"], (50, 1))}
 
 
+def test_leader_home_uses_native_gain_without_changing_manual_or_hold():
+    io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
+    calls = []
+    for unit in io.units:
+        unit.agent = SimpleNamespace(hil_leader_command=lambda target, **kw: calls.append(kw))
+    io.mock = False  # Exercise real command selection with mock motor endpoints.
+    q = np.zeros(14)
+    a = Arbiter(Mode.HIL)
+    d = a.step(q, q, now=0, dt=1/30, leader_ready=True)
+    try:
+        io.apply(d, q, q, dt=1/30, maintenance_leader=q, leader_homing=True)
+        assert all(c == {"manual": False, "gain_scale": 1.0} for c in calls)
+        calls.clear()
+        d.leader_freeze = True
+        io.apply(d, q, q, dt=1/30)
+        assert all(c == {"manual": False, "gain_scale": .4} for c in calls)
+        calls.clear()
+        d.leader_freeze, d.leader_manual = False, True
+        io.apply(d, q, q, dt=1/30)
+        assert all(c["manual"] for c in calls)
+    finally:
+        io.mock = True
+        io.close()
+
+
 def test_async_chunks_align_to_observation_time_and_replan_during_execution():
     q = np.zeros(14)
     a = Arbiter(Mode.HIL, streaming=True, action_dt=0.1, max_action_age=5)

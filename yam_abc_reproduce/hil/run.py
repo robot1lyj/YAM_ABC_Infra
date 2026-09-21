@@ -1240,14 +1240,13 @@ def main(argv=None, *, service=None):
             MockPolicy()
             if args.mock
             else ProcessPolicyClient(
-                args.url, timeout=hil_cfg.get("request_timeout", 1.5),
+                args.url or "", timeout=hil_cfg.get("request_timeout", 1.5),
                 rtc=hil_cfg.get("policy_fusion") == "rtc",
             )
-            if args.url
-            else None
         )
         policy_worker = (
-            PolicyWorker(client, planner=ProcessActionPlanner()) if client else None
+            PolicyWorker(client, planner=ProcessActionPlanner(),
+                         auto_connect=bool(args.mock or args.url))
         )
         runtime = Runtime(
             io,

@@ -6,6 +6,36 @@ import pytest
 
 from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
 from yam_abc_reproduce.hil.policy import PolicyWorker
+
+
+def test_transport_can_be_configured_after_worker_creation_without_auto_connect():
+    import threading
+
+    class Client:
+        url = ""
+
+        def __init__(self):
+            self.connected = threading.Event()
+            self.calls = []
+
+        def restart(self):
+            self.calls.append(self.url)
+            self.connected.set()
+
+        def close(self):
+            pass
+
+    client = Client()
+    worker = PolicyWorker(client, auto_connect=False)
+    try:
+        assert not client.connected.wait(0.15)
+        assert not worker.ready
+        worker.request_source("ws://localhost:8000")
+        assert client.connected.wait(2)
+        assert worker._ready.wait(2)
+        assert client.calls == ["ws://localhost:8000"]
+    finally:
+        worker.close()
 from yam_abc_reproduce.hil.session import Session
 from yam_abc_reproduce.hil.snapshots import Frame, FrameBuffers
 

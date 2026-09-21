@@ -39,7 +39,7 @@ class PolicyWorker:
     enforce their own finite timeout. The control thread never joins on takeover.
     """
 
-    def __init__(self, client, *, planner=None):
+    def __init__(self, client, *, planner=None, auto_connect=True):
         self.client = client
         self.planner = planner
         self.plan_context = None
@@ -55,7 +55,7 @@ class PolicyWorker:
         self.restart_error = None
         self._client_ready = not hasattr(client, "restart")
         self._planner_ready = planner is None
-        if not self._client_ready:
+        if not self._client_ready and auto_connect:
             self._restart.set()
         if not self._planner_ready:
             self._restart_planner.set()

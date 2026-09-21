@@ -524,10 +524,6 @@ class Workbench:
                     raise ValueError("Thor地址应为 ws://主机:端口 或 wss://主机:端口")
                 self.args.url = url or None
             taskless_teleop = self.selected_task is None and not initialize
-            if not initialize and not taskless_teleop and self.mode in ("hil", "inference") and not (
-                self.args.mock or self.args.url
-            ):
-                raise ValueError("请先填写Thor模型服务地址")
             # Task identity belongs to a data session, not the SDK connection.
             self.initializing = bool(initialize)
             self.taskless_teleop = taskless_teleop

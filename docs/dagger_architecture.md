@@ -322,3 +322,5 @@ HOLD且未录制、无维护/急停锁存时，`POST /control/reload`可热替�
 人工遥操作（含HIL人工介入）对齐官方minimum_gello在bilateral_kp=0时的做法：设置Kp/Kd全零后发布当前位置，保留SDK重力补偿，关闭本站额外开启的库仑摩擦补偿。不调用enter_gravity_comp_idle，避免其恢复非零grav_comp_kd。官方示例未开启use_coulomb_friction。退出人工后恢复原有位置控制增益及摩擦开关，回零/锁定/模型跟随的数值不变。尚未真机验证手感；不能承诺零阻尼必然更稳定或重力模型完全匹配现场负载。
 
 5fbb6a4已获准部署；随后用户明确否定HIL相对映射。新代码manual_ready直接调用与TELEOP/COLLECT相同的_human入口，删除_offset存储及动作偏移运算，复用夹爪软接管及Leader人工增益路径。辅助对齐仅为帮助，不作解锁门槛；未对齐接管会产生绝对目标差。该映射修正待部署，覆盖此前相对映射说明。
+
+1370e7e绝对映射已部署。用户后续明确要求所有遥操作开启SDK库仑摩擦补偿：纯遥操作、采集人工和HIL人工共用set_manual_control，保持Kp/Kd为零，将use_coulomb_friction恢复为True，使用SDK原有幅值、不另调大。此摩擦开关更新待部署；它是用户选择的官方SDK可选功能，不是minimum_gello示例的默认开关。

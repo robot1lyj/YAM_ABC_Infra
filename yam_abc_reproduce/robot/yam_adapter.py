@@ -262,8 +262,7 @@ class YamLeaderArm:
         bilateral_kp: float = 0.0,
     ):
         # Official teaching handles contribute their 0.258 kg inertial model.
-        # Retain the existing friction aid for powered tracking/hold; manual
-        # control below disables it to match the official minimum_gello example.
+        # Use SDK friction feedforward in both manual and powered control.
         self._robot = _build_yam(
             channel,
             arm_type,
@@ -324,8 +323,8 @@ class YamLeaderArm:
             return
         if manual:
             # Match minimum_gello with bilateral_kp=0: publish zero PD gains,
-            # retaining gravity feedforward but not our optional friction aid.
-            self._robot.use_coulomb_friction = False
+            # retaining gravity and the requested SDK friction feedforward.
+            self._robot.use_coulomb_friction = True
             self._robot.update_kp_kd(kp=np.zeros(self._n), kd=np.zeros(self._n))
             self._robot.command_joint_pos(self._robot.get_joint_pos().copy())
         else:

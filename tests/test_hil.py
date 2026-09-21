@@ -237,8 +237,6 @@ def test_takeover_freezes_then_uses_relative_leader_motion_and_does_not_toggle_b
     assert waiting.leader_freeze and waiting.source == "hold"
     np.testing.assert_array_equal(waiting.action, q)
     assert 0 < waiting.leader_hold_target[0] < h[0]
-    a.manual_ready(q, h)
-    assert a.phase == Phase.TAKEOVER  # An early button press cannot unlock.
     for i in range(40):
         h = a._leader_frozen.copy()
         a.step(q, h, now=1+i*.03, dt=.03)

@@ -17,6 +17,8 @@ def alignment_step(a, leader, dt):
     if a.phase != Phase.TAKEOVER or a._alignment is None:
         return
     p = a._alignment
+    if p.get("stopped"):
+        return
     h = vector(leader)
     joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
     p["error"] = float(np.max(np.abs(h[joints]-p["target"][joints])))
@@ -29,9 +31,9 @@ def alignment_step(a, leader, dt):
     p["stable"] = p["stable"] + 1 if u == 1 and p["error"] <= ALIGN_TOLERANCE else 0
     p["ready"] = p["stable"] >= 3
     if p["elapsed"] > p["duration"] + 3 and not p["ready"]:
-        a.hold(a._hold)
         a._leader_frozen = h.copy()
-        a.alignment_error = "Leader对齐超时，已保持。请检查路径、负载及关节反馈；不要强推手柄。"
+        p["stopped"] = True
+        a.alignment_error = "Leader辅助对齐已停止并保持；可按右①以当前姿态进入相对遥操作。异常阻挡请先检查。"
 
 
 def button_event(mode, phase, right_edge, primary_edge):
@@ -68,12 +70,8 @@ def manual_ready(a, state, leader):
     from .core import Mode, Phase, vector
     if a.mode != Mode.HIL or a.phase != Phase.TAKEOVER:
         return
-    import numpy as np
-    joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
-    if (a._alignment is None or not a._alignment["ready"]
-            or np.max(np.abs(vector(leader)[joints]-a._alignment["target"][joints])) > ALIGN_TOLERANCE
-            or np.max(np.abs(vector(leader)[joints]-vector(state)[joints])) > ALIGN_TOLERANCE):
-        return  # Early presses are not queued; a new press is required when ready.
+    # Capture the actual poses at the button edge. Alignment is assistance,
+    # never an unlock gate; transition cancels its trajectory immediately.
     q, h = vector(state), vector(leader)
     a._transition(Phase.HUMAN, q)
     a.intervention_waiting = False

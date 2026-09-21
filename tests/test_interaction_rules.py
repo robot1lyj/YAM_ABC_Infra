@@ -25,7 +25,7 @@ def test_alignment_is_bounded_and_pause_cancels_it():
     np.testing.assert_allclose(d.leader_hold_target, previous)
 
 
-def test_alignment_timeout_locks_measured_leader_without_unlocking():
+def test_alignment_timeout_stops_assistance_but_allows_relative_takeover():
     a = Arbiter(Mode.HIL)
     q, h = np.zeros(14), np.zeros(14)
     h[0] = .4
@@ -33,11 +33,30 @@ def test_alignment_timeout_locks_measured_leader_without_unlocking():
     a.takeover(q, h)
     for i in range(180):
         d = a.step(q, h, now=i/30, dt=1/30)
-    assert d.phase == Phase.HOLD and a._alignment is None
-    assert "对齐超时" in a.alignment_error
+    assert d.phase == Phase.TAKEOVER and a._alignment["stopped"]
+    assert "辅助对齐已停止" in a.alignment_error
     np.testing.assert_array_equal(d.leader_hold_target, h)
     a.manual_ready(q, h)
-    assert a.phase == Phase.HOLD
+    assert a.phase == Phase.HUMAN and a._alignment is None
+    d = a.step(q, h, now=7, dt=1/30)
+    np.testing.assert_array_equal(d.action, q)
+
+
+def test_button_during_alignment_uses_latest_poses_without_jump():
+    a = Arbiter(Mode.HIL)
+    q, h = np.zeros(14), np.zeros(14)
+    h[0] = .9
+    a.start(q)
+    a.takeover(q, h)
+    a.step(q, h, now=0, dt=1/30)
+    q[0], h[0] = .03, .8
+    a.manual_ready(q, h)
+    assert a.phase == Phase.HUMAN and a._alignment is None
+    d = a.step(q, h, now=.03, dt=1/30)
+    np.testing.assert_allclose(d.action, q)
+    h[0] += .02
+    d = a.step(q, h, now=.06, dt=1/30)
+    assert abs(d.action[0] - .05) < 1e-10
 
 
 def test_stop_cancels_alignment_and_cannot_resume_old_target():

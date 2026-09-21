@@ -1,5 +1,7 @@
 "use strict";
-const controlSession = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+const controlSession = sessionStorage.getItem("yam-control-session") ||
+  (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+sessionStorage.setItem("yam-control-session", controlSession);
 const $ = (id) => document.getElementById(id),
   names = {
     collect: "数据采集",
@@ -36,7 +38,8 @@ async function post(path, body) {
   const response = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-YAM-Control": "1",
-      "X-YAM-Session": controlSession },
+      "X-YAM-Session": controlSession,
+      "X-YAM-Visible": document.visibilityState === "visible" ? "1" : "0" },
     body: JSON.stringify(body || {}),
     signal: AbortSignal.timeout(5000),
   });

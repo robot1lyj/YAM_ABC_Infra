@@ -49,10 +49,23 @@ def test_only_operator_heartbeat_and_stop_from_other_tab(monkeypatch):
         assert client.get("/status").status_code == 200
         assert events == ["start", "stop"]
         clock[0] += 4
-        assert client.post("/heartbeat", headers=a).json()["operator"] is False
+        assert client.post("/heartbeat", headers=a).json() == {"ok": True}
+        assert events == ["start", "stop"]  # Recovery never requests movement.
+        clock[0] += 4
         assert client.post("/event/start", headers=b).status_code == 200
         assert client.post("/heartbeat", headers=a).json()["operator"] is False
-        assert beats == [1]
+        assert beats == [1, 1]
+
+
+def test_visible_page_attaches_after_web_restart_without_motion():
+    beats, events = [], []
+    owner = SimpleNamespace(status={}, event=events.append, heartbeat=lambda: beats.append(1))
+    with TestClient(create_app(owner, control_access=True)) as client:
+        headers = {"X-YAM-Control": "1", "X-YAM-Session": "refreshed", "X-YAM-Visible": "1"}
+        assert client.post("/heartbeat", headers=headers).json() == {"ok": True}
+        other = {**headers, "X-YAM-Session": "other"}
+        assert client.post("/heartbeat", headers=other).json()["operator"] is False
+        assert beats == [1] and events == []
 
 
 def test_recorder_hung_request_is_bounded():

@@ -87,7 +87,11 @@ def create_app(runtime, *, control_access=False):
                 path = request.url.path
                 stop = path in ("/event/hold", "/event/stop")
                 if path == "/heartbeat":
-                    if lease["owner"] != client or now - lease["at"] > 3:
+                    # An unowned Web session may attach a visible page. Never
+                    # let a spectator heartbeat steal an existing owner.
+                    if lease["owner"] is None and request.headers.get("x-yam-visible") == "1":
+                        lease["owner"] = client
+                    if lease["owner"] != client:
                         return JSONResponse({"ok": True, "operator": False})
                 elif not stop:
                     if lease["owner"] not in (None, client) and now - lease["at"] <= 3:

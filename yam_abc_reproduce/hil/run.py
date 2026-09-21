@@ -32,7 +32,6 @@ from ..runtime import build_arm_units, build_cameras_from_config
 from .action_buffer import ActionBuffer
 from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
-from .intervention_recording import InterventionRecordingGate
 from .jog import Jog
 from .maintenance import Maintenance
 from .metrics import Latencies
@@ -159,7 +158,6 @@ class Runtime:
         self.task_switching = False
         self.takeovers = queue.Queue(maxsize=1)
         self.intervention_id = 0
-        self.intervention_recording = InterventionRecordingGate()
         self.stopping = threading.Event()
         self.holding = queue.Queue(maxsize=1)
         self.status = {"phase": "hold", "mode": mode, "tick": 0}
@@ -334,8 +332,6 @@ class Runtime:
             self.operator_error = "当前会话不可录制，未恢复模型运动"
             return False
         if not self.recorder.recording:
-            self.intervention_recording = InterventionRecordingGate()
-            self.recorder.metadata["omitted_intervention_waits"] = []
             self.outcome = "unknown"
             self.recorder.set_mode(a.mode.value, self.outcome)
             self.recorder.metadata.update({
@@ -479,7 +475,6 @@ class Runtime:
                     event, requested_at = None, None
                     if policy_command[1]:
                         self.outcome = "unknown"
-                        self.intervention_recording = InterventionRecordingGate()
                     if len(policy_command) > 2:
                         policy_command[2].set()
                     policy_command = None
@@ -872,15 +867,7 @@ class Runtime:
                 if images:
                     last_record_images = images
                 row["observation_valid"] = snapshot is not None
-                record_row = self.intervention_recording.filter(
-                    row, a.mode == Mode.HIL and (a.intervention_waiting or (
-                        a.intervention_pending and a.phase == Phase.HOLD
-                        and a._leader_frozen is not None))
-                    and a.phase != Phase.FAULT and getattr(self.recorder, "recording", True),
-                    reason="handback_wait" if a.phase == Phase.HOLD else "takeover_wait",
-                )
-                self.recorder.metadata["omitted_intervention_waits"] = self.intervention_recording.audit()
-                if record_row is not None and not self.recorder.submit(record_row, images or last_record_images):
+                if not self.recorder.submit(row, images or last_record_images):
                     if isinstance(self.recorder, RECORDING_SESSIONS):
                         self._recording_failed(q, self.recorder.error or "recorder unavailable")
                     else:

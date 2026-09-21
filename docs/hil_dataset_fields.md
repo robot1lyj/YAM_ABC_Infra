@@ -66,6 +66,10 @@ segments每项：`path, steps, start_frame, video_frames, files, state`；files�
 
 新逻辑同时剔除介入待人工与人工锁定待交还段，视频和样本一起不写入；保留原始tick/time及区间摘要。交还后等待有效模型动作的RESUME不在本次删除范围内。FAULT不被等待过滤隐藏。
 
-每次开集重置区间清单；stop消息携带本集快照，防止后台落盘与下次开集并发导致跨集摘要污染。旧第02集只修正清单，未重写视频/样本删除旧HOLD帧。
+每集录制器独立持有区间清单，在消费完本集FIFO后写入manifest，不再从设备进程复制跨集摘要。旧第02集只修正清单，未重写视频/样本删除旧HOLD帧。
+
+新录制规则（待首次部署）：保留帧新增`frame_index`（从0连续）、`timestamp=frame_index/fps`（秒）、`wait_boundary`（切除等待后的第一帧为true），存于HDF5 details。原始`tick/time`及相机时间不改；视频和样本整帧一起筛选，不插造动作、不自动拆集。普通LeRobot导出原已按帧序号生成连续时间；expert-only导出仍按其显式人工片段规则分组。连续时间不代表切点两边物理轨迹必然连续，切点标记用于追溯。
+
+参考Evo-RL的同集策略/人工标注与默认帧序号时间：[recording_loop](https://github.com/MINT-SJTU/Evo-RL/blob/c735d69d098cdefd0fdaf8d2063af06d22dab130/src/lerobot/scripts/recording_loop.py)、[lerobot_dataset](https://github.com/MINT-SJTU/Evo-RL/blob/c735d69d098cdefd0fdaf8d2063af06d22dab130/src/lerobot/datasets/lerobot_dataset.py)。Evo-RL没有本站两段锁定等待，删除这些等待是本站规则，不宣称上游有同样处理。
 
 当前没有逐帧reward、discount、done、terminated/truncated，未记录完整电机电流/力矩/温度，也没有人工抓取成功的自动真值。用于RL时这些不能凭expert_valid或phase臆造。

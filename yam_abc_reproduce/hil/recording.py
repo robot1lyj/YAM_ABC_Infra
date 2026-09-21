@@ -88,10 +88,14 @@ class Recorder:
     def _run(self):
         from .recording_process import EncoderProcess
         from .storage import SegmentWriter
+        from .intervention_recording import load_recording_gate
 
         encoder = None
+        gate = None
         pending = []
         try:
+            gate = load_recording_gate()
+            self.metadata["recording_rules_revision"] = gate.revision
             place_on_cpus("RECORDING")
             while not self._stop.is_set() or not self.queue.empty():
                 try:
@@ -101,6 +105,10 @@ class Recorder:
                         raise RuntimeError(encoder.failure())
                     continue
                 started = time.monotonic()
+                record = gate.process(record, self.fps)
+                if record is None:
+                    self._bridge_progress_at = time.monotonic()
+                    continue
                 if encoder is None and images:
                     encoder = EncoderProcess(
                         self.path,
@@ -134,6 +142,7 @@ class Recorder:
             self.error = f"{type(exc).__name__}: {exc}"
         finally:
             try:
+                self.metadata["omitted_intervention_waits"] = gate.audit() if gate else []
                 if encoder:
                     result = encoder.close("aborted" if self.error else self.outcome, self.metadata)
                     self._bridge_progress_at = time.monotonic()
@@ -332,14 +341,12 @@ class RecordingSession:
         active_metadata = {}
         count = 0
 
-        def finish(outcome, final_metadata=None):
+        def finish(outcome):
             nonlocal active
             if active is None:
                 return
             active.metadata.update(self.metadata)
             active.metadata.update(active_metadata)
-            final = self.metadata if final_metadata is None else final_metadata
-            active.metadata["omitted_intervention_waits"] = final.get("omitted_intervention_waits", [])
             active.close(outcome)
             self._completed_steps += active.written
             self._session_progress_at = time.monotonic()
@@ -400,7 +407,8 @@ class RecordingSession:
                     if active:
                         raise RuntimeError("episode already open")
                     count += 1
-                    active_metadata = dict(item[2], collection_mode=item[1])
+                    active_metadata = dict(item[2], collection_mode=item[1],
+                                           omitted_intervention_waits=[])
                     active = Recorder(
                         self.path / f"episode_{count:06d}",
                         fps=self.fps,
@@ -411,7 +419,7 @@ class RecordingSession:
                     )
                     self._active = active
                 elif item[0] == "stop":
-                    finish(item[1], item[2])
+                    finish(item[1])
                 elif item[0] == "row":
                     if active is None:
                         raise RuntimeError("episode writer unavailable")

@@ -306,3 +306,13 @@ HOLD且未录制、无维护/急停锁存时，`POST /control/reload`可热替�
 用户要求删除上述dagger及“乐高分拣3”数据：2026-09-21在HOLD、无录制/保存/维护时，将前者1集及后者任务5dbcd16f-6d45-4e60-9791-10cdbe6f1191的60集移到IPC `/data/YAM/data/deleted-datasets-20260921-1545/`，可恢复。任务登记保留；当前绑定dagger的session元数据保留，不通过文件操作破坏活动记录器身份。
 
 现场session_20260921_150700_be24f8的episode_000003显示：RESUME时主从差约0.267 rad超过0.2 rad门槛，执行端保持，但请求端仍生成RTC承诺，随后触发`RTC committed target changed at actuation`。修复统一请求/执行就绪条件；等待主从对齐时不发RTC请求，已在途或已安装计划在就绪丢失后失效，拒绝旧epoch结果。保留承诺一致性检查，补充tick、维度、承诺/提交值诊断，不放宽门槛或增益。该证据说明此处软件门禁冲突，不证明模型或物理跟踪无其他问题。
+
+## 录制规则独立加载（2026-09-21，待首次部署）
+
+等待过滤、连续数据时间、每集等待摘要由Recorder持有，生产路径在独立录制进程运行。Runtime只提交带phase/intervention_pending的原始采样以及开集/结束事件，不再决定哪些数据帧写入。样本和三路图像同进同出。
+
+每次创建episode从本机受信任的intervention_recording.py加载规则，manifest保存recording_rules_revision；当前集固定使用已加载版本，下一集使用新版，不需要重载设备/SDK。仅限此规则模块的更新，不能据此宣称所有录制代码都已支持热更新。
+
+首次迁移仍涉及删除旧Runtime内的过滤，因此现有旧设备进程不能仅靠更新录制文件完成迁移，需另择已支撑的维护窗口加载一次新版。未因此自动重启或操作机械臂。
+
+离线验收：全量432 passed、3 skipped、17 subtests passed；覆盖两种等待、连续时间、原始动作不变、跨集摘要隔离及每集规则重载。尚未进行新版IPC录制验收。

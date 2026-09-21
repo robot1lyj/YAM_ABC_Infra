@@ -91,6 +91,9 @@ def test_intervention_handback_preserves_or_restarts_recording(station, pause):
         saved = list(read_rows(recorder.path / recorder.episodes[0]["path"]))
         assert not any(x["phase"] == "hold" and x["intervention_pending"] for x in saved)
     rows = list(read_rows(recorder.path / recorder.episodes[-1]["path"]))
+    assert [row["frame_index"] for row in rows] == list(range(len(rows)))
+    assert [row["timestamp"] for row in rows] == [i / recorder.fps for i in range(len(rows))]
+    assert manifests[-1]["recording_rules_revision"]
     assert any(row["source"] == "policy" for row in rows)
     assert not any(row["phase"] == "takeover" for row in rows)
 

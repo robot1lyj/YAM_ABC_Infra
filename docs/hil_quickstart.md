@@ -292,7 +292,7 @@ uv run --no-sync yam-workstation --mock --mode collect --check
 检查不连接设备、不创建录制目录。真机检查去掉 `--mock`，HIL/推理提供 `--url`；配置占位会拒绝通过。模块可发现不等于驱动可加载或设备可用。详见 [环境说明](environment.md)。
 ## 控制台故障恢复与访问（2026-09-21，已部署0eaf383）
 
-数据字段完整定义见 [HIL原始字段表](hil_dataset_fields.md)。等待过滤新修复（代码已完成，待部署）：同时去掉takeover_wait与handback_wait，每集独立清单；旧第02集仅修正多余摘要，不改原视频/动作帧。
+数据字段完整定义见 [HIL原始字段表](hil_dataset_fields.md)。等待过滤新修复（代码已完成，待部署）：同时去掉takeover_wait与handback_wait，每集独立清单；保留帧使用连续frame_index/timestamp，原始tick/time不改。规则移到录制侧，每次新集加载，首次迁移后修改该规则不用重启机械臂。旧第02集仅修正多余摘要，不改原视频/动作帧。
 
 HIL介入：Follower保持，Leader辅助对齐（峰值0.8 rad/s、2 rad/s²），右①随时停止辅助对齐并开启相对遥操作，不要求误差达标或稳定等待。以按键当刻的两臂实测位置建立偏移，首个关节目标等于Follower当前位置；夹爪保留软接管。辅助对齐超时停止并锁住Leader，仍可右①接管；显式暂停/急停则不允许按钮绕过。等待段不录入专家数据。人工①锁住后仍需页面显式交还，不自动启动模型。
 

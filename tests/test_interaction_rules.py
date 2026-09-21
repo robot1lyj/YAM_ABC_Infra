@@ -25,7 +25,7 @@ def test_alignment_is_bounded_and_pause_cancels_it():
     np.testing.assert_allclose(d.leader_hold_target, previous)
 
 
-def test_alignment_timeout_stops_assistance_but_allows_relative_takeover():
+def test_alignment_timeout_stops_assistance_but_allows_absolute_takeover():
     a = Arbiter(Mode.HIL)
     q, h = np.zeros(14), np.zeros(14)
     h[0] = .4
@@ -39,10 +39,10 @@ def test_alignment_timeout_stops_assistance_but_allows_relative_takeover():
     a.manual_ready(q, h)
     assert a.phase == Phase.HUMAN and a._alignment is None
     d = a.step(q, h, now=7, dt=1/30)
-    np.testing.assert_array_equal(d.action, q)
+    np.testing.assert_array_equal(d.action, h)
 
 
-def test_button_during_alignment_uses_latest_poses_without_jump():
+def test_button_during_alignment_reuses_absolute_teleoperation():
     a = Arbiter(Mode.HIL)
     q, h = np.zeros(14), np.zeros(14)
     h[0] = .9
@@ -53,10 +53,15 @@ def test_button_during_alignment_uses_latest_poses_without_jump():
     a.manual_ready(q, h)
     assert a.phase == Phase.HUMAN and a._alignment is None
     d = a.step(q, h, now=.03, dt=1/30)
-    np.testing.assert_allclose(d.action, q)
+    np.testing.assert_allclose(d.action, h)
     h[0] += .02
     d = a.step(q, h, now=.06, dt=1/30)
-    assert abs(d.action[0] - .05) < 1e-10
+    assert abs(d.action[0] - .82) < 1e-10
+    teleop = Arbiter(Mode.TELEOP)
+    teleop.start(q, h)
+    other = teleop.step(q, h, now=.06, dt=1/30)
+    np.testing.assert_array_equal(d.action, other.action)
+    assert d.leader_manual == other.leader_manual
 
 
 def test_stop_cancels_alignment_and_cannot_resume_old_target():

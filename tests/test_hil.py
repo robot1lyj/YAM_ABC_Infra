@@ -221,7 +221,7 @@ def test_openpi_wire_protocol_round_trip():
             thread.join(1)
 
 
-def test_takeover_freezes_then_uses_relative_leader_motion_and_does_not_toggle_back():
+def test_takeover_freezes_then_uses_absolute_leader_motion_and_does_not_toggle_back():
     q, h = pose(), pose()
     h[[0, 7]] = 0.13
     a = Arbiter(Mode.HIL)

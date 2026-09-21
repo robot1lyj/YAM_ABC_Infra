@@ -67,18 +67,12 @@ def takeover(a, state, leader):
 
 
 def manual_ready(a, state, leader):
-    from .core import Mode, Phase, vector
+    from .core import Mode, Phase
     if a.mode != Mode.HIL or a.phase != Phase.TAKEOVER:
         return
-    # Capture the actual poses at the button edge. Alignment is assistance,
-    # never an unlock gate; transition cancels its trajectory immediately.
-    q, h = vector(state), vector(leader)
-    a._transition(Phase.HUMAN, q)
+    # Use the same absolute teleoperation entry as TELEOP/COLLECT.
+    a._human(state, leader)
     a.intervention_waiting = False
-    a._offset = q - h
-    a._offset[[6, 13]] = 0
-    a._pickup = [False, False]
-    a._previous_grip = h[[6, 13]].copy()
 
 
 def handback_hold(a, state, leader):

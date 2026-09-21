@@ -169,7 +169,6 @@ class Arbiter:
         self._pickup = [False, False]
         self._previous_grip: np.ndarray | None = None
         self.fault_reason: str | None = None
-        self._offset = np.zeros(14)
         self._leader_frozen = None
         self._alignment = None
         self.alignment_error = None
@@ -209,11 +208,8 @@ class Arbiter:
     def _human(self, state, leader):
         q, h = vector(state), vector(leader)
         self._transition(Phase.HUMAN, q)
-        # Ordinary teleoperation is the native YAM identity map: starting manual
+        # All teleoperation uses the native YAM identity map: starting manual
         # control commands each follower directly to its matching leader pose.
-        # HIL takeover uses its separate clutch path below so intervention never
-        # introduces an abrupt policy-to-human jump.
-        self._offset = np.zeros(14)
         self._pickup = [False, False]
         self._previous_grip = h[[6, 13]].copy()
 
@@ -452,7 +448,7 @@ class Arbiter:
         source = "hold"
         selected = self._hold.copy()
         if self.phase == Phase.HUMAN:
-            selected = vector(leader) + self._offset
+            selected = vector(leader)
             source = "human"
             for j, dim in enumerate((6, 13)):
                 old = self._previous_grip[j]

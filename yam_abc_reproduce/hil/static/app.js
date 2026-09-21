@@ -87,7 +87,7 @@ function render() {
   const teleopView = mode === "teleop" || !state.selected_task,
     collectionReady = camerasConnected() && !!state.selected_task,
     canBindTask =
-      connected && state.taskless_teleop && paused && !latched &&
+      connected && !state.task_switching && !state.initializing && !state.intervention_pending && paused && !latched &&
       maint === "idle" && !recording && !state.recording_saving &&
       !state.recording_error,
     canRun =
@@ -1001,7 +1001,7 @@ function renderTask(locked) {
       ? "当前为初始化会话 · 完成或退出向导后开放任务"
       : locked
       ? task
-        ? "任务已锁定 · 断开机械臂并完成保存后可切换"
+        ? "暂停并结束介入、维护和录制，保存完成后可切换任务"
         : "先暂停遥操作，保持机械臂连接即可选择任务"
       : state.taskless_teleop
         ? "四臂已保持 · 选择任务即可切换数据采集"
@@ -1011,7 +1011,7 @@ function renderTask(locked) {
   $("create-task").title = state.initializing
     ? "请先完成或退出设备初始化向导"
     : locked
-      ? "请先暂停并结束当前操作"
+      ? "请先暂停、结束介入与维护，并等待录制保存完成"
       : "";
   $("edit-task").disabled = !online || locked || !task;
   text(

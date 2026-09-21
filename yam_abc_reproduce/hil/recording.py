@@ -265,6 +265,19 @@ class RecordingSession:
             self.stop_episode(outcome)
             self.mode = mode
 
+    def rotate_task(self, path, metadata):
+        """Rotate data ownership on the writer, never on the control loop."""
+        if self.recording or self.saving or self.error or self._stop.is_set():
+            raise ValueError("请先结束录制并等待保存完成")
+        result = {"done": threading.Event()}
+        if not self._put(("rotate", Path(path), metadata, result)):
+            raise RuntimeError(self.error or "recording unavailable")
+        while not result["done"].wait(0.1):
+            if not self._thread.is_alive():
+                raise RuntimeError(self.error or "recording writer stopped")
+        if result.get("error"):
+            raise RuntimeError(result["error"])
+
     def bind_task(self, path, metadata):
         """Promote an unrecorded standalone session without rebuilding the arms."""
         if (
@@ -356,7 +369,30 @@ class RecordingSession:
                         self._abort_requested.clear()
                         finish("aborted")
                     continue
-                if item[0] == "start":
+                if item[0] == "rotate":
+                    target, metadata, result = item[1:]
+                    try:
+                        if active is not None:
+                            raise ValueError("episode still active")
+                        from .storage import atomic_json
+
+                        target.mkdir(parents=True, exist_ok=False)
+                        atomic_json(target / "session.json", dict(
+                            metadata, schema="yam_session_v2", episodes=[],
+                            session_queue_peak=0, error=None, outcome="unknown",
+                        ))
+                        self._write_manifest()
+                        if self.error:
+                            raise RuntimeError(self.error)
+                        self.path, self.metadata = target, metadata
+                        self.episodes = []
+                        self._completed_steps = count = self.queue_peak = 0
+                        self.outcome = "unknown"
+                    except Exception as exc:
+                        result["error"] = str(exc)
+                    finally:
+                        result["done"].set()
+                elif item[0] == "start":
                     if active:
                         raise RuntimeError("episode already open")
                     count += 1

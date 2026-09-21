@@ -56,6 +56,8 @@ def _serve_recording(connection, ready, progress, options):
                     recorder.set_mode(*args)
                 elif kind == "bind":
                     recorder.bind_task(*args)
+                elif kind == "rotate":
+                    recorder.rotate_task(*args)
                 elif kind == "status":
                     pass
                 elif kind == "close":
@@ -68,7 +70,8 @@ def _serve_recording(connection, ready, progress, options):
             progress.value = recorder.save_progress_at()
             connection.send(
                 {
-                    "error": error or recorder.error,
+                    "error": recorder.error if kind == "rotate" else error or recorder.error,
+                    "command_error": error if kind == "rotate" else None,
                     "recording": recorder.recording,
                     "saving": recorder.saving,
                     "written": recorder.written,
@@ -280,6 +283,8 @@ class RemoteRecordingSession:
         if completion.get("error"):
             raise RuntimeError(completion["error"])
         result = completion["result"]
+        if result.get("command_error"):
+            raise RuntimeError(result["command_error"])
         if result["error"] and not allow_error:
             raise RuntimeError(result["error"])
         return result
@@ -309,6 +314,10 @@ class RemoteRecordingSession:
 
     def bind_task(self, path, metadata):
         self._request("bind", str(path), metadata)
+        self.metadata = metadata
+
+    def rotate_task(self, path, metadata):
+        self._request("rotate", str(path), metadata)
         self.metadata = metadata
 
     def close(self, outcome="unknown"):

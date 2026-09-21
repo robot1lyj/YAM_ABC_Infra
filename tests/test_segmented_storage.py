@@ -200,6 +200,34 @@ def test_separate_recording_owner_can_bind_task_without_reopening_arms(tmp_path)
         session.close("aborted")
 
 
+@pytest.mark.parametrize("session_type", [RecordingSession, RemoteRecordingSession])
+def test_task_rotation_preserves_completed_data_and_resets_episode_index(tmp_path, session_type):
+    old, new = tmp_path / "old", tmp_path / "new"
+    session = session_type(old, mode="collect", metadata={"task": "old"})
+    try:
+        session.start_episode()
+        assert session.submit(row(0), images(0))
+        with pytest.raises((ValueError, RuntimeError)):
+            session.rotate_task(new, {"task": "new"})
+        session.stop_episode("success")
+        deadline = time.monotonic() + 10
+        while (session.saving or not session.episodes) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not session.saving and session.episodes
+        old_manifest = (old / "episode_000001" / "manifest.json").read_bytes()
+        session.rotate_task(new, {"task": "new"})
+        assert session.path == new and session.episodes == [] and session.written == 0
+        session.start_episode()
+        session.submit(row(1), images(1))
+        session.stop_episode("success")
+        session.close()
+        assert (old / "episode_000001" / "manifest.json").read_bytes() == old_manifest
+        assert json.loads((old / "session.json").read_text())["task"] == "old"
+        assert json.loads((new / "episode_000001" / "manifest.json").read_text())["task"] == "new"
+    finally:
+        session.close()
+
+
 def test_segment_boundaries_preserve_one_episode_and_exact_decoded_pixels(tmp_path):
     source = make_episode(tmp_path / "source")
     raw = list(read_rows(source))

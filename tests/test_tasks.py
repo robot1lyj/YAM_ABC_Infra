@@ -56,8 +56,10 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
         assert all(c.worker is None for c in service.camera_slots)
         with pytest.raises(ValueError, match="相机"):
             service.event("start")
-        with pytest.raises(ValueError):
-            service.create_task("其他任务", "其他目标", "Sort the LEGO bricks by color.")
+        runtime, owner = service.runtime, service.thread
+        task = service.create_task("其他任务", "其他目标", "Sort the LEGO bricks by color.")
+        wait(lambda: not runtime.task_switching)
+        assert service.runtime is runtime and service.thread is owner
         service.connect_cameras()
         wait(lambda: service.camera_state == "connected")
         service.event("start")
@@ -69,6 +71,26 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
         service.event("record")
         wait(lambda: not service.status.get("recording"))
         output = service.output
+        service.event("hold")
+        wait(lambda: service.status.get("phase") == "hold" and not runtime.recorder.saving)
+        original_rotate = runtime.recorder.rotate_task
+        ticks = []
+
+        def slow_rotate(path, metadata):
+            ticks.append(runtime.status["tick"])
+            with pytest.raises(ValueError, match="任务切换中"):
+                runtime.event("start")
+            time.sleep(0.2)
+            ticks.append(runtime.status["tick"])
+            original_rotate(path, metadata)
+
+        runtime.recorder.rotate_task = slow_rotate
+        service.create_task("录制后切换", "新任务", "Pick another object.")
+        assert ticks[1] > ticks[0]
+        assert service.runtime is runtime and service.thread is owner
+        assert service.camera_state == "connected"
+        assert runtime.status["phase"] == "hold"
+        assert service.output != output
         service.disconnect(supported=True)
         wait(lambda: not service.thread.is_alive(), 30)
         assert not service.error
@@ -91,9 +113,9 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
         exported = output / "lerobot"
         report = export_session(output, exported)
         assert report["task"] == task["task"]
-        assert report["collection_task"]["name"] == "乐高分拣"
+        assert report["collection_task"]["name"] == task["name"]
         assert pd.read_parquet(exported / "meta/tasks.parquet").index[0] == task["task"]
-        service.create_task("其他任务", "其他目标", "Sort the LEGO bricks by color.")
+        service.create_task("断开后任务", "其他目标", "Sort the LEGO bricks by color.")
         service.disconnect_cameras()
         wait(lambda: service.camera_state == "disconnected")
     finally:
@@ -193,8 +215,10 @@ def test_taskless_teleop_can_bind_collection_task_without_reconnecting_arms(tmp_
         assert not service.taskless_teleop and runtime.recording_allowed
         assert service.output.parent.name == task["id"]
         assert not standalone_output.exists()
-        with pytest.raises(ValueError, match="已绑定"):
-            service.create_task("另一个任务", "不能混写", "Record another task.")
+        wait(lambda: not runtime.task_switching)
+        task = service.create_task("另一个任务", "不能混写", "Record another task.")
+        wait(lambda: not runtime.task_switching)
+        assert service.runtime is runtime and service.thread is owner
         service.event("mode:collect")
         wait(lambda: service.status.get("mode") == "collect")
         assert service.status["phase"] == "hold"

@@ -154,6 +154,7 @@ class Runtime:
             worker.plan_context = self._plan_context
         self.events = queue.Queue(maxsize=16)
         self.policy_commands = queue.Queue(maxsize=4)
+        self.task_switching = False
         self.takeovers = queue.Queue(maxsize=1)
         self.intervention_id = 0
         self.intervention_recording = InterventionRecordingGate()
@@ -196,6 +197,8 @@ class Runtime:
             raise RuntimeError("hold after recording failure: " + "; ".join(hold_errors))
 
     def event(self, event):
+        if self.task_switching and event not in ("stop", "hold", "quit"):
+            raise ValueError("任务切换中，请稍候")
         allowed = {
             "start",
             "stop",
@@ -279,6 +282,8 @@ class Runtime:
             self.events.put_nowait((event, time.monotonic()))
 
     def request_jog(self, arm, joint, delta):
+        if self.task_switching:
+            raise ValueError("任务切换中，请稍候")
         if self.status.get("phase") != "hold":
             raise ValueError("请先暂停运动，再进行关节调试（无需切换工作模式）")
         if self.session.arbiter.intervention_pending:
@@ -384,6 +389,36 @@ class Runtime:
                 try:
                     policy_command = self.policy_commands.get_nowait()
                 except queue.Empty:
+                    policy_command = None
+                if policy_command is not None and policy_command[0] == "task_barrier":
+                    receipt = policy_command[1]
+                    if (a.phase != Phase.HOLD or self.recorder.recording
+                            or self.recorder.saving or self.maintenance.state != "idle"
+                            or self.maintenance.latched or a.intervention_pending
+                            or self.jog.target is not None or not self.jog.queue.empty()
+                            or receipt.get("cancelled")):
+                        receipt["error"] = "请先暂停、结束介入和维护，并等待录制保存完成"
+                    else:
+                        self.task_switching = True
+                        frozen = a._leader_frozen
+                        a._transition(Phase.HOLD, a._hold)
+                        a._leader_frozen = frozen
+                    receipt["done"].set()
+                    policy_command = None
+                if policy_command is not None and policy_command[0] == "task_release":
+                    self.task_switching = False
+                    while not self.events.empty():
+                        self.events.get_nowait()
+                    while not self.takeovers.empty():
+                        self.takeovers.get_nowait()
+                    event, requested_at = None, None
+                    if policy_command[1]:
+                        self.outcome = "unknown"
+                        self.intervention_recording = InterventionRecordingGate()
+                    if len(policy_command) > 2:
+                        policy_command[2].set()
+                    policy_command = None
+                if self.task_switching:
                     policy_command = None
                 if policy_command is not None:
                     if (a.phase != Phase.HOLD or getattr(self.recorder, "recording", False)
@@ -507,6 +542,8 @@ class Runtime:
                     )
                 ):
                     # An old collection command must not interrupt live teleoperation.
+                    event, requested_at = None, None
+                if self.task_switching and event not in ("stop", "hold"):
                     event, requested_at = None, None
                 obs_id, observed_at, obs, images, quality = (
                     (0, None, None, {}, {}) if snapshot is None else snapshot

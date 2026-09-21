@@ -295,6 +295,7 @@ class Workbench:
             "factory_zero_home": bool(runtime and runtime.maintenance.factory_zero),
             "initializing": self.initializing,
             "taskless_teleop": self.taskless_teleop,
+            "task_switching": bool(runtime and runtime.task_switching),
             "initialization": {**self._initialization, "inventory": self._station_inventory()},
         }
 
@@ -307,7 +308,6 @@ class Workbench:
             if (
                 first_binding
                 and self.state == "connected"
-                and self.taskless_teleop
                 and not self.initializing
                 and self.runtime is not None
             ):
@@ -317,18 +317,25 @@ class Workbench:
                     self.runtime.status.get("maintenance") != "idle"
                     or self.runtime.status.get("stop_latched")
                     or self.runtime.recording_error
+                    or self.runtime.recorder.recording
+                    or self.runtime.recorder.saving
+                    or self.runtime.status.get("intervention_pending")
+                    or self.runtime.task_switching
                 ):
-                    raise ValueError("请先结束设备维护并检查当前状态，再绑定采集任务")
+                    raise ValueError("请先结束介入、设备维护和录制，并等待保存完成")
                 return
-            raise ValueError("当前采集任务已绑定；换任务需先保存并断开机械臂")
+            raise ValueError("当前任务不可编辑；连接期间可在保持状态新建或切换任务")
 
     def _bind_task(self, task):
-        if not self.taskless_teleop or self.runtime is None:
+        if self.runtime is None:
             return
         from ..config import build_station_config
 
         base = Path(self.args.output or build_station_config(self.args.station).save_root)
-        output = base / task["id"] / self.output.name
+        output = base / task["id"] / (
+            self.output.name if self.taskless_teleop else
+            time.strftime("session_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6]
+        )
         metadata = {
             **self.runtime.recorder.metadata,
             "operator_task": task["task"],
@@ -339,14 +346,34 @@ class Workbench:
                 "task_name": task["task"],
             },
         }
-        self.runtime.recorder.bind_task(output, metadata)
-        self.runtime.prompt = task["task"]
-        self.runtime.recording_allowed = True
-        self.output = output
-        self._session_task = dict(task)
-        self.task = task["task"]
-        self.taskless_teleop = False
-        self.log("遥操作会话已绑定采集任务；机械臂保持连接，切换数据采集后可录制")
+        for key in ("terminal_status", "omitted_intervention_waits", "close_errors"):
+            metadata.pop(key, None)
+        receipt = {"done": threading.Event()}
+        self.runtime.policy_commands.put_nowait(("task_barrier", receipt))
+        if not receipt["done"].wait(2):
+            receipt["cancelled"] = True
+            self.runtime.policy_commands.put(("task_release", False), timeout=2)
+            raise ValueError("控制线程未确认任务切换，请检查设备状态")
+        if receipt.get("error"):
+            raise ValueError(receipt["error"])
+        switched = False
+        try:
+            if self.taskless_teleop:
+                self.runtime.recorder.bind_task(output, metadata)
+            else:
+                self.runtime.recorder.rotate_task(output, metadata)
+            self.runtime.prompt = task["task"]
+            self.runtime.recording_allowed = True
+            self.output = output
+            self._session_task = dict(task)
+            self.task = task["task"]
+            self.taskless_teleop = False
+            switched = True
+        finally:
+            released = threading.Event()
+            self.runtime.policy_commands.put(("task_release", switched, released), timeout=2)
+            released.wait(2)
+        self.log("已切换数据会话；机械臂与相机保持连接")
 
     def create_task(self, name, instruction, task):
         with self._lock:
@@ -359,8 +386,10 @@ class Workbench:
 
     def update_task(self, task_id, name, instruction, task):
         with self._lock:
-            self._task_editable()
-            self.selected_task = self.tasks.update(task_id, name, instruction, task)
+            self._task_editable(first_binding=True)
+            selected = self.tasks.update(task_id, name, instruction, task)
+            self._bind_task(selected)
+            self.selected_task = selected
             self.log("已更新并选择任务：" + self.selected_task["name"])
             return dict(self.selected_task)
 
@@ -498,7 +527,7 @@ class Workbench:
                 self.args.mock or self.args.url
             ):
                 raise ValueError("请先填写Thor模型服务地址")
-            # Freeze task identity for the entire arm/recording session.
+            # Task identity belongs to a data session, not the SDK connection.
             self.initializing = bool(initialize)
             self.taskless_teleop = taskless_teleop
             self._session_task = (

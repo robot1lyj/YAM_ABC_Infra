@@ -61,7 +61,7 @@ def test_takeover_invalidates_inflight_and_requires_new_response():
     assert a.phase == Phase.RESUME
     token = a.request(2, 0.02)
     assert a.accept(token, np.tile(q, (50, 1)), 0.03)
-    assert a.step(q, q, now=0.04, dt=0.03).source == "hold"
+    assert a.step(q, q, now=0.04, dt=0.03).source == "policy"
     assert a.step(q, q, now=0.05, dt=0.03, leader_ready=True).source == "policy"
 
 

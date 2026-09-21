@@ -41,7 +41,7 @@ def test_tda_drops_consumed_request_steps_and_blends_entire_overlap():
     assert seventh[0] == pytest.approx(1)
 
 
-def test_tda_no_overlap_appends_and_request_during_resume_does_not_consume():
+def test_tda_no_overlap_appends_and_resume_ignores_leader_offset_gate():
     q = np.zeros(14)
     arbiter = Arbiter(
         Mode.INFERENCE, streaming=True, action_dt=1 / 30,
@@ -53,8 +53,8 @@ def test_tda_no_overlap_appends_and_request_during_resume_does_not_consume():
     assert arbiter.accept(token, rows(0.02), 1.03)
     assert arbiter.action_buffer.remaining() == 50
     decision = arbiter.step(q, q, now=1.04, dt=1 / 30, leader_ready=False)
-    assert decision.phase == Phase.RESUME
-    assert arbiter.action_buffer.remaining() == 50
+    assert decision.phase == Phase.POLICY
+    assert arbiter.action_buffer.remaining() == 49
     decision = arbiter.step(q, q, now=1.07, dt=1 / 30, leader_ready=True)
     assert decision.source == "policy"
-    assert arbiter.action_buffer.remaining() == 49
+    assert arbiter.action_buffer.remaining() == 48

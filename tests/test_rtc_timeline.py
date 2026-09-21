@@ -19,7 +19,7 @@ def limits(value):
 
 
 @pytest.mark.parametrize("reply_arrived", [False, True])
-def test_resume_alignment_gate_invalidates_rtc_promises(reply_arrived):
+def test_resume_leader_offset_does_not_invalidate_rtc_promises(reply_arrived):
     from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
     from yam_abc_reproduce.hil.session import Session
 
@@ -35,12 +35,15 @@ def test_resume_alignment_gate_invalidates_rtc_promises(reply_arrived):
     epoch = a.epoch
     decision = Session(a).tick(q, action(.267), now=.06, dt=1/30,
                               observation_id=2, leader_ready=False, policy_tick=2)
-    assert a.epoch > epoch and a.pending is None
-    assert not a.rtc_timeline.has_accepted_plan
-    assert decision.phase == Phase.RESUME and decision.source == "hold"
-    assert not a.accept_rtc(token, rows, .07, 2, limits)
+    assert a.epoch == epoch
+    if not reply_arrived:
+        assert a.accept_rtc(token, rows, .07, 2, limits)
     a.rtc_timeline.record_submitted(2, decision.action)
     np.testing.assert_array_equal(decision.action, q)
+    decision = Session(a).tick(q, action(.9), now=.3, dt=1/30,
+                              observation_id=9, leader_ready=False, policy_tick=9)
+    assert decision.phase == Phase.POLICY and decision.source == "policy"
+    np.testing.assert_array_equal(decision.action, action(.8))
 
 
 def test_hil_takeover_clears_rtc_and_resume_rejects_old_reply():

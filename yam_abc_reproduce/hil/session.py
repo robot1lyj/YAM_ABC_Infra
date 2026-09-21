@@ -74,13 +74,6 @@ class Session:
             self.arbiter.fail(state, "operator stop")
         elif event is not None:
             raise ValueError(f"unknown event: {event}")
-        # RESUME may still be waiting for leader alignment. Do not accept a
-        # timeline whose future commands are forbidden by that execution gate.
-        a = self.arbiter
-        if (a.phase == Phase.RESUME and a.rtc_timeline is not None
-                and not leader_ready
-                and (a.pending is not None or a.rtc_timeline.has_accepted_plan)):
-            a._transition(Phase.RESUME, state)
         if (
             self.worker is not None
             and not getattr(self.worker, "planner_alive", True)

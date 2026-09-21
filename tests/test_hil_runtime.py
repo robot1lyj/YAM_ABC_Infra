@@ -46,6 +46,10 @@ def test_leader_home_uses_native_gain_without_changing_manual_or_hold():
         d.leader_freeze, d.leader_manual = False, True
         io.apply(d, q, q, dt=1/30)
         assert all(c["manual"] for c in calls)
+        calls.clear()
+        d.phase, d.leader_manual = Phase.RESUME, False
+        io.apply(d, q, q, dt=1/30)
+        assert all(c == {"manual": False, "gain_scale": 1.0} for c in calls)
     finally:
         io.mock = True
         io.close()

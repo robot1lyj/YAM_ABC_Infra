@@ -31,7 +31,7 @@ function text(id, value) {
 function operatorHint(message) {
   const raw = String(message || "");
   const rules = [
-    [/RTC committed target changed at actuation/i, "RTC承诺动作与实际下发目标不一致。请先暂停；若Follower已在零位，确认路径安全后点击Leader回零，再重新开始。若仍报错，请保留诊断信息，不要连续重试。"],
+    [/RTC committed target changed at actuation/i, "RTC承诺动作与实际下发目标不一致。请保持暂停并保留诊断信息，检查动作下发链路，不要连续重试。这不是两臂实测姿态偏差，回零不一定能修复。"],
     [/SDK state update stale/i, "机械臂状态反馈超时。请先暂停，检查控制器供电、USB-CAN连接及总线状态；确认机械臂已支撑后再断开重连。反复出现时请保留日志排查，不要反复启动运动。"],
     [/CAN interface.*not up|CAN setup failed/i, "CAN接口未正常启动。请检查USB-CAN连接及控制器供电；确认四臂已支撑并断开会话后，使用Reset CAN恢复，再尝试连接。"],
     [/episode queue full|encoder.*queue.*full/i, "录制处理队列已满。请暂停并等待已接收数据保存，检查磁盘空间和编码器状态。当前集可能不完整，确认保存结果后再开始新集。"],

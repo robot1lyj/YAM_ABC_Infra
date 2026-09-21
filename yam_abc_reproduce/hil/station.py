@@ -181,7 +181,8 @@ class StationIO:
         stamps = {}
         rules = getattr(self, "interaction_rules", interaction_rules)
         gain = self.leader_gain
-        if mirror and decision.source == "policy" and maintenance_leader is None:
+        if (mirror and (decision.source == "policy" or getattr(decision, "phase", None) == "resume")
+                and maintenance_leader is None):
             gain = rules.POLICY_GAIN
         if leader_homing and maintenance_leader is not None:
             # Homing uses native SDK position gains, as follower positioning does.

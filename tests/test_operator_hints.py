@@ -23,5 +23,5 @@ def test_operator_hints_preserve_diagnostics_and_give_recovery():
     hints = json.loads(result.stdout)
     for raw, hint in zip(messages[:-1], hints[:-1]):
         assert raw in hint and "原始诊断" in hint
-    assert "若Follower已在零位" in hints[0] and "Leader回零" in hints[0]
+    assert "不是两臂实测姿态偏差" in hints[0] and "保持暂停" in hints[0]
     assert hints[-1] == "已保持"

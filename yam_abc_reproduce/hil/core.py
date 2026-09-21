@@ -464,19 +464,18 @@ class Arbiter:
         elif self.phase in (Phase.RESUME, Phase.POLICY) and self.rtc_timeline is not None:
             if policy_tick is None:
                 raise ValueError("RTC requires the controller policy tick")
-            if self.phase == Phase.POLICY or leader_ready:
-                target, rtc_source = self.rtc_timeline.select(policy_tick, self._hold)
-                if (rtc_source == "hold" and self.rtc_timeline.has_accepted_plan
-                        and not self.rtc_timeline.has_target(policy_tick)):
-                    self._transition(Phase.HOLD, q)
-                    selected = q.copy()
-                else:
-                    selected = target
-                    if rtc_source != "hold":
-                        policy = target.copy()
-                        source = "policy"
-                        self.phase = Phase.POLICY
-                        action_index = policy_tick
+            target, rtc_source = self.rtc_timeline.select(policy_tick, self._hold)
+            if (rtc_source == "hold" and self.rtc_timeline.has_accepted_plan
+                    and not self.rtc_timeline.has_target(policy_tick)):
+                self._transition(Phase.HOLD, q)
+                selected = q.copy()
+            else:
+                selected = target
+                if rtc_source != "hold":
+                    policy = target.copy()
+                    source = "policy"
+                    self.phase = Phase.POLICY
+                    action_index = policy_tick
         elif self.phase in (Phase.RESUME, Phase.POLICY) and (
             (self.action_buffer.chunk is not None) if self.streaming else (self._chunk is not None)
         ):
@@ -489,7 +488,7 @@ class Arbiter:
             ):
                 self._transition(Phase.HOLD, q)
                 selected = q.copy()
-            elif self.phase == Phase.POLICY or leader_ready:
+            else:
                 current = self.action_buffer.current(now) if self.streaming else None
                 if self.streaming and current is None:
                     self._transition(Phase.HOLD, q)

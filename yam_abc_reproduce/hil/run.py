@@ -689,7 +689,7 @@ class Runtime:
                     observation=obs,
                     observed_at=observed_at,
                     fresh=fresh,
-                    leader_ready=(a.mode == Mode.INFERENCE or error <= a.handover_error),
+                    leader_ready=True,  # Physical leader offset does not gate policy handback.
                     event=event,
                     policy_tick=tick,
                 )
@@ -751,8 +751,6 @@ class Runtime:
                     if (
                         obs is not None and fresh and self.worker is not None
                         and self.worker.ready and a.phase in (Phase.RESUME, Phase.POLICY)
-                        and (a.phase == Phase.POLICY or a.mode == Mode.INFERENCE
-                             or error <= a.handover_error)
                     ):
                         observation_tick, mapped_at = min(
                             policy_tick_times,
@@ -950,11 +948,8 @@ class Runtime:
                     ),
                     "policy_restart_error": self.worker.restart_error if self.worker else None,
                     "policy_wait_reason": (
-                        f"等待主从就绪：关节最大差 {error:.3f} rad，接管门槛 {a.handover_error:.3f} rad。"
-                        "请先暂停；若Follower已在零位，确认路径安全后点击Leader回零，再重新开始。"
-                        "否则先核对两边姿态，不要强推锁定中的Leader。"
-                        if a.phase == Phase.RESUME and a.mode == Mode.HIL
-                        and error > a.handover_error else None
+                        "正在等待有效模型动作；主从姿态偏差不阻止交还。"
+                        if a.phase == Phase.RESUME else None
                     ),
                     "policy_command": dict(self.policy_command_status) if self.policy_command_status else None,
                     "policy_tda_drop_max": getattr(a.action_buffer, "drop_max", None),

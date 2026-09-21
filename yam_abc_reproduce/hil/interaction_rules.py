@@ -7,6 +7,31 @@ reference at a tick boundary. SDK lifecycle and emergency handling stay fixed.
 API_VERSION = 1
 HOLD_GAIN = .4
 POLICY_GAIN = 1.0  # Native position Kp during HIL policy/replay following only.
+ALIGN_TOLERANCE = .05  # Joint radians; handles are not actuated.
+
+
+def alignment_step(a, leader, dt):
+    import numpy as np
+
+    from .core import Phase, vector
+    if a.phase != Phase.TAKEOVER or a._alignment is None:
+        return
+    p = a._alignment
+    h = vector(leader)
+    joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
+    p["error"] = float(np.max(np.abs(h[joints]-p["target"][joints])))
+    if p["ready"] and p["error"] <= ALIGN_TOLERANCE:
+        return
+    p["elapsed"] += dt
+    u = min(1., p["elapsed"] / p["duration"])
+    a._leader_frozen = p["start"] + (3*u*u - 2*u*u*u)*(p["target"]-p["start"])
+    p["error"] = float(np.max(np.abs(h[joints]-p["target"][joints])))
+    p["stable"] = p["stable"] + 1 if u == 1 and p["error"] <= ALIGN_TOLERANCE else 0
+    p["ready"] = p["stable"] >= 3
+    if p["elapsed"] > p["duration"] + 3 and not p["ready"]:
+        a.hold(a._hold)
+        a._leader_frozen = h.copy()
+        a.alignment_error = "Leader对齐超时，已保持。请检查路径、负载及关节反馈；不要强推手柄。"
 
 
 def button_event(mode, phase, right_edge, primary_edge):
@@ -20,18 +45,35 @@ def button_event(mode, phase, right_edge, primary_edge):
 
 
 def takeover(a, state, leader):
+    import numpy as np
+
     from .core import Mode, Phase, vector
     if a.mode == Mode.HIL and a.phase in (Phase.POLICY, Phase.RESUME):
         a._transition(Phase.TAKEOVER, vector(state))
         a.intervention_pending = True
         a.intervention_waiting = True
         a._leader_frozen = vector(leader)
+        start = vector(leader).copy()
+        target = vector(state).copy()
+        target[[6, 13]] = start[[6, 13]]
+        delta = float(np.max(np.abs(target-start)))
+        # Cubic ease-in/out, max joint speed .8 rad/s, acceleration 2 rad/s².
+        duration = max(.2, 1.5*delta/.8, (6*delta/2)**.5)
+        a._alignment = dict(start=start, target=target, duration=duration,
+                            elapsed=0., error=delta, stable=0, ready=delta <= ALIGN_TOLERANCE)
+        a.alignment_error = None
 
 
 def manual_ready(a, state, leader):
     from .core import Mode, Phase, vector
     if a.mode != Mode.HIL or a.phase != Phase.TAKEOVER:
         return
+    import numpy as np
+    joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
+    if (a._alignment is None or not a._alignment["ready"]
+            or np.max(np.abs(vector(leader)[joints]-a._alignment["target"][joints])) > ALIGN_TOLERANCE
+            or np.max(np.abs(vector(leader)[joints]-vector(state)[joints])) > ALIGN_TOLERANCE):
+        return  # Early presses are not queued; a new press is required when ready.
     q, h = vector(state), vector(leader)
     a._transition(Phase.HUMAN, q)
     a.intervention_waiting = False
@@ -74,7 +116,7 @@ def load_rules():
     if (module.API_VERSION != 1 or not 0 < module.HOLD_GAIN <= 1
             or not 0 < module.POLICY_GAIN <= 1):
         raise ValueError("incompatible interaction rules")
-    for name in ("button_event", "takeover", "manual_ready", "handback_hold", "resume_policy"):
+    for name in ("button_event", "takeover", "manual_ready", "handback_hold", "resume_policy", "alignment_step"):
         if not callable(getattr(module, name, None)):
             raise ValueError(f"missing interaction rule: {name}")
     module.revision = hashlib.sha256(source).hexdigest()[:12]

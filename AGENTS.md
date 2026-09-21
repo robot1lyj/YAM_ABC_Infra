@@ -9,7 +9,7 @@
 
 ## 自动提交与托管
 
-每轮代码更新完成、执行适用检查和 `git diff --check` 后，自动提交本任务代码及配套配置/文档/记忆，无需再次询问；不混入其他agent未完成修改。
+每轮代码更新完成、执行适用检查和 `git diff --check` 后，自动提交本任务代码及配置/文档/记忆，无需询问；不混入其他agent未完成修改。
 内网优先，提交后先 `git push -u origin main`，再 `git push github main`，核对同一SHA；失败保留本地提交并报告未同步端，不force push。
 origin=`ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`；github=`git@github.com:robot1lyj/YAM_ABC_Infra.git`；main跟踪origin/main，upstream保留i2rt-robotics/yam-abc-reproduce。
 
@@ -33,7 +33,7 @@ origin=`ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`；github=`git@github.c
 - 2标准YAM follower＋2官方电动leader＋3 D405；leader类型yam_lead_left/right、手柄yam_teaching_handle，不是GELLO。用户已确认两只Follower为标准DM4310直线夹爪，配置类型为linear_4310；实际行程仍须P3实测。
 - 不例行GELLO清零、写电机零位、刷固件或关闭超时；不显示零点标定/底层速度调参。真实机器人构造可能施力矩、自动校准夹爪；运动前确认固定、行程清空、有人照看。软件停止不能替代硬件急停。
 - 四产品模式：遥操作、纯推理、DAgger/HIL、数据采集；HOLD/人工/恢复为内部状态，维护/调试不另造第五种运行模式。所有目标经单一Runtime仲裁，维护不能与策略/遥操作同时写电机。
-- HIL界面/键盘介入锁定，右①解锁相对遥操作；人工①锁定、②无功能。采集①开始/结束、②放弃；遥操作/推理手柄无功能，空格独立暂停。模型契约/时效/单位不因减少防御而省略。
+- HIL介入：Follower保持、Leader对齐，右①就绪解锁相对遥操作；提前按无效。人工①锁定、②无功能；页面交还，无主从偏差门槛。采集①开始/结束、②放弃；遥操作/推理手柄无功能，空格暂停。保留模型契约/时效/单位检查。
 - --web-port启动不构造硬件，界面连接可能上电；无界面CLI启动会构造设备。软件紧急暂停解除后仍保持；硬件故障不能由此恢复。本站`factory_zero_home: true`只把Follower送到官方六关节零位，Leader保持手动/重力补偿、夹爪保持，不写编码器零点；其他站仍使用已示教且与station哈希匹配的准备位。回位前须核验完整插值路径。
 - 正式采集独立连接相机和四臂；HOLD且介入/维护结束、录制保存完成后可绑定或切换任务，不断臂。任务绑定数据session，切换创建新session，旧数据身份不改；部署状态见架构文档。任务身份随原始/LeRobot归档。记录Follower反馈、提交目标和三相机；MP4＋HDF5原始落盘，LeRobot仅显式离线转换。
 - 预览≤5Hz、独立进程/有界缓存，可丢预览帧；控制或录制循环不放浏览器请求/预览编码。设备与采集平台对记录、暂停和恢复给出明确用户状态；不能把独立进程称为无资源竞争。

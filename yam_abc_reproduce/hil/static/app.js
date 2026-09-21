@@ -13,7 +13,7 @@ const phases = {
   hold: "已保持",
   human: "人工控制",
   policy: "模型执行",
-  takeover: "已锁定 · 右 Leader ①开启遥操作",
+  takeover: "Leader 对齐中 · 请勿推动手柄",
   resume: "准备交还",
   fault: "故障锁存",
 };
@@ -245,7 +245,7 @@ function render() {
         : maint === "gravity"
           ? "重力补偿"
           : connected
-            ? (state.phase === "hold" && state.leader_locked ? "已锁定 · 等待页面交还" : phases[state.phase] || state.phase)
+            ? (state.phase === "takeover" && state.leader_alignment_ready ? "已对齐 · 按右 Leader ①开启遥操作" : state.phase === "hold" && state.leader_locked ? "已锁定 · 等待页面交还" : phases[state.phase] || state.phase)
             : "未就绪",
   );
   text(
@@ -478,6 +478,7 @@ function render() {
     state.cleanup_error,
     maint !== "idle" ? state.maintenance_error : null,
     state.operator_error,
+    state.leader_alignment_error,
     state.policy_wait_reason,
     ["inference", "hil"].includes(mode) ? state.policy_restart_error : null,
     state.policy_command?.state === "rejected" ? state.policy_command.error : null,

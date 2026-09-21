@@ -7,9 +7,53 @@ from yam_abc_reproduce.hil.interaction_rules import load_rules
 from yam_abc_reproduce.hil.session import Session
 
 
+def test_alignment_is_bounded_and_pause_cancels_it():
+    a = Arbiter(Mode.HIL)
+    q, h = np.zeros(14), np.zeros(14)
+    h[0], h[6], h[13] = .6, .7, .8
+    a.start(q)
+    a.takeover(q, h)
+    previous = h.copy()
+    for i in range(15):
+        d = a.step(q, previous, now=i/30, dt=1/30)
+        np.testing.assert_array_equal(d.action, q)
+        assert np.max(np.abs(d.leader_hold_target-previous)) <= .8/30 + 1e-8
+        np.testing.assert_array_equal(d.leader_hold_target[[6, 13]], [.7, .8])
+        previous = d.leader_hold_target.copy()
+    d = Session(a).tick(q, previous, now=.6, dt=1/30, observation_id=1, event="hold")
+    assert a._alignment is None and d.phase == Phase.HOLD
+    np.testing.assert_allclose(d.leader_hold_target, previous)
+
+
+def test_alignment_timeout_locks_measured_leader_without_unlocking():
+    a = Arbiter(Mode.HIL)
+    q, h = np.zeros(14), np.zeros(14)
+    h[0] = .4
+    a.start(q)
+    a.takeover(q, h)
+    for i in range(180):
+        d = a.step(q, h, now=i/30, dt=1/30)
+    assert d.phase == Phase.HOLD and a._alignment is None
+    assert "对齐超时" in a.alignment_error
+    np.testing.assert_array_equal(d.leader_hold_target, h)
+    a.manual_ready(q, h)
+    assert a.phase == Phase.HOLD
+
+
+def test_stop_cancels_alignment_and_cannot_resume_old_target():
+    a = Arbiter(Mode.HIL)
+    q, h = np.zeros(14), np.zeros(14)
+    h[0] = .4
+    a.start(q)
+    a.takeover(q, h)
+    d = Session(a).tick(q, h, now=0, dt=1/30, observation_id=1, event="stop")
+    assert d.phase == Phase.FAULT and a._alignment is None
+    np.testing.assert_array_equal(d.action, q)
+
+
 def test_handback_locks_until_explicit_resume_and_reload_preserves_state():
     a = Arbiter(Mode.HIL)
-    q, h = np.zeros(14), np.full(14, .1)
+    q, h = np.zeros(14), np.full(14, .01)
     a.start(q)
     a.takeover(q, h)
     a.manual_ready(q, h)

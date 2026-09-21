@@ -171,12 +171,16 @@ class Arbiter:
         self.fault_reason: str | None = None
         self._offset = np.zeros(14)
         self._leader_frozen = None
+        self._alignment = None
+        self.alignment_error = None
         self.interaction_rules = interaction_rules
         self.intervention_pending = False
         self.intervention_waiting = False
 
     def _transition(self, phase: Phase, state: np.ndarray):
         self._leader_frozen = None
+        self._alignment = None
+        self.alignment_error = None
         self._active_request = None
         self._last_request_at = -float("inf")
         self.last_request_reason = None
@@ -442,6 +446,7 @@ class Arbiter:
             self._transition(Phase.HOLD, q)
         if not observation_fresh and self.phase in (Phase.RESUME, Phase.POLICY):
             self._transition(Phase.HOLD, q)
+        self.interaction_rules.alignment_step(self, leader, dt)
         policy = None
         action_index = None
         source = "hold"

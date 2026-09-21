@@ -917,6 +917,10 @@ class Runtime:
                     "operator_error": self.operator_error or self.session.notice,
                     "interaction_revision": getattr(a.interaction_rules, "revision", "bundled"),
                     "leader_locked": a._leader_frozen is not None,
+                    "leader_alignment_ready": bool(a._alignment and a._alignment["ready"]
+                                                   and error <= a.interaction_rules.ALIGN_TOLERANCE),
+                    "leader_alignment_error": a.alignment_error,
+                    "leader_alignment_joint_error": a._alignment["error"] if a._alignment else None,
                     "intervention_pending": a.intervention_pending,
                     "leader_control": self.io.leader_control_status() if hasattr(self.io, "leader_control_status") else [],
                     "ready_pose": self.maintenance.ready,

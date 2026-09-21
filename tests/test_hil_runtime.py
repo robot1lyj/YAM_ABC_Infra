@@ -601,7 +601,7 @@ def test_expert_export_splits_at_policy_gaps_and_preserves_video(tmp_path):
         assert arrays["action-left-joint"].shape == (count, 6)
 
 
-def test_freeze_targets_each_leader_current_pose_before_gravity_handover():
+def test_aligns_each_leader_before_gravity_handover():
     q, h = np.zeros(14), np.zeros(14)
     h[[0, 7]] = 0.1
     calls = []
@@ -624,16 +624,20 @@ def test_freeze_targets_each_leader_current_pose_before_gravity_handover():
     io.apply(decision, q, h, dt=1 / 30)
     for call in calls[:2]:
         assert call[0] == "leader" and not call[2]["manual"]
-        assert call[1][0] == 0.1
-        assert call[2]["gain_scale"] == .4
+        assert 0 < call[1][0] < 0.1
+        assert call[2]["gain_scale"] == 1.0
     assert all(not np.any(call[1]) for call in calls[2:])
     calls.clear()
     io.apply(a.step(q, h + .02, now=.1, dt=1/30), q, h + .02, dt=1/30)
-    assert all(call[1][0] == .1 for call in calls[:2])
+    assert all(0 < call[1][0] < .1 for call in calls[:2])
+    for i in range(30):
+        h = a._leader_frozen.copy()
+        a.step(q, h, now=.2+i/30, dt=1/30)
     a.manual_ready(q, h)
     calls.clear()
     io.apply(a.step(q, h, now=.2, dt=1/30), q, h, dt=1/30)
     assert all(call[2]["manual"] and call[2]["gain_scale"] == .2 for call in calls[:2])
+    io.close()
 
 
 @pytest.mark.parametrize("mirror", [True, False])

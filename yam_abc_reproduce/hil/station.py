@@ -189,7 +189,7 @@ class StationIO:
             # Keep manual gravity compensation and ordinary HOLD independent.
             gain = 1.0
         elif decision.leader_freeze and maintenance_leader is None:
-            gain = rules.HOLD_GAIN
+            gain = rules.POLICY_GAIN if getattr(decision, "phase", None) == "takeover" else rules.HOLD_GAIN
         for i, u in enumerate(self.units):
             if self.mock:
                 if not manual:

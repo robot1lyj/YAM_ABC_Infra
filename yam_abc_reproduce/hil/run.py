@@ -741,13 +741,18 @@ class Runtime:
                         a.rtc_timeline.record_submitted(tick, submitted)
                     except RuntimeError as exc:
                         a.hold(submitted)
-                        self.operator_error = str(exc)
+                        self.operator_error = (
+                            "RTC动作一致性异常，已暂停策略：承诺动作与下发目标不同。"
+                            "请保持暂停并检查主从姿态及诊断信息，不要连续重试。" + str(exc)
+                        )
                 if maintenance_action is None and jog_action is None:
                     self.session.submitted(decision)
                 if a.rtc_timeline is not None:
                     if (
                         obs is not None and fresh and self.worker is not None
                         and self.worker.ready and a.phase in (Phase.RESUME, Phase.POLICY)
+                        and (a.phase == Phase.POLICY or a.mode == Mode.INFERENCE
+                             or error <= a.handover_error)
                     ):
                         observation_tick, mapped_at = min(
                             policy_tick_times,
@@ -944,6 +949,13 @@ class Runtime:
                         self.worker._client_ready if self.worker else False
                     ),
                     "policy_restart_error": self.worker.restart_error if self.worker else None,
+                    "policy_wait_reason": (
+                        f"等待主从就绪：关节最大差 {error:.3f} rad，接管门槛 {a.handover_error:.3f} rad。"
+                        "请先暂停；若Follower已在零位，确认路径安全后点击Leader回零，再重新开始。"
+                        "否则先核对两边姿态，不要强推锁定中的Leader。"
+                        if a.phase == Phase.RESUME and a.mode == Mode.HIL
+                        and error > a.handover_error else None
+                    ),
                     "policy_command": dict(self.policy_command_status) if self.policy_command_status else None,
                     "policy_tda_drop_max": getattr(a.action_buffer, "drop_max", None),
                     "policy_joint_speed_rad_s": (

@@ -72,8 +72,13 @@ class RtcTimeline:
         if committed is not None and not np.allclose(
             action, committed[0], rtol=0, atol=2e-6
         ):
+            dim = int(np.argmax(np.abs(action - committed[0])))
+            reason = (
+                f"RTC committed target changed at actuation: tick={tick}, dim={dim}, "
+                f"committed={committed[0][dim]:.9f}, submitted={action[dim]:.9f}"
+            )
             self.clear()
-            raise RuntimeError("RTC committed target changed at actuation")
+            raise RuntimeError(reason)
         self._submitted.append((tick, action.copy()))
         self._last_target = action
         self._plan.pop(tick, None)

@@ -74,7 +74,7 @@ def test_intervention_handback_preserves_or_restarts_recording(station, pause):
     runtime.event("hold")
     wait("hold")
     end = time.monotonic() + 4
-    while recorder.saving and time.monotonic() < end:
+    while (recorder.saving or len(recorder.episodes) != (2 if pause else 1)) and time.monotonic() < end:
         time.sleep(.02)
     assert len(recorder.episodes) == (2 if pause else 1)
     assert all(e["steps"] > 0 for e in recorder.episodes)

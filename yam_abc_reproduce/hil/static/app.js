@@ -28,8 +28,26 @@ let state = {},
 function text(id, value) {
   $(id).textContent = value;
 }
+function operatorHint(message) {
+  const raw = String(message || "");
+  const rules = [
+    [/RTC committed target changed at actuation/i, "RTC承诺动作与实际下发目标不一致。请先暂停；若Follower已在零位，确认路径安全后点击Leader回零，再重新开始。若仍报错，请保留诊断信息，不要连续重试。"],
+    [/SDK state update stale/i, "机械臂状态反馈超时。请先暂停，检查控制器供电、USB-CAN连接及总线状态；确认机械臂已支撑后再断开重连。反复出现时请保留日志排查，不要反复启动运动。"],
+    [/CAN interface.*not up|CAN setup failed/i, "CAN接口未正常启动。请检查USB-CAN连接及控制器供电；确认四臂已支撑并断开会话后，使用Reset CAN恢复，再尝试连接。"],
+    [/episode queue full|encoder.*queue.*full/i, "录制处理队列已满。请暂停并等待已接收数据保存，检查磁盘空间和编码器状态。当前集可能不完整，确认保存结果后再开始新集。"],
+    [/invalid policy response/i, "模型返回的动作格式或数值无效。请暂停，检查Thor服务协议、动作形状和有限数值；修复后再连接推理服务。"],
+    [/Replay refused.*pose/i, "回放起始姿态与当前Follower姿态不一致。请暂停并核对回放起点；只有起点确为零位时才使用回零，然后重新开始。"],
+    [/No space left|disk.*full/i, "存储空间不足。请停止录制，等待保存结束，备份并清理不需要的数据后再录制。"],
+    [/timed? ?out|TimeoutError|Failed to fetch|NetworkError|connection refused/i, "服务连接失败或响应超时。请检查网络和对应服务状态，再刷新确认；恢复连接不会自动恢复运动。"],
+  ];
+  const match = rules.find(([pattern]) => pattern.test(raw));
+  if (match) return `${match[1]}\n原始诊断：${raw}`;
+  if (raw && !/[\u3400-\u9fff]/.test(raw))
+    return `操作未完成。请保留以下诊断信息，检查对应服务状态；涉及运动时先暂停，不要连续重试。\n原始诊断：${raw}`;
+  return raw;
+}
 function toast(message) {
-  text("toast", message);
+  text("toast", operatorHint(message));
   $("toast").hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => ($("toast").hidden = true), 4500);
@@ -460,6 +478,7 @@ function render() {
     state.cleanup_error,
     maint !== "idle" ? state.maintenance_error : null,
     state.operator_error,
+    state.policy_wait_reason,
     ["inference", "hil"].includes(mode) ? state.policy_restart_error : null,
     state.policy_command?.state === "rejected" ? state.policy_command.error : null,
     state.health_error ? `健康采样暂不可用：${state.health_error}` : null,
@@ -467,7 +486,7 @@ function render() {
       ? "操作台失联已触发暂停；重新连接不会自动恢复运动。"
       : null,
   ];
-  const error = errors.filter(Boolean).join(" · ");
+  const error = errors.filter(Boolean).map(operatorHint).join(" · ");
   text("alert", error);
   $("alert").hidden = !error;
   $("episodes").replaceChildren();
@@ -1093,7 +1112,7 @@ $("task-form").onsubmit = async (e) => {
     await poll();
     toast("任务已保存并选中");
   } catch (error) {
-    text("task-form-error", error.message);
+    text("task-form-error", operatorHint(error.message));
   } finally {
     $("task-submit").disabled = false;
   }

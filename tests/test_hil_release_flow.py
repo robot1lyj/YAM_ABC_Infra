@@ -67,6 +67,7 @@ def test_intervention_handback_preserves_or_restarts_recording(station, pause):
         runtime.events.put(("handback_hold", time.monotonic()))
     wait("hold")
     assert recorder.recording is not pause
+    time.sleep(.12)
     runtime.event("resume_policy")
     wait("policy")
     assert recorder.recording and recorder.error is None
@@ -78,6 +79,17 @@ def test_intervention_handback_preserves_or_restarts_recording(station, pause):
         time.sleep(.02)
     assert len(recorder.episodes) == (2 if pause else 1)
     assert all(e["steps"] > 0 for e in recorder.episodes)
+    import json
+    manifests = [json.loads((recorder.path / e["path"] / "manifest.json").read_text())
+                 for e in recorder.episodes]
+    if pause:
+        assert manifests[0]["omitted_intervention_waits"]
+        assert manifests[1]["omitted_intervention_waits"] == []
+    else:
+        assert {x["reason"] for x in manifests[0]["omitted_intervention_waits"]} == {
+            "takeover_wait", "handback_wait"}
+        saved = list(read_rows(recorder.path / recorder.episodes[0]["path"]))
+        assert not any(x["phase"] == "hold" and x["intervention_pending"] for x in saved)
     rows = list(read_rows(recorder.path / recorder.episodes[-1]["path"]))
     assert any(row["source"] == "policy" for row in rows)
     assert not any(row["phase"] == "takeover" for row in rows)

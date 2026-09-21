@@ -334,6 +334,8 @@ class Runtime:
             self.operator_error = "当前会话不可录制，未恢复模型运动"
             return False
         if not self.recorder.recording:
+            self.intervention_recording = InterventionRecordingGate()
+            self.recorder.metadata["omitted_intervention_waits"] = []
             self.outcome = "unknown"
             self.recorder.set_mode(a.mode.value, self.outcome)
             self.recorder.metadata.update({
@@ -871,8 +873,11 @@ class Runtime:
                     last_record_images = images
                 row["observation_valid"] = snapshot is not None
                 record_row = self.intervention_recording.filter(
-                    row, a.mode == Mode.HIL and a.intervention_waiting
+                    row, a.mode == Mode.HIL and (a.intervention_waiting or (
+                        a.intervention_pending and a.phase == Phase.HOLD
+                        and a._leader_frozen is not None))
                     and a.phase != Phase.FAULT and getattr(self.recorder, "recording", True),
+                    reason="handback_wait" if a.phase == Phase.HOLD else "takeover_wait",
                 )
                 self.recorder.metadata["omitted_intervention_waits"] = self.intervention_recording.audit()
                 if record_row is not None and not self.recorder.submit(record_row, images or last_record_images):

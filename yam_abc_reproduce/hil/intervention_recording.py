@@ -6,10 +6,11 @@ class InterventionRecordingGate:
         self.intervals = []
         self.pending = None
 
-    def filter(self, row, waiting):
+    def filter(self, row, waiting, reason="takeover_wait"):
         if waiting:
-            if self.pending is None:
+            if self.pending is None or self.pending["reason"] != reason:
                 self.pending = dict(intervention_id=row["intervention_id"],
+                                    reason=reason,
                                     first_tick=row["tick"], start_time=row["time"],
                                     event_requested_at=row.get("event_requested_at"),
                                     event_applied_at=row.get("event_applied_at"), frames=0)

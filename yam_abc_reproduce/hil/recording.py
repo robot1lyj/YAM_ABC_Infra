@@ -252,7 +252,7 @@ class RecordingSession:
             self.recording = True
 
     def stop_episode(self, outcome="unknown"):
-        if self.recording and self._put(("stop", outcome)):
+        if self.recording and self._put(("stop", outcome, dict(self.metadata))):
             self.recording = False
 
     def abort_episode(self):
@@ -332,14 +332,14 @@ class RecordingSession:
         active_metadata = {}
         count = 0
 
-        def finish(outcome):
+        def finish(outcome, final_metadata=None):
             nonlocal active
             if active is None:
                 return
             active.metadata.update(self.metadata)
             active.metadata.update(active_metadata)
-            if "omitted_intervention_waits" in self.metadata:
-                active.metadata["omitted_intervention_waits"] = self.metadata["omitted_intervention_waits"]
+            final = self.metadata if final_metadata is None else final_metadata
+            active.metadata["omitted_intervention_waits"] = final.get("omitted_intervention_waits", [])
             active.close(outcome)
             self._completed_steps += active.written
             self._session_progress_at = time.monotonic()
@@ -411,7 +411,7 @@ class RecordingSession:
                     )
                     self._active = active
                 elif item[0] == "stop":
-                    finish(item[1])
+                    finish(item[1], item[2])
                 elif item[0] == "row":
                     if active is None:
                         raise RuntimeError("episode writer unavailable")

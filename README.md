@@ -103,20 +103,13 @@ uv sync --locked --extra camera --extra gui --extra deploy
 
 ## 运行架构
 
-```mermaid
-flowchart LR
-  subgraph RK["RK3588 · 工作站"]
-    C["3路D405采集"] --> O["短历史缓存 / 观测配对"]
-    Q["四臂状态"] --> O
-    L["Leader输入 / 按钮"] --> A["四模式与接管仲裁"]
-    B["带时间戳的动作块"] --> A
-    A --> E["唯一执行循环 / 四臂SDK"]
-    E --> R["有界异步记录"]
-    O --> R
-  end
-  O -->|"现场以太网"| T["Thor · condapi模型服务"]
-  T --> B
-```
+[![YAM 设备采集与数据集架构](docs/architecture/yam.visual-check.2048x1320.light.png)](docs/architecture/yam.html)
+
+[交互架构图](docs/architecture/yam.html) · [源码证据与重建说明](docs/architecture/README.md) · [可编辑规格](docs/architecture/yam.architecture.json)
+
+图中涵盖浏览器与设备 Web/API、四模式 Runtime、四臂与三路相机、Thor 推理，以及原始录制到数据集平台的链路。交互版支持节点搜索、路径追踪、亮暗主题和图像导出；在代码托管页面查看时，可下载 `yam.html` 后用浏览器打开，无需安装 Archify。
+
+此图为 2026-09-22 源码架构快照，未展开可选的独立 SDK executor 和 RTC 内部时间线；现场部署与验收状态以当前架构及验收文档为准。
 
 D405 不支持三机外部硬件同步。本版采用主机接收时间配对、关节历史插值和质量指标；小偏差告警，持续过期才保持。常驻`yam-device`独占控制、相机、推理和录制，`yam-workstation` Web/API可单独重启；没有引入ROS2。
 
@@ -171,6 +164,7 @@ python3 scripts/check_project_memory.py
 | 开始使用 / 真机前配置 | [第一版教程](docs/hil_quickstart.md) |
 | 环境 / 国内镜像 / Git | [环境](docs/environment.md) |
 | 硬件事实 / 初始化 | [工作站](docs/workstation.md) |
+| 系统总览 / 交互架构图 | [架构图与源码证据](docs/architecture/README.md) |
 | 模式 / 接管 / 生命周期 | [架构](docs/dagger_architecture.md) |
 | 相机 / 多臂同步 / 性能 | [同步设计](docs/synchronization_design.md) |
 | 模型接口 / condapi 参考 | [接口约束](docs/condapi_interface.md) |

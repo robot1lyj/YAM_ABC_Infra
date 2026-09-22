@@ -8,9 +8,10 @@ robot:
   leader_gripper_type: yam_teaching_handle
   bilateral_kp: 0.0
   robots:
-    # Latest official detect_gripper_limits return per side, unchanged [closed, open].
-    - {type: yam_left, gripper: linear_4310, gripper_limits: [6.53944457160296, 1.2289234760051873], channel: can_left}
-    - {type: yam_right, gripper: linear_4310, gripper_limits: [6.544022278171969, 1.2434195468070488], channel: can_right}
+    # User override (2026-09-22): closed=6.9 rad; open retains each official sample minimum.
+    # Closed exceeds measured contact extrema (~6.54); this is NOT a new calibration.
+    - {type: yam_left, gripper: linear_4310, gripper_limits: [6.9, 1.2289234760051873], channel: can_left}
+    - {type: yam_right, gripper: linear_4310, gripper_limits: [6.9, 1.2434195468070488], channel: can_right}
   controllers:
     - {type: yam_lead_left, controls: yam_left, channel: can_lead_l}
     - {type: yam_lead_right, controls: yam_right, channel: can_lead_r}

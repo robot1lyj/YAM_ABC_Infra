@@ -1,0 +1,71 @@
+{
+  "date": "2026-09-22",
+  "scope": "Two follower grippers at absolute normalized opening 0.15, via workstation UI and existing single-owner Runtime. No direct CAN helper executed.",
+  "source_commits": [
+    "5ece380",
+    "2fd5210"
+  ],
+  "authorization": "User confirmed support, empty grippers, hands/tools clear and approved reconnect plus corrective deployment.",
+  "initial_attempt": {
+    "left_feedback": 0.3153509086990879,
+    "reason": "Measured-pose-relative jog ramp expired before absolute target. Replaced with command-based ramp and lagging-plant regression."
+  },
+  "interrupted_right_attempt": {
+    "feedback": 0.2402302986685856,
+    "reason": "Operator heartbeat interruption requested HOLD; no timeout error. After recovery user-visible UI applied the same target again."
+  },
+  "final_status": {
+    "connection": "connected",
+    "phase": "hold",
+    "error": null,
+    "jog_active": false,
+    "jog_error": null,
+    "follower_state": [
+      -0.0020981155107957505,
+      0.0040054932478827965,
+      0.0040054932478827965,
+      -0.07190814068817808,
+      0.007438773174639479,
+      -0.02994583047226662,
+      0.14991739099202656,
+      0.004386968795300206,
+      0.004386968795300206,
+      0.005149919890135024,
+      -0.07381551842526868,
+      -0.01163500419623098,
+      0.019264515144579164,
+      0.14947822957898538
+    ],
+    "gripper_limits": [
+      [
+        6.53944457160296,
+        1.2289234760051873
+      ],
+      [
+        6.544022278171969,
+        1.2434195468070488
+      ]
+    ],
+    "operator_lost": false,
+    "control_age_s": 0.008409540008869953,
+    "recording": false
+  },
+  "validation": {
+    "local": "62 tests passed",
+    "ipc": "62 tests passed",
+    "browser": "0-1 numeric input, live percentage, apply action, right actual 14.9% visually verified",
+    "physical_gap_equality": "Awaiting operator comparison; normalized feedback is not a physical width measurement"
+  },
+  "deployment": {
+    "method": "Only incremental gripper patches applied to older IPC baseline; initial full-file copy restored from backup after pre-restart tests detected missing architecture dependencies.",
+    "not_changed": [
+      "calibration extrema",
+      "model inference",
+      "teleoperation mapping",
+      "SDK gains"
+    ],
+    "camera_connection": "disconnected after service reload",
+    "arms": "connected HOLD, no recording",
+    "git_remotes": "Not pushed this turn"
+  }
+}

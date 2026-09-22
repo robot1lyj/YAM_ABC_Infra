@@ -955,6 +955,7 @@ class Runtime:
                     ],
                     "buttons": buttons,
                     "jog_active": self.jog.target is not None,
+                    "jog_error": self.jog.error,
                     "performance": performance,
                     "record_metrics": getattr(self.recorder, "metrics", {}),
                     "tick": tick,

@@ -11,6 +11,8 @@ class Jog:
         self.target = None
         self.expires = 0.0
         self.absolute = False
+        self.command = None
+        self.error = None
 
     def request(self, arm, joint, delta=None, *, target=None):
         if arm not in ("left", "right") or type(joint) is not int or not 0 <= joint <= 6:
@@ -30,6 +32,7 @@ class Jog:
 
     def clear(self):
         self.target = None
+        self.command = None
         while True:
             try:
                 self.queue.get_nowait()
@@ -43,6 +46,8 @@ class Jog:
         try:
             index, value, self.absolute = self.queue.get_nowait()
             self.target = q.copy()
+            self.command = q.copy()
+            self.error = None
             self.target[index] = value if self.absolute else self.target[index] + value
             self.target[[6, 13]] = np.clip(self.target[[6, 13]], 0, 1)
             # Full gripper travel takes 4 s at the existing 0.25/s jog rate.
@@ -53,12 +58,25 @@ class Jog:
         if self.target is None:
             return None
         if now >= self.expires:
+            absolute = self.absolute
             self.target = None
+            if absolute:
+                self.error = "夹爪未在6秒内到位，已停止调节；请检查阻挡与反馈"
+                # Freeze measured position instead of retaining an unreachable target.
+                return q.copy()
             return None
         speed = np.full(14, 0.1)  # rad/s, conservative discrete adjustment
         speed[[6, 13]] = 0.25  # normalized opening/s
-        result = np.clip(self.target, q - speed * dt, q + speed * dt)
-        reached = np.max(np.abs(q - self.target)) < 0.001 if self.absolute else np.max(np.abs(result - self.target)) < 1e-6
+        # An absolute move advances its command, not the lagging measured pose.
+        # Resetting the ramp to feedback every tick makes the effective speed
+        # depend on SDK tracking lag and can stop well before the requested opening.
+        reference = self.command if self.absolute else q
+        result = np.clip(self.target, reference - speed * dt, reference + speed * dt)
+        self.command = result.copy()
+        reached = (
+            np.max(np.abs(q - self.target)) < 0.001
+            and np.max(np.abs(result - self.target)) < 1e-6
+        ) if self.absolute else np.max(np.abs(result - self.target)) < 1e-6
         if reached:
             self.target = None
         return result

@@ -592,9 +592,10 @@ function render() {
   text(
     "gripper-value",
     connected && q[offset + 6] != null
-      ? "实际 " + (q[offset + 6] * 100).toFixed(1) + "%"
+      ? "实际 " + (q[offset + 6] * 100).toFixed(1) + "%" + (state.jog_error ? " · 未到位" : "")
       : "开度 —",
   );
+  $("gripper-value").title = state.jog_error || "";
   $("gripper-target").disabled = !(canMaintain && idle && !intervening);
   $("gripper-apply").disabled ||= !!state.jog_active;
   $("gripper-apply").textContent = state.jog_active ? "调节中…" : "应用";

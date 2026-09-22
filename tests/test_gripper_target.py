@@ -62,7 +62,30 @@ def test_absolute_target_expires_if_feedback_does_not_move():
     jog.request("left", 6, target=.15)
     q = np.ones(14)
     assert jog.step(q, allowed=True, now=0, dt=1/30) is not None
-    assert jog.step(q, allowed=True, now=6, dt=1/30) is None
+    np.testing.assert_array_equal(jog.step(q, allowed=True, now=6, dt=1/30), q)
+    assert jog.error and jog.target is None
+    assert jog.step(q, allowed=True, now=7, dt=1/30) is None
+
+
+def test_absolute_command_ramp_does_not_restart_from_lagging_feedback():
+    jog = Jog()
+    jog.request("left", 6, target=.15)
+    q = np.zeros(14)
+    q[[6, 13]] = 1.0
+    previous_command = q.copy()
+    commands = []
+    for tick in range(180):
+        command = jog.step(q, allowed=True, now=tick/30, dt=1/30)
+        if command is None:
+            break
+        assert abs(command[6] - previous_command[6]) <= .25/30 + 1e-12
+        commands.append(command[6])
+        # Lagging plant: the previous measured-pose ramp moved only 0.10/s here.
+        q += .4 * (command - q)
+        previous_command = command
+    assert commands[105] == pytest.approx(.15)
+    assert q[6] == pytest.approx(.15, abs=.001)
+    assert jog.error is None
 
 
 def test_http_target_forwarding_and_bounds():

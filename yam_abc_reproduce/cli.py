@@ -83,7 +83,7 @@ def viz(argv: list[str] | None = None) -> None:
 
 
 def gui(argv: list[str] | None = None) -> None:
-    """Launch the unified collect/train/deploy GUI."""
+    """Launch the legacy upstream GUI; yam-workstation is the supported station."""
     import logging
 
     import uvicorn
@@ -91,7 +91,10 @@ def gui(argv: list[str] | None = None) -> None:
     from .config import build_station_config
     from .gui.server import create_app
 
-    p = argparse.ArgumentParser(prog="yam-abc-gui")
+    p = argparse.ArgumentParser(
+        prog="yam-abc-gui",
+        description="Legacy upstream GUI. Use yam-workstation for the current four-mode station.",
+    )
     p.add_argument("--station", default="configs/station_yam.yaml")
     p.add_argument("--cameras", default=None)
     p.add_argument("--mock", action="store_true", help="use mock robot + cameras")
@@ -102,6 +105,10 @@ def gui(argv: list[str] | None = None) -> None:
     # Root logger at INFO so the station's own diagnostics (each follower's resolved gripper
     # travel, i2rt's gripper calibration) reach the terminal; the default is WARNING, no handler.
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.warning(
+        "LEGACY GUI: use yam-workstation for the current station. "
+        "CAN channels are exclusively owned; close an existing owner safely before connecting."
+    )
 
     cfg = build_station_config(args.station, args.cameras)
     app = create_app(cfg, mock=args.mock, station_path=args.station, cameras_path=args.cameras)

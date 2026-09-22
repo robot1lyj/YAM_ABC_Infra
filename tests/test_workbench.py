@@ -452,7 +452,11 @@ def test_initialization_connect_does_not_require_collection_task(tmp_path, monke
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             cameras = service.status.get("cameras", [])
-            if len(cameras) == 3 and all(camera.get("healthy") for camera in cameras):
+            # Camera health can arrive before the independently started control
+            # loop publishes its first SDK sample; completion requires both.
+            ages = service.runtime.status.get("sdk_state_age_s", [])
+            if (len(cameras) == 3 and all(camera.get("healthy") for camera in cameras)
+                    and len(ages) == 4 and all(age is not None and age < 0.25 for age in ages)):
                 break
             time.sleep(0.02)
         report = service.complete_initialization(gravity_checked=True, leader_checked=True)

@@ -52,8 +52,9 @@ class Executor:
                              gripper_limits=self.gripper_limits,
                              control=self.io.leader_control_status())
 
-    def freeze(self):
-        self.lease = None  # Revoke first, even if a physical write fails.
+    def freeze(self, *, revoke_lease=True):
+        if revoke_lease:
+            self.lease = None  # Revoke first, even if a physical write fails.
         if self.snapshot is not None:
             self.frozen = (self.snapshot["q"], self.snapshot["leader"])
         if self.frozen is not None:
@@ -123,6 +124,15 @@ class Executor:
             return dict(errors=errors)
         if not self.lease or r.get("lease") != self.lease:
             raise ValueError("expired executor lease; reconnect explicitly")
+        if op == "hold":
+            try:
+                self.freeze(revoke_lease=False)
+            except Exception as exc:
+                self.lease = None
+                self.fault = f"SDK hold failed: {exc}"
+                raise
+            self.last_command = time.monotonic()
+            return {"held": True}
         if op == "detach":
             self.freeze()
             return {"held": True}

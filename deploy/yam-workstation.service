@@ -1,8 +1,8 @@
 [Unit]
 Description=Wuyan YAM restartable workstation Web/API
 After=network-online.target yam-device.service
-Wants=network-online.target
-Requires=yam-device.service
+# Try to start the device owner, but keep the diagnostic UI when it fails/stops.
+Wants=network-online.target yam-device.service
 
 [Service]
 Type=simple

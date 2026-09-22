@@ -81,8 +81,9 @@ class Arbiter:
 
     Startup is HOLD. start(), takeover() and resume_policy() are explicit local events. Every
     transition invalidates pending requests/chunks. A network worker must use
-    Request tokens and must never call motor APIs. Deadlines include network
-    latency; responses do not reset the originating observation's age.
+    Request tokens and must never call motor APIs. Streaming plans retain the
+    observation age; synchronous blocks get a full execution window after their
+    reply. Trained RTC instead owns explicit committed controller ticks.
     """
 
     def __init__(
@@ -291,19 +292,19 @@ class Arbiter:
 
     def accept_rtc(self, token: Request, actions, now: float, current_tick: int,
                    limit_target) -> bool:
-        if self.rtc_timeline is None or token != self.pending or token.epoch != self.epoch:
+        if self.rtc_timeline is None:
             return False
-        age = now - token.created_at
-        if not np.isfinite(age) or age < 0 or age > self.max_request_age:
-            self._transition(Phase.HOLD, self._hold)
+        timing = self._reply_timing(token, now)
+        if timing is None:
             return False
+        age, origin = timing
         commitment = self.rtc_timeline.pending
         accepted = self.rtc_timeline.install(
             commitment, actions, current_tick=current_tick, limit_target=limit_target,
         )
         self.pending = None
         self._policy_rtts.append(age)
-        self._observation_to_ready.append(now - token.observed_at)
+        self._observation_to_ready.append(now - origin)
         return accepted
 
     @property
@@ -324,15 +325,53 @@ class Arbiter:
             return None
         return float(np.percentile(self._observation_to_ready, 95))
 
+    def _reply_timing(self, token: Request, now: float) -> tuple[float, float] | None:
+        """One epoch/time gate for local, process-planned and RTC replies.
+
+        Raw targets are indexed on the observation clock, so their 50-step
+        horizon is also a deadline. TDA consumes a queue and drops the prefix
+        using the number of executed targets; only the configured observation
+        age bounds that queue. Sync executes its full block after receipt. RTC
+        checks its committed tick deadline in RtcTimeline.install().
+        """
+        if token != self.pending or token.epoch != self.epoch:
+            return None
+        age = now - token.created_at
+        origin = token.observed_at if token.observed_at is not None else token.created_at
+        observation_age = now - origin
+        valid = (
+            np.isfinite(age) and 0 <= age <= self.max_request_age
+            and np.isfinite(observation_age) and observation_age >= 0
+        )
+        if self.streaming and self.rtc_timeline is None:
+            deadline = self.max_action_age
+            if self.action_buffer.fusion == "raw":
+                deadline = min(deadline, 50 * self.action_dt)
+            valid = valid and observation_age < deadline
+        if not valid:
+            self._transition(Phase.HOLD, self._hold)
+            return None
+        return age, origin
+
+    def _accepted_reply(self, token: Request, now: float, age: float, origin: float):
+        self._policy_rtts.append(age)
+        self._observation_to_ready.append(now - origin)
+        self._active_request = token
+        self._origin_time = origin
+        self._index = 0
+        if not self.streaming:
+            # A synchronous block's wall-clock budget starts with its reply,
+            # not its observation. It must fit the complete ordered block.
+            self._chunk_deadline = now + (len(self._chunk) + 1) * self.action_dt
+        self.pending = None
+
     def accept(self, token: Request, actions, now: float) -> bool:
         if self.external_planner:
             raise RuntimeError("external planner requires accept_plan")
-        if token != self.pending or token.epoch != self.epoch:
+        timing = self._reply_timing(token, now)
+        if timing is None:
             return False
-        age = now - token.created_at
-        if not np.isfinite(age) or age < 0 or age > self.max_request_age:
-            self._transition(Phase.HOLD, self._hold)
-            return False
+        age, origin = timing
         rows = np.asarray(actions, dtype=np.float64)
         if rows.shape != (50, 14):
             raise ValueError("policy response must be (50,14)")
@@ -344,40 +383,21 @@ class Arbiter:
         rows[:, [6, 13]] = np.clip(rows[:, [6, 13]], 0.0, 1.0)
         for row in rows:
             vector(row)
-        origin = token.observed_at if token.observed_at is not None else token.created_at
-        if self.streaming and now - origin >= min(self.max_action_age, len(rows) * self.action_dt):
-            self._transition(Phase.HOLD, self._hold)
-            return False
         if self.streaming and not self.action_buffer.integrate(token, rows, origin, now):
             self._transition(Phase.HOLD, self._hold)
             return False
-        self._policy_rtts.append(age)
-        self._observation_to_ready.append(now - origin)
-        self._active_request = token
         self._chunk = None if self.streaming else rows[: self.execute_steps].copy()
-        self._origin_time = origin
-        self._index = 0
-        if not self.streaming:
-            # A synchronous block's wall-clock budget starts with its reply,
-            # not its observation. It must fit 50 ordered 30Hz targets.
-            self._chunk_deadline = now + (len(self._chunk) + 1) * self.action_dt
-        self.pending = None
+        self._accepted_reply(token, now, age, origin)
         return True
 
     def accept_plan(self, token: Request, plan: dict, now: float) -> bool:
         """Install an asynchronously prepared plan after rechecking device epoch/time."""
         if not self.external_planner:
             raise RuntimeError("external planner is not enabled")
-        if token != self.pending or token.epoch != self.epoch:
+        timing = self._reply_timing(token, now)
+        if timing is None:
             return False
-        age = now - token.created_at
-        if not np.isfinite(age) or age < 0 or age > self.max_request_age:
-            self._transition(Phase.HOLD, self._hold)
-            return False
-        origin = token.observed_at if token.observed_at is not None else token.created_at
-        if self.streaming and now - origin >= self.max_action_age:
-            self._transition(Phase.HOLD, self._hold)
-            return False
+        age, origin = timing
         rows = np.asarray(plan["actions"])
         if rows.ndim != 2 or rows.shape[1] != 14 or not 1 <= len(rows) <= 100:
             raise ValueError("planner returned invalid action count")
@@ -411,13 +431,7 @@ class Arbiter:
                 raise ValueError("synchronous plan must be finite (50,14)")
             self._chunk = rows.copy()
             self._chunk[:, [6, 13]] = np.clip(self._chunk[:, [6, 13]], 0.0, 1.0)
-            self._chunk_deadline = now + (len(self._chunk) + 1) * self.action_dt
-        self._policy_rtts.append(age)
-        self._observation_to_ready.append(now - origin)
-        self._active_request = token
-        self._origin_time = origin
-        self._index = 0
-        self.pending = None
+        self._accepted_reply(token, now, age, origin)
         return True
 
     def step(

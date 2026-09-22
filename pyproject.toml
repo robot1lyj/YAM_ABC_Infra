@@ -235,7 +235,10 @@ yam-abc-doctor = "yam_abc_reproduce.doctor:main"
 include = ["yam_abc_reproduce*"]
 
 [tool.setuptools.package-data]
-yam_abc_reproduce = ["gui/static/*", "hil/static/*"]
+yam_abc_reproduce = [
+    "gui/static/*", "hil/static/*", "dataset_workbench/static/*",
+    "data/formats/*.binpb",
+]
 
 [tool.ruff]
 line-length = 100

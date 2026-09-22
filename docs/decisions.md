@@ -12,7 +12,7 @@
 | 推理位置 | 现场Thor模型服务，经网线连接RK3588；RK采集/控制/记录 | [接口](condapi_interface.md) |
 | 推理算法 | 普通10w模型单在途异步预取；默认复用openarm-vr的`tda_smooth`队列丢步/重叠混合，`raw`保留对照，HOLD可切换；RTC训练模型只走原生前缀条件，不叠加TDA。RTC目标tick合同及真机执行待验收；`--baseline`保留普通基准 | [运行手册](hil_quickstart.md) |
 | 模型切换 | 3588不记录模型名称、后端、指纹或服务URL，也不按它们阻挡推理；只核实输出形状、单位、动作间隔与本机安全 | [接口](condapi_interface.md) |
-| 性能取舍 | 预览/MPP编码使用独立进程；控制不缩窄至两个大核，录制短时积压可停录后排空；长时完整性与运动中延迟仍需验收 | [架构](dagger_architecture.md#性能与格式整理) |
+| 性能取舍 | 预览/MPP编码使用独立进程；控制不缩窄至两个大核，录制短时积压可停录后排空；长时完整性与运动中延迟仍需验收 | [架构](dagger_architecture.md#进程与资源所有权) |
 | 数据 | 采集①开始/结束、②放弃；实时原始MP4/HDF5/JSON，LeRobot v3.0仅显式离线转换；保存Follower反馈/提交动作/三路图像/HIL完整阶段 | [转换](convert.md) |
 | 模型/微调 | 归condapi；本仓库保留适配规范，不另建训练事实来源 | [接口](condapi_interface.md) |
 | 环境 | uv、Python3.12、国内镜像；提交pyproject/uv.lock，不提交.venv | [环境](environment.md) |

@@ -116,6 +116,11 @@ class RemoteRecordingSession:
         capacity=None,
     ):
         self.path = Path(path)
+        # Preserve the exact construction contract for independent recovery.
+        self.fps = fps
+        self.segment_seconds = segment_seconds
+        self.min_free_bytes = min_free_bytes
+        self.video_backend = video_backend
         self.mode = mode
         self.metadata = metadata or {}
         self.recording = False

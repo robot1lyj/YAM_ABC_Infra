@@ -230,6 +230,13 @@ class Runtime:
             raise ValueError("介入尚未结束，请明确确认结束介入并切换模式")
         if event == "start" and self.session.arbiter.intervention_pending:
             raise ValueError("DAgger介入尚未结束，请选择暂停或交还模型")
+        if (event in ("start", "resume_policy") and self.session.policy_error
+                and self.session.arbiter.mode in (Mode.INFERENCE, Mode.HIL)):
+            raise ValueError("推理已暂停，请先重载推理通信或动作规划；机械臂无需断开")
+        if (event in ("start", "resume_policy")
+                and self.session.arbiter.mode in (Mode.INFERENCE, Mode.HIL)
+                and self.worker is not None and not self.worker.ready):
+            raise ValueError("推理通信或规划尚未就绪，请检查并重载对应子进程")
         if event in ("record", "discard") and not self.recording_allowed:
             raise ValueError("standalone teleoperation does not record data")
         if self.recording_error and not (
@@ -243,6 +250,7 @@ class Runtime:
                 "home_leader",
                 "gravity",
                 "mode:teleop",
+                "end_intervention:teleop",
             )
             or (event == "start" and self.status.get("mode") == "teleop")
         ):
@@ -317,6 +325,11 @@ class Runtime:
         Any later writer failure still follows the existing recording HOLD path.
         """
         a = self.session.arbiter
+        if ((self.session.policy_error or (self.worker is not None and not self.worker.ready))
+                and event in ("start", "resume_policy")
+                and a.mode in (Mode.INFERENCE, Mode.HIL)):
+            self.operator_error = "推理故障尚未恢复，请重载对应子进程"
+            return False
         starts = event == "start" and a.phase == Phase.HOLD and not a.intervention_pending
         resumes = event == "resume_policy" and a.mode == Mode.HIL and (
             a.phase == Phase.HUMAN or (
@@ -453,8 +466,12 @@ class Runtime:
                         policy_command = None
                 if policy_command is not None and policy_command[0] == "task_barrier":
                     receipt = policy_command[1]
+                    failed_writer = receipt.get("recovering") and bool(
+                        self.recording_error or self.recorder.error
+                    )
                     if (a.phase != Phase.HOLD or self.recorder.recording
-                            or self.recorder.saving or self.maintenance.state != "idle"
+                            or (self.recorder.saving and not failed_writer)
+                            or self.maintenance.state != "idle"
                             or self.maintenance.latched or a.intervention_pending
                             or self.jog.target is not None or not self.jog.queue.empty()
                             or receipt.get("cancelled")):
@@ -465,6 +482,9 @@ class Runtime:
                         a._transition(Phase.HOLD, a._hold)
                         a._leader_frozen = frozen
                     receipt["done"].set()
+                    policy_command = None
+                if policy_command is not None and policy_command[0] == "recorder_replace":
+                    policy_command[1].apply(self)
                     policy_command = None
                 if policy_command is not None and policy_command[0] == "task_release":
                     self.task_switching = False
@@ -531,13 +551,16 @@ class Runtime:
                             self.operator_error = None
                         elif policy_command[0] == "restart_planner":
                             self.worker.request_planner_restart()
+                            self.session.begin_policy_recovery()
                             self.operator_error = None
                         elif policy_command[0] == "source":
                             self.session.rewind_replay()
                             self.worker.request_source(policy_command[1])
+                            self.session.begin_policy_recovery()
                             self.operator_error = None
                         else:
                             self.worker.request_restart()
+                            self.session.begin_policy_recovery()
                             self.operator_error = None
                         if command_receipt is not None:
                             command_receipt.update(state="accepted", applied_at=time.monotonic())
@@ -605,6 +628,7 @@ class Runtime:
                         "home_leader",
                         "gravity",
                         "mode:teleop",
+                        "end_intervention:teleop",
                     )
                 ):
                     # An old collection command must not interrupt live teleoperation.
@@ -675,6 +699,7 @@ class Runtime:
                 if event and event.startswith("mode:") and a.intervention_pending:
                     self.operator_error = "介入状态已变化，模式切换未执行；请明确确认结束介入"
                     event = None
+                self.session.check_policy_recovery()
                 if not self._prepare_policy_recording(event, q):
                     event = None
                 decision = self.session.tick(
@@ -690,6 +715,9 @@ class Runtime:
                     event=event,
                     policy_tick=tick,
                 )
+                if (self.session.policy_error and a.mode in (Mode.INFERENCE, Mode.HIL)
+                        and isinstance(self.recorder, RECORDING_SESSIONS)):
+                    self.recorder.stop_episode("aborted")
                 leader_homing = (
                     self.maintenance.state == "homing"
                     and self.maintenance.home_leader_only
@@ -935,6 +963,7 @@ class Runtime:
                     "source": decision.source,
                     "policy_fusion": a.action_buffer.fusion,
                     "policy_ready": self.worker.ready if self.worker else False,
+                    "policy_error": self.session.policy_error,
                     "planner_ready": (
                         self.worker.planner_alive if self.worker and self.worker.planner
                         else False
@@ -1271,6 +1300,7 @@ def main(argv=None, *, service=None):
         },
     )
     workers, io, policy_worker, dashboard = [], None, None, None
+    runtime = None
     units = []
     units_closed = False
     cameras = []
@@ -1340,12 +1370,13 @@ def main(argv=None, *, service=None):
         from .keyboard import Keyboard
 
         print(
-            "s=start, i=takeover, handle 1=resume policy, space=hold, 1/2/3/4=mode, r=record segment, q=shutdown (support arms first)",
+            "s=start, i=takeover, HIL right handle 1=manual/lock, space=hold, 1/2/3/4=mode, r=record segment, q=shutdown (support arms first)",
             flush=True,
         )
         with Keyboard(runtime.event) if service is None else nullcontext():
             result = runtime.run(duration=args.duration, auto_start=args.demo, demo=args.demo)
         print(json.dumps(result), flush=True)
+        recorder = runtime.recorder  # Recovery may have replaced only the data owner.
         # Legacy IO closes SDKs; remote IO only detaches into persistent HOLD
         # unless the operator explicitly requested a supported disconnect.
         if io:
@@ -1362,6 +1393,8 @@ def main(argv=None, *, service=None):
         if result.get("phase") == "fault":
             raise RuntimeError(result.get("error") or "hardware session aborted")
     finally:
+        if runtime is not None:
+            recorder = runtime.recorder
         if dashboard:
             dashboard.should_exit = True
         if io:
@@ -1386,7 +1419,9 @@ def main(argv=None, *, service=None):
             policy_worker.close()
         if recorder._thread.is_alive():
             recorder.close("aborted")
-        if not args.mock:
+        if not args.mock and not args.executor_socket:
+            # Remote sessions never own CAN. Only the persistent executor may
+            # release its buses; detaching a session must preserve SDK HOLD.
             can_errors = stop_can_buses(station_can_channels(cfg))
             if can_errors:
                 message = "CAN shutdown failed: " + "; ".join(can_errors)

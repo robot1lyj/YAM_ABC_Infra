@@ -115,6 +115,17 @@ class RemoteStationIO(StationIO):
         return np.asarray(reply["submitted"]), reply["stamps"]
 
     def hold(self):
+        """Hold this session's targets without relinquishing its control lease."""
+        if self.closed or self.lease is None:
+            return []
+        try:
+            self._rpc({"op": "hold"})
+            return []
+        except Exception as exc:
+            return [str(exc)]
+
+    def detach(self):
+        """End the session lease while the persistent owner keeps the arms held."""
         if self.closed or self.lease is None:
             return []
         try:
@@ -130,6 +141,6 @@ class RemoteStationIO(StationIO):
         try:
             if self.release_on_close:
                 return self._rpc({"op": "release", "supported": True}, timeout=10)["errors"]
-            return self.hold()
+            return self.detach()
         finally:
             self.closed = True

@@ -31,11 +31,15 @@ function text(id, value) {
 function operatorHint(message) {
   const raw = String(message || "");
   const rules = [
+    [/Ownership retained|SDK startup failed with uncertain cleanup/i, "机械臂SDK初始化失败，尚不能确认后台控制线程已清理。为避免两个进程同时控制，CAN所有权仍保留；请支撑机械臂、保留日志后受控重启设备持有进程，不要反复连接或Reset CAN。"],
+    [/CAN .* is owned by/i, "CAN正被另一设备会话占用。请确认是哪一个控制进程，支撑机械臂后正常关闭原会话，再连接；不要直接重置正在使用的总线。"],
+    [/fail to communicate with the motor/i, "电机通信失败。请检查提示中的CAN通道、控制器供电和USB-CAN状态；先暂停并支撑机械臂，不要连续重试。若同时提示SDK清理不确定，需要受控重启设备持有进程。"],
+    [/Required data filesystem|Recording filesystem|Recording path|Recording directory|YAM_RECORDING_/i, "录制存储未就绪。请检查数据盘是否正确挂载、是否只读、目录权限和剩余空间；修复后在保持状态点击恢复录制服务，不需要重连机械臂。"],
     [/RTC committed target changed at actuation/i, "RTC承诺动作与实际下发目标不一致。请保持暂停并保留诊断信息，检查动作下发链路，不要连续重试。这不是两臂实测姿态偏差，回零不一定能修复。"],
     [/SDK state update stale/i, "机械臂状态反馈超时。请先暂停，检查控制器供电、USB-CAN连接及总线状态；确认机械臂已支撑后再断开重连。反复出现时请保留日志排查，不要反复启动运动。"],
     [/CAN interface.*not up|CAN setup failed/i, "CAN接口未正常启动。请检查USB-CAN连接及控制器供电；确认四臂已支撑并断开会话后，使用Reset CAN恢复，再尝试连接。"],
-    [/episode queue full|encoder.*queue.*full/i, "录制处理队列已满。请暂停并等待已接收数据保存，检查磁盘空间和编码器状态。当前集可能不完整，确认保存结果后再开始新集。"],
-    [/invalid policy response/i, "模型返回的动作格式或数值无效。请暂停，检查Thor服务协议、动作形状和有限数值；修复后再连接推理服务。"],
+    [/episode queue full|recording queue full|encoder.*queue.*full/i, "录制处理队列已满。当前集可能不完整，请保持暂停并检查磁盘空间和编码器状态；排除原因后点击恢复录制服务，旧数据会保留，不需要重连机械臂。"],
+    [/invalid policy response/i, "模型返回的动作格式或数值无效。请暂停，检查Thor服务协议、动作形状和有限数值；修复后重载推理通信或动作规划，再手动开始，不需要重连机械臂。"],
     [/Replay refused.*pose/i, "回放起始姿态与当前Follower姿态不一致。请暂停并核对回放起点；只有起点确为零位时才使用回零，然后重新开始。"],
     [/No space left|disk.*full/i, "存储空间不足。请停止录制，等待保存结束，备份并清理不需要的数据后再录制。"],
     [/timed? ?out|TimeoutError|Failed to fetch|NetworkError|connection refused/i, "服务连接失败或响应超时。请检查网络和对应服务状态，再刷新确认；恢复连接不会自动恢复运动。"],
@@ -116,7 +120,7 @@ function render() {
     canRun =
       connected && !state.task_switching && !state.initializing && !latched &&
       (mode === "teleop" || (collectionReady && !state.recording_error &&
-        (!["inference", "hil"].includes(mode) || state.policy_ready))),
+        (!["inference", "hil"].includes(mode) || (state.policy_ready && !state.policy_error)))),
     canRecord =
       connected &&
       !state.initializing &&
@@ -160,6 +164,8 @@ function render() {
   $("connect-cameras").disabled = !online || cameraBusy;
   $("connect-cameras").querySelector("span").textContent = cameraBusy
     ? "相机处理中…"
+    : state.camera_cleanup_pending
+      ? "重试断开相机"
     : camerasConnected()
       ? "断开相机"
       : teleopView
@@ -191,6 +197,12 @@ function render() {
   });
   $("workspace-page").classList.toggle("teleop-view", teleopView);
   $("recording-controls").hidden = teleopView || mode !== "collect";
+  const recoveringRecording = state.recording_recovery?.state === "recovering";
+  $("recording-restart").hidden = !state.recording_error && !recoveringRecording;
+  $("recording-restart").disabled = !connected || !paused || recording ||
+    !idle || latched || state.intervention_pending || state.task_switching || recoveringRecording;
+  text("recording-restart", recoveringRecording ? "录制服务恢复中…" : "恢复录制服务");
+  $("recording-restart").title = "保留故障数据并创建新数据会话，不断开机械臂、不自动开始运动";
   $("policy-panel").hidden = !["inference", "hil"].includes(mode);
   text("policy-mode", state.policy_fusion === "tda_smooth" ? "TDA 推理" : state.policy_fusion === "sync_hold" ? (state.policy_waiting_for_reply ? "同步推理 · 保持" : "同步推理") : state.policy_fusion === "rtc" ? "RTC 推理" : "旧模式");
   text("policy-rtt", state.policy_observed_rtt_p95_s == null ? "—" : `${Math.round(state.policy_observed_rtt_p95_s * 1000)} ms`);
@@ -260,7 +272,7 @@ function render() {
             ? "手动摆放机械臂 · 结束后保持"
             : paused
               ? state.recording_error
-                ? "录制失败，已保持；可切换为不录制的遥操作或断开"
+                ? "录制失败，已保持；排除存储或编码原因后可恢复录制服务"
                 : "等待开始指令"
               : state.phase === "human"
                 ? "Leader 正在控制 Follower"
@@ -475,6 +487,8 @@ function render() {
     state.task_error,
     state.error,
     state.recording_error,
+    state.recording_recovery?.error,
+    ["inference", "hil"].includes(mode) ? state.policy_error : null,
     state.cleanup_error,
     maint !== "idle" ? state.maintenance_error : null,
     state.operator_error,
@@ -483,6 +497,9 @@ function render() {
     ["inference", "hil"].includes(mode) ? state.policy_restart_error : null,
     state.policy_command?.state === "rejected" ? state.policy_command.error : null,
     state.health_error ? `健康采样暂不可用：${state.health_error}` : null,
+    state.recording_storage?.ready === false
+      ? `录制存储不可用，请检查数据盘挂载、权限和空间：${(state.recording_storage.errors || []).join("；")}`
+      : null,
     state.operator_lost
       ? "操作台失联已触发暂停；重新连接不会自动恢复运动。"
       : null,
@@ -723,8 +740,13 @@ function renderInitialization(context) {
   $("init-preflight").disabled = !online || context.transitional;
   $("init-cameras").disabled =
     !online || cameraDone || ["connecting", "disconnecting"].includes(state.camera_connection);
+  text("init-cameras", state.camera_cleanup_pending ? "重试断开相机" : "连接相机");
   $("init-arms").disabled =
-    !online || !preflight?.ok || !cameraDone || state.connection !== "disconnected";
+    !online || !preflight?.ok || !cameraDone || !!state.cleanup_error ||
+    !["disconnected", "fault"].includes(state.connection);
+  $("init-arms").title = state.cleanup_error
+    ? "上次关闭设备失败，请现场检查并重启设备服务"
+    : state.connection === "fault" ? "排除故障后可重新初始化；不会自动开始运动" : "";
   $("init-gravity").disabled =
     context.maint === "gravity"
       ? !context.connected
@@ -879,7 +901,11 @@ $("init-preflight").onclick = async () => {
     toast(error.message);
   }
 };
-$("init-cameras").onclick = () => action("/cameras/connect");
+function cameraAction() {
+  return action(camerasConnected() || state.camera_cleanup_pending
+    ? "/cameras/disconnect" : "/cameras/connect");
+}
+$("init-cameras").onclick = cameraAction;
 $("init-arms").onclick = () => {
   const followers = state.initialization?.inventory?.followers || [];
   const gripperRangesPinned =
@@ -1089,8 +1115,7 @@ function renderTask(locked) {
               : "设备就绪，选择模式后开始",
   );
 }
-$("connect-cameras").onclick = () =>
-  action(camerasConnected() ? "/cameras/disconnect" : "/cameras/connect");
+$("connect-cameras").onclick = cameraAction;
 $("create-task").onclick = () => {
   editingTask = null;
   $("task-form").reset();
@@ -1190,6 +1215,9 @@ $("interaction-reload").onclick = async () => {
 $("policy-source-thor").onclick = () => { $("policy-source-url").value = "ws://192.168.250.1:8000"; };
 $("policy-restart").onclick = async () => {
   if (await action("/policy/restart")) toast("推理通信子进程正在重载；机械臂保持连接");
+};
+$("recording-restart").onclick = async () => {
+  await action("/recording/restart");
 };
 $("planner-restart").onclick = async () => {
   if (await action("/policy/planner/restart")) toast("动作规划子进程正在重载；机械臂保持连接");

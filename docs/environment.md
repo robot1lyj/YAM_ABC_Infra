@@ -141,7 +141,7 @@ uv sync 会移除本次未选择的 extras/groups。
 
 Wi-Fi 配置 `琶洲模方` 已现场复核为 `connection.autoconnect=yes`，`wlan0` 当前在线；IPC 的 Gitea 专用密钥已成功认证到 `git@192.168.110.142:2222`，Gitea 身份为 `wuyan_lyj`。详细证据见 [20260914-rk3588-ipc-gitea-wifi.txt](evidence/20260914-rk3588-ipc-gitea-wifi.txt)。
 
-正式部署按 [架构基线 P1](dagger_architecture.md#后续-agent-工作包与依赖)执行：认证成功不等于目标 YAM 仓库/子模块已 clone；优先复用项目锁文件核验 ARM64 的相机、编码、HDF5 和 i2rt 二进制依赖，不能只做模块可发现性检查。NVMe 已完成初始化并挂载到 `/data`，YAM 绝对路径为 `/data/YAM`；后续原始数据的绝对 `save_root` 仍需在运行配置中明确，不能回落 eMMC。保留 eMMC 系统盘与已登记管理网络。配置/代码可以自启动为未连接界面，不随开机自动构造机器人、开始推理或恢复上一轮运动。
+正式部署按 [架构基线 P1](dagger_architecture.md#2026-09-14-架构基线-v1)执行：认证成功不等于目标 YAM 仓库/子模块已 clone；优先复用项目锁文件核验 ARM64 的相机、编码、HDF5 和 i2rt 二进制依赖，不能只做模块可发现性检查。NVMe 已完成初始化并挂载到 `/data`，YAM 绝对路径为 `/data/YAM`；后续原始数据的绝对 `save_root` 仍需在运行配置中明确，不能回落 eMMC。保留 eMMC 系统盘与已登记管理网络。配置/代码可以自启动为未连接界面，不随开机自动构造机器人、开始推理或恢复上一轮运动。
 
 ## RK3588 IPC P1 部署快照（2026-09-14）
 
@@ -192,6 +192,44 @@ libx264的43.38秒降至MPP的26.72秒（约38%）；5秒切段得到150/150/59�
 `/etc/fstab` 已登记 `UUID=501fb615-1346-455d-9d50-61c1d113faf5 /data ext4 defaults,noatime,nofail,x-systemd.device-timeout=10s 0 2`；root 权限的 `findmnt --verify` 检查无错误或警告。YAM 从 eMMC 上的 `/home/linux/YAM` 迁移至 NVMe 的 `/data/YAM`，rsync 差异校验返回 0，旧目录已删除，不创建软链接。
 
 现有 uv `0.12.13`（aarch64）未重装；在 `/data/YAM` 执行 `uv sync --locked --extra camera --extra gui --extra deploy` 成功，editable 包路径已更新为 `/data/YAM`。`uv lock --check`、`yam-workstation --help`、YAM 与 `i2rt` 导入均通过。为避免 uv 缓存位于 eMMC、项目环境位于 NVMe 时的硬链接告警，用户登录环境已设置 `UV_LINK_MODE=copy`。
+
+### 系统盘运行时 / NVMe 数据分离模板（待现场迁移）
+
+本节是新增部署模板，不代表 IPC 已迁移或完成缺盘真机验收。上面的 `/data/YAM` 是已有部署事实；`deploy/*.service` 保留该路径以兼容现有安装。仅修改 Web unit 的依赖：`Wants=yam-device.service` 尝试启动设备服务，但不再 `Requires` 它，设备服务启动失败或停止不会连带停止 Web 故障页。**只更新依赖仍不能解决 Web 代码本身位于故障 NVMe 的问题**；完整隔离需要下面的运行时迁移。
+
+`deploy/system-disk/*.conf.example` 是可选用户 unit drop-in，假设 `%h/YAM-runtime` 确实位于系统盘（IPC 用户为 `linux`，对应 `/home/linux/YAM-runtime`），不是指向 `/data` 的软链接或绑定挂载：
+
+| 内容 | 迁移后路径 | 缺少 NVMe 时 |
+| --- | --- | --- |
+| 代码、固定子模块、站点配置、重建的 `.venv` | `/home/linux/YAM-runtime` | Web / 设备状态服务仍可启动，启动不连接硬件 |
+| 任务目录与少量工作台配置状态 | 运行时下 `data/tasks`、`data/workstation` | 可展示已有本地配置，不代表录制可用 |
+| 正式原始录制 | `/data/YAM/data/episodes` | 明确拒绝创建，不写回系统盘 |
+| 初始化 / 无任务遥操作的数据会话 | `/data/YAM/data/workstation` | 同样受存储门禁约束，不承诺缺盘时完整遥操作 |
+
+device drop-in 显式传 `--output /data/YAM/data/episodes`，不依赖 `station_hil.yaml` 中相对 `save_root` 或工作目录。它同时设置 `YAM_RECORDING_MOUNT=/data`、`YAM_RECORDING_DEVICE=/dev/disk/by-uuid/501fb615-1346-455d-9d50-61c1d113faf5` 和 `YAM_RECORDING_MIN_FREE_BYTES=1073741824`（1 GiB 最低可用空间，不是录制容量保证）。换数据盘必须重新核验 UUID 并修改此模板，不要只把检查关闭。其他采集入口和离线写入程序不会自动继承该用户服务环境；需使用同一明确数据路径与存储策略，不能把模板视为全系统磁盘访问控制。
+
+只读就绪检查可在数据盘缺失时由系统盘 Python 执行，不创建任何目录或探针文件：
+
+```bash
+/home/linux/YAM-runtime/.venv/bin/python -m yam_abc_reproduce.storage_health \
+  /data/YAM/data/episodes --mount /data \
+  --device /dev/disk/by-uuid/501fb615-1346-455d-9d50-61c1d113faf5 \
+  --min-free-bytes 1073741824
+```
+
+返回 JSON，退出码 0 表示本次检查就绪、2 表示不可用。检查本进程挂载命名空间的真实挂载点、块设备号、路径/软链接归属、只读状态、父目录权限和可用空间；`/data` 目录存在但未挂载、系统盘绑定到 `/data`、路径下额外挂载或错误 UUID 均失败。应用在录制目录创建/切换前调用 `require_recording_storage`，健康线程调用 `recording_storage_health` 展示原因；不把磁盘检查放进控制 tick，也不因一次只读检查直接关闭已有硬件。新建数据会话/连接会在存储不就绪时明确拒绝。开发环境不配置 `YAM_RECORDING_MOUNT` 时支持现有本地路径，但不声称提供 NVMe 隔离。
+
+检查只是只读快照，不能证明写入性能、预留整个 episode 容量或消除检查后热拔盘的竞态；实际写入异常仍须使录制停止、设备进入相应保持状态。迁移维护窗口还须核验**未挂载时的底层 `/data` 目录**由管理员所有、运行用户不可写，作为禁止落到系统盘的第二层保护；不要在已挂载的数据盘上误改数据根权限。Web / device / executor 模板均不设 NVMe 的 `RequiresMountsFor` 或挂载 `ExecStartPre`：存储失败应可诊断，而不是把所有状态服务一起挡在启动前。`nofail` 的 fstab 可以保留，不能因此允许应用写入未挂载的目录。
+
+现场迁移顺序（本次未执行）：
+
+1. 安排停测窗口、支撑四臂并通过既有安全流程停止旧设备 owner；独立 executor 迁移仍遵守本页前述唯一 SDK owner 规则，不能运行两个写 CAN 的 owner。
+2. 在系统盘准备完整、版本一致的 `/home/linux/YAM-runtime` checkout 与固定子模块，复制核验后的站点配置和必要的小型任务/工作台状态；原始数据保留在 NVMe。核验运行时、Python 安装和依赖缓存/本地构建产物没有指向 `/data` 的隐含链接。
+3. 在新路径重建 `.venv`，按 `uv sync --locked --extra camera --extra gui --extra deploy` 复现依赖；**不能直接移动或复制旧 `.venv`**，其 shebang、editable 包和子模块路径可能仍指向 `/data/YAM`。重新安装上文 GLIBC 兼容的本地 RealSense binding，并检查 FFmpeg `/opt/yam-rkmpp`、i2rt/相机/HDF5 导入及 `--mock --check`；模块导入不替代真机验收。
+4. 安装更新后的兼容基础 unit，再将 workstation/device 模板分别复制到 `~/.config/systemd/user/yam-workstation.service.d/20-system-disk.conf` 和 `yam-device.service.d/20-system-disk.conf`（先创建 drop-in 目录）。保留现场额外参数。若启用可选 executor，再安装 executor 模板并在 **同一条最终 device ExecStart** 加 `--executor-socket=%t/yam-executor/owner.sock`，保留已有 `Wants/After`；不要让旧 executor drop-in 覆盖回 `/data/YAM` 路径。检查合并后的 unit，确认 Web 没有残留 device `Requires/BindsTo/PartOf`。
+5. 在安全窗口完成用户 unit 重载和按架构启动；先核对进程 cwd/解释器/配置/绝对输出路径，再做数据盘正常、缺失、只读/空间不足的故障注入验收。缺盘时 Web 应可打开并报存储原因，不能新建录制目录或自动恢复运动。所有真机动作、服务操作及卸载/故障注入都需要另行现场授权；本次离线测试不包括它们。
+
+回退时也先安全停止相关 owner，再移除本次新增的对应 drop-in 并恢复核验过的旧配置；不要删除旧数据或在运行中切换代码目录。旧 `/data/YAM` 代码仅在迁移验证完成并有备份后才考虑清理，本模板不自动清理、挂载、提权或重启服务。
 
 ## RK3588 IPC USB-CAN 驱动（2026-09-14）
 

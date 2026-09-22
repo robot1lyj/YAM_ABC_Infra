@@ -1,4 +1,5 @@
 import json
+import time
 
 import numpy as np
 import pytest
@@ -146,3 +147,46 @@ def test_replay_loading_uses_submitted_not_leader_or_model(tmp_path, monkeypatch
     rows[-1]["tick"] = 4
     with pytest.raises(ValueError, match="tick gap"):
         load_targets(tmp_path)
+
+
+def test_replay_preserves_grippers_through_worker_and_real_planner_process():
+    from yam_abc_reproduce.hil.core import Arbiter, Mode
+    from yam_abc_reproduce.hil.planner_process import ProcessActionPlanner
+    from yam_abc_reproduce.hil.policy import PolicyWorker
+    from yam_abc_reproduce.hil.session import Session
+
+    targets = np.zeros((50, 14))
+    targets[:, 6] = np.linspace(0, 0.29, 50)
+    targets[:, 13] = 0.25
+    q = targets[0].copy()
+    arbiter = Arbiter(
+        Mode.INFERENCE, streaming=True, policy_fusion="sync_hold",
+        external_planner=True, max_request_age=3,
+    )
+    worker = PolicyWorker(ReplayPolicy(targets), planner=ProcessActionPlanner())
+    worker.plan_context = lambda: ("sync_hold", None, 1 / 30, 3)
+    session = Session(arbiter, worker)
+    try:
+        deadline = time.monotonic() + 5
+        while not worker.ready and time.monotonic() < deadline:
+            time.sleep(0.001)
+        assert worker.ready
+        now = time.monotonic()
+        session.tick(
+            q, q, now=now, dt=1 / 30, observation_id=1, observed_at=now,
+            observation={"observation.state": q.copy()}, event="start",
+        )
+        while worker._replies.empty() and time.monotonic() < deadline:
+            time.sleep(0.001)
+        assert not worker._replies.empty()
+        now = time.monotonic()
+        for index in range(50):
+            decision = session.tick(
+                q, q, now=now + index / 30, dt=1 / 30, observation_id=index + 2,
+            )
+            np.testing.assert_allclose(decision.action, targets[index], rtol=0, atol=0)
+            session.submitted(decision)
+            q = decision.action.copy()
+        assert session.replay_next_frame == 50
+    finally:
+        worker.close()

@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from ..resource_qos import place_on_cpus
+from ..storage_health import require_recording_storage
 
 SAVE_STALL_SECONDS = 120
 
@@ -50,6 +51,7 @@ class Recorder:
         video_backend=None,
     ):
         self.path = Path(path)
+        require_recording_storage(self.path)
         self.path.mkdir(parents=True, exist_ok=False)
         self.fps = fps
         self.segment_seconds = segment_seconds
@@ -86,9 +88,9 @@ class Recorder:
             return False
 
     def _run(self):
+        from .intervention_recording import load_recording_gate
         from .recording_process import EncoderProcess
         from .storage import SegmentWriter
-        from .intervention_recording import load_recording_gate
 
         encoder = None
         gate = None
@@ -194,6 +196,7 @@ class RecordingSession:
         video_backend=None,
     ):
         self.path = Path(path)
+        require_recording_storage(self.path)
         self.path.mkdir(parents=True, exist_ok=False)
         self.metadata = metadata or {}
         self.min_free_bytes = min_free_bytes
@@ -303,6 +306,7 @@ class RecordingSession:
         ):
             raise ValueError("当前会话已有录制数据，不能更换采集任务")
         target = Path(path)
+        require_recording_storage(target)
         if target.exists():
             raise FileExistsError(f"采集会话目录已存在：{target}")
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -333,7 +337,8 @@ class RecordingSession:
             return True
         if self.error:
             return False
-        # Retain gaps and HOLD in active episodes for audit; exporter selects experts.
+        # The recording worker owns wait-span filtering; the control owner submits
+        # immutable rows without inspecting or rewriting the dataset timeline.
         return self._put(("row", record, images))
 
     def _run(self):
@@ -387,6 +392,7 @@ class RecordingSession:
                             raise ValueError("episode still active")
                         from .storage import atomic_json
 
+                        require_recording_storage(target)
                         target.mkdir(parents=True, exist_ok=False)
                         atomic_json(target / "session.json", dict(
                             metadata, schema="yam_session_v2", episodes=[],

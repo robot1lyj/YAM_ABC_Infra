@@ -1,7 +1,8 @@
 """Local operator service. Opening the UI never constructs hardware.
 
-One worker owns connect/run/close/export; HTTP handlers enqueue commands only.
-Preview JPEG encoding and disk queries live outside the control loop.
+Device, camera and data-session lifecycles have separate workers. HTTP mutations
+are serialized with nonblocking admission; motion commands reach the single
+control owner. Preview encoding, writer recovery and disk queries stay off-loop.
 """
 
 from __future__ import annotations
@@ -15,11 +16,12 @@ import uuid
 from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
-from shutil import disk_usage
 from urllib.parse import urlparse
 
+from ..storage_health import recording_storage_health
 from .camera_slots import CameraSlot
 from .core import Mode
+from .data_session import paused_data_session, recover_recording
 from .tasks import Tasks
 
 
@@ -40,6 +42,8 @@ class Workbench:
         self.state = "disconnected"
         self.error = None
         self.recording_error = None
+        self.recording_recovery = None
+        self._recording_recovery_thread = None
         self.cleanup_error = None
         self.thread = None
         self._lock = threading.Lock()
@@ -223,7 +227,7 @@ class Workbench:
 
     def exit_initialization(self):
         """Continue on the powered session without claiming an acceptance result."""
-        with self._lock:
+        with self._editing():
             if not self.initializing or self.state != "connected" or self.runtime is None:
                 raise ValueError("当前不在已连接的设备初始化会话")
             if (
@@ -272,6 +276,8 @@ class Workbench:
             "connection": self.state,
             "camera_connection": self.camera_state,
             "camera_error": self.camera_error,
+            "camera_cleanup_pending": self.camera_state == "fault"
+            and bool(getattr(self, "_camera_workers", [])),
             "video_backend": self.video_backend,
             "tasks": [dict(t) for t in self.tasks.items],
             "selected_task": None if self.selected_task is None else dict(self.selected_task),
@@ -280,6 +286,7 @@ class Workbench:
             "mode": live.get("mode", self.mode),
             "connection_error": self.error,
             "recording_error": live.get("recording_error") or self.recording_error,
+            "recording_recovery": self.recording_recovery,
             "cleanup_error": self.cleanup_error,
             "control_age_s": age,
             "operator_lost": self._operator_lost,
@@ -356,16 +363,7 @@ class Workbench:
         }
         for key in ("terminal_status", "omitted_intervention_waits", "close_errors"):
             metadata.pop(key, None)
-        receipt = {"done": threading.Event()}
-        self.runtime.policy_commands.put_nowait(("task_barrier", receipt))
-        if not receipt["done"].wait(2):
-            receipt["cancelled"] = True
-            self.runtime.task_releases.put(("task_release", False))
-            raise ValueError("控制线程未确认任务切换，请检查设备状态")
-        if receipt.get("error"):
-            raise ValueError(receipt["error"])
-        switched = False
-        try:
+        with paused_data_session(self.runtime) as change:
             if self.taskless_teleop:
                 self.runtime.recorder.bind_task(output, metadata)
             else:
@@ -376,13 +374,44 @@ class Workbench:
             self._session_task = dict(task)
             self.task = task["task"]
             self.taskless_teleop = False
-            switched = True
-        finally:
-            released = threading.Event()
-            self.runtime.task_releases.put(("task_release", switched, released))
-            if not released.wait(2):
-                raise ValueError("数据会话已处理，但控制线程未确认解除切换；请查看状态，不要重复创建任务")
+            change.committed = True
         self.log("已切换数据会话；机械臂与相机保持连接")
+
+    def restart_recording(self):
+        """Queue explicit data-only recovery; the HTTP request never waits for disk."""
+        with self._editing():
+            runtime = self.runtime
+            if (runtime is None or self.state != "connected" or self.initializing
+                    or runtime.status.get("phase") != "hold"
+                    or not (runtime.recording_error or runtime.recorder.error)):
+                raise ValueError("请先暂停运动；此入口仅用于恢复故障录制，机械臂无需断开")
+            if self._recording_recovery_thread and self._recording_recovery_thread.is_alive():
+                raise ValueError("录制恢复正在进行，请等待结果")
+            self.recording_recovery = {"state": "recovering", "error": None}
+            self._recording_recovery_thread = threading.Thread(
+                target=self._recover_recording, args=(runtime,), daemon=True,
+                name="recording-recovery",
+            )
+            try:
+                self._recording_recovery_thread.start()
+            except Exception as exc:
+                self.recording_recovery = {"state": "failed", "error": str(exc)}
+                raise
+
+    def _recover_recording(self, runtime):
+        try:
+            # Serializes task edits, not the status endpoint or urgent HOLD.
+            with self._lock:
+                if runtime is not self.runtime:
+                    raise ValueError("设备会话已变化，未恢复录制")
+                with paused_data_session(runtime, recovering=True) as change:
+                    self.output = recover_recording(runtime, change)
+                    self.recording_error = None
+            self.recording_recovery = {"state": "complete", "error": None}
+            self.log("录制已恢复到新数据会话，故障数据保留；机械臂保持，需手动开始")
+        except Exception as exc:
+            self.recording_recovery = {"state": "failed", "error": str(exc)}
+            self.log("录制恢复未完成：" + str(exc))
 
     def create_task(self, name, instruction, task):
         with self._editing():
@@ -438,23 +467,34 @@ class Workbench:
             return dict(self.selected_task)
 
     def connect_cameras(self):
-        with self._lock:
-            if self.camera_state in ("connected", "connecting", "disconnecting"):
+        with self._editing():
+            camera_thread = getattr(self, "camera_thread", None)
+            if self.camera_state in ("connected", "connecting", "disconnecting") or (
+                camera_thread and camera_thread.is_alive()
+            ):
                 raise ValueError("相机已连接或正在切换状态")
+            if self._camera_workers:
+                raise ValueError("上次相机关闭未完成，请先重试断开相机")
             self.camera_state, self.camera_error = "connecting", None
             self.log("正在独立连接三路相机，不启动机械臂")
-            self.camera_thread = threading.Thread(
-                target=self._open_cameras, daemon=True, name="camera-owner"
-            )
-            self.camera_thread.start()
+            try:
+                self.camera_thread = threading.Thread(
+                    target=self._open_cameras, daemon=True, name="camera-owner"
+                )
+                self.camera_thread.start()
+            except Exception as exc:
+                self.camera_thread = None
+                self.camera_state, self.camera_error = "fault", str(exc)
+                self.log("相机连接失败：" + self.camera_error)
+                raise
 
     def _open_cameras(self):
-        from ..camera.worker import CameraWorker
-        from ..config import build_station_config
-        from ..runtime import build_cameras_from_config
-
         drivers, workers = [], []
         try:
+            from ..camera.worker import CameraWorker
+            from ..config import build_station_config
+            from ..runtime import build_cameras_from_config
+
             cfg = build_station_config(self.args.station)
             if len(cfg.cameras) != 3 or {c.role for c in cfg.cameras} != {"top", "left", "right"}:
                 raise ValueError("请配置top/left/right三路相机")
@@ -490,17 +530,20 @@ class Workbench:
         except Exception as exc:
             self.camera_error = str(exc)
             self.video_backend = None
-            for device in [*workers, *drivers[len(workers) :]]:
-                try:
-                    device.stop()
-                except Exception as cleanup:
-                    self.camera_error += "; 关闭失败：" + str(cleanup)
+            # A worker owns its driver even if start failed. Drivers not yet
+            # wrapped also need retryable cleanup; neither may be forgotten.
+            self._camera_workers = [*workers, *drivers[len(workers) :]]
+            for cleanup in self._stop_camera_resources():
+                self.camera_error += "; 关闭失败：" + cleanup
             self.camera_state = "fault"
             self.log("相机连接失败：" + self.camera_error)
 
     def disconnect_cameras(self):
-        with self._lock:
-            if self.camera_state != "connected":
+        with self._editing():
+            camera_thread = getattr(self, "camera_thread", None)
+            if self.camera_state not in ("connected", "fault") or (
+                camera_thread and camera_thread.is_alive()
+            ):
                 raise ValueError("相机尚未连接或正在切换状态")
             runtime = self.runtime
             if self.state in ("connecting", "disconnecting") or (
@@ -518,26 +561,39 @@ class Workbench:
             for slot in self.camera_slots:
                 slot.worker = None
             self._previews = {}
-            self.camera_thread = threading.Thread(
-                target=self._close_cameras, daemon=True, name="camera-close"
-            )
-            self.camera_thread.start()
+            try:
+                self.camera_thread = threading.Thread(
+                    target=self._close_cameras, daemon=True, name="camera-close"
+                )
+                self.camera_thread.start()
+            except Exception as exc:
+                self.camera_thread = None
+                self.camera_state, self.camera_error = "fault", str(exc)
+                self.log("相机关闭失败：" + self.camera_error)
+                raise
 
-    def _close_cameras(self):
-        errors = []
+    def _stop_camera_resources(self):
+        errors, pending = [], []
+        for slot in self.camera_slots:
+            slot.worker = None
         for worker in self._camera_workers:
             try:
                 worker.stop()
             except Exception as exc:
                 errors.append(str(exc))
-        self._camera_workers = []
+                pending.append(worker)
+        self._camera_workers = pending
+        return errors
+
+    def _close_cameras(self):
+        errors = self._stop_camera_resources()
         self.video_backend = None
         self.camera_error = "; ".join(errors) or None
         self.camera_state = "fault" if errors else "disconnected"
         self.log("相机已断开" if not errors else "相机关闭失败：" + self.camera_error)
 
     def connect(self, *, ready=False, initialize=False, url=None):
-        with self._lock:
+        with self._editing():
             if self.thread and self.thread.is_alive():
                 raise ValueError("设备正在连接、运行或整理数据，请等待")
             if (
@@ -583,6 +639,7 @@ class Workbench:
             self._camera_previous = {}
             self.error = None
             self.recording_error = None
+            self.recording_recovery = None
             self.state = "connecting"
             self.heartbeat()
             self.log(
@@ -592,10 +649,33 @@ class Workbench:
                 if taskless_teleop
                 else "正在独立连接四台机械臂；连接后保持，等待开始"
             )
-            self.thread = threading.Thread(target=self._run, daemon=True, name="workstation-owner")
-            self.thread.start()
+            try:
+                self.thread = threading.Thread(
+                    target=self._run, daemon=True, name="workstation-owner"
+                )
+                self.thread.start()
+            except Exception as exc:
+                self.thread = None
+                self.state, self.error = "fault", str(exc)
+                self.initializing = self.taskless_teleop = False
+                self.log("会话启动失败：" + self.error)
+                raise
 
     def _run(self):
+        try:
+            self._run_session()
+        except (Exception, SystemExit) as exc:
+            self.error = str(exc) or type(exc).__name__
+            self.log("会话失败：" + self.error)
+        finally:
+            self.runtime = None
+            self._previews = {}
+            self.state = "fault" if self.error or self.cleanup_error else "disconnected"
+            self.initializing = False
+            self.taskless_teleop = False
+            self.log("设备会话已结束" if not self.error else "请处理故障后重新连接")
+
+    def _run_session(self):
         from ..resource_qos import place_on_cpus
         from .run import main
 
@@ -625,35 +705,24 @@ class Workbench:
         ):
             if value is not None:
                 argv.extend((option, str(value)))
-        try:
-            # SDK CAN helper threads inherit the control owner's mask at creation.
-            place_on_cpus("CONTROL")
-            from ..config import build_station_config
+        # SDK CAN helper threads inherit the control owner's mask at creation.
+        place_on_cpus("CONTROL")
+        from ..config import build_station_config
 
-            base = Path(self.args.output or build_station_config(self.args.station).save_root)
-            if self.initializing:
-                base = Path("data/workstation/initialization_sessions")
-            elif self.taskless_teleop:
-                # Keep the unrecorded session on the task output's filesystem
-                # so the first task binding can atomically rename it.
-                base = base.parent / "workstation" / "teleop_sessions"
-            output = (
-                base
-                / self._session_task["id"]
-                / (time.strftime("session_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6])
-            )
-            argv.extend(("--output", str(output)))
-            main(argv, service=self)
-        except (Exception, SystemExit) as exc:
-            self.error = str(exc) or type(exc).__name__
-            self.log("会话失败：" + self.error)
-        finally:
-            self.runtime = None
-            self._previews = {}
-            self.state = "fault" if self.error or self.cleanup_error else "disconnected"
-            self.initializing = False
-            self.taskless_teleop = False
-            self.log("设备会话已结束" if not self.error else "请处理故障后重新连接")
+        base = Path(self.args.output or build_station_config(self.args.station).save_root)
+        if self.initializing:
+            base = base.parent / "workstation" / "initialization_sessions"
+        elif self.taskless_teleop:
+            # Keep the unrecorded session on the task output's filesystem
+            # so the first task binding can atomically rename it.
+            base = base.parent / "workstation" / "teleop_sessions"
+        output = (
+            base
+            / self._session_task["id"]
+            / (time.strftime("session_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6])
+        )
+        argv.extend(("--output", str(output)))
+        main(argv, service=self)
 
     def attach(self, runtime, output):
         runtime.recording_allowed = not (self.initializing or self.taskless_teleop)
@@ -712,7 +781,7 @@ class Workbench:
             raise ValueError("初始化会话只允许保持、重力补偿和有限设备调试")
         if event.startswith("mode:"):
             mode = Mode(event.split(":", 1)[1]).value
-            with self._lock:
+            with self._editing():
                 if self.state in ("connecting", "finalizing", "disconnecting"):
                     raise ValueError("请等待当前连接或保存操作完成")
                 if self.runtime is not None and mode != "teleop" and self.selected_task is None:
@@ -770,7 +839,7 @@ class Workbench:
         parsed = urlparse(url)
         if parsed.scheme not in ("ws", "wss") or not parsed.hostname:
             raise ValueError("来源地址需为 ws:// 或 wss://")
-        with self._lock:
+        with self._editing():
             if self.initializing or self.state not in ("disconnected", "connected"):
                 raise ValueError("请等待设备操作完成并退出初始化向导")
             if self.runtime is None and self.state == "disconnected":
@@ -790,7 +859,7 @@ class Workbench:
     def disconnect(self, *, supported=False):
         if not self.args.mock and supported is not True:
             raise ValueError("断开可能结束力矩控制；请先支撑四台机械臂")
-        with self._lock:
+        with self._editing():
             if self.state == "connecting":
                 raise ValueError("正在初始化，请等待完成；现场风险请使用物理急停")
             if self.runtime is None:
@@ -844,10 +913,21 @@ class Workbench:
                 self._closing.wait(1)
 
     def _observe_loop(self):
+        from ..config import build_station_config
+
         # Bound preview load independently of the 30 Hz acquisition/control streams.
         while not self._closing.wait(0.2):
             runtime = self.runtime
             self._inventory_snapshot = self._station_inventory()
+            # Also report a missing data disk before any hardware is connected.
+            root = Path(
+                self.output or getattr(self.args, "output", None)
+                or build_station_config(self._station_path()).save_root
+            )
+            storage = recording_storage_health(root)
+            free_bytes = storage.get("free_bytes")
+            free = free_bytes / 1024**3 if free_bytes is not None else None
+            self._snapshot.update(recording_storage=storage, disk_free_gb=free)
             if runtime is None and self.camera_state != "connected":
                 if self._encoder:
                     self._encoder.close()
@@ -940,15 +1020,11 @@ class Workbench:
                 if runtime
                 else list(self._snapshot.get("episodes", []))
             )
-            root = Path(self.output or ".")
-            try:
-                free = disk_usage(root).free / 1024**3
-            except OSError:
-                free = None
             self._snapshot = {
                 "health_sample_at": now,
                 "cameras": cameras,
                 "disk_free_gb": free,
+                "recording_storage": storage,
                 "episodes": episodes[-8:],
                 "episode_count": sum(
                     e["outcome"] not in ("aborted", "discarded") for e in episodes
@@ -966,7 +1042,13 @@ class Workbench:
             self.camera_thread.join(timeout=20)
         for slot in self.camera_slots:
             slot.worker = None
-        self._close_cameras()
+        if self.camera_thread and self.camera_thread.is_alive():
+            # The existing owner still owns startup/cleanup. Do not call stop
+            # concurrently; _open_cameras observes _closing before publication.
+            self.camera_error = "相机连接或清理线程尚未退出，未重复关闭设备"
+            self.log(self.camera_error)
+        else:
+            self._close_cameras()
         self._monitor.join(timeout=4)
         self._watcher.join(timeout=1)
         if self._encoder:

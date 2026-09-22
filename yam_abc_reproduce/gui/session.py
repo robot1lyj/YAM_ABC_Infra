@@ -229,20 +229,30 @@ class CollectSession:
                 pass
             self.loop = None
         self.recorder = None
-        # Close the leader buses too, or the GELLO reader thread and its socket outlive
-        # the session and the next go-live opens a second socket on the same bus.
-        self._release_leaders()
+        errors = []
+        failed_units = []
         for u in self.units:
-            # Relax to zero torque first (arm goes limp, safe to handle / re-home),
-            # then drop the i2rt handle. stop() would instead hold the pose.
-            for meth in ("relax", "stop"):
-                try:
-                    getattr(u.robot, meth)()
-                    break
-                except Exception:  # noqa: BLE001
+            # Explicit teardown closes SDK threads/sockets before their ownership
+            # is released. Dropping references or zeroing gains does not do that.
+            for device in (u.agent, u.robot):
+                if device is None:
                     continue
-        self.units = []
+                try:
+                    close = getattr(device, "close_hil", None)
+                    if close:
+                        close()
+                    else:
+                        stop = getattr(device, "relax", None) or getattr(device, "stop", None)
+                        if stop:
+                            stop()
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"{u.name}: {exc}")
+                    if u not in failed_units:
+                        failed_units.append(u)
+        self.units = failed_units
         self.followers_only = False
+        if errors:
+            raise RuntimeError("SDK teardown failed; ownership retained until safe cleanup: " + "; ".join(errors))
 
     # --- teleop / sync ----------------------------------------------------
     def start_teleop(self, cfg: StationConfig | None = None) -> None:

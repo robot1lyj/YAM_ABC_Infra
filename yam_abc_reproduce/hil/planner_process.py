@@ -16,8 +16,10 @@ def _snap_close_grippers(actions):
     return result
 
 
-def build_plan(mode, token, actions, previous, now, action_dt, max_action_age):
-    """Pure planner entrypoint, also used by offline parity tests."""
+def build_plan(
+    mode, token, actions, previous, now, action_dt, max_action_age, action_source="model",
+):
+    """Plan model chunks or already submitted replay targets without mixing their transforms."""
     from .action_buffer import ActionBuffer, TimedChunk
     from .tda_buffer import TdaActionBuffer
 
@@ -26,6 +28,10 @@ def build_plan(mode, token, actions, previous, now, action_dt, max_action_age):
         raise ValueError("policy response must be finite (50,14)")
     rows = rows.copy()
     rows[:, [6, 13]] = np.clip(rows[:, [6, 13]], 0.0, 1.0)
+    if action_source not in ("model", "recorded_replay"):
+        raise ValueError("unknown planner action source")
+    if action_source == "recorded_replay" and mode != "sync_hold":
+        raise ValueError("recorded replay requires sync_hold")
     origin = token.observed_at if token.observed_at is not None else token.created_at
     if mode == "raw":
         buffer = ActionBuffer(action_dt, max_action_age=max_action_age)
@@ -64,7 +70,7 @@ def build_plan(mode, token, actions, previous, now, action_dt, max_action_age):
     if mode == "sync_hold":
         return {
             "kind": "queue", "origin": now, "first_index": 0,
-            "actions": _snap_close_grippers(rows),
+            "actions": rows if action_source == "recorded_replay" else _snap_close_grippers(rows),
             "meta": [(token, index) for index in range(50)],
             "based_on_consumed": 0,
             "trimmed_steps": 0,
@@ -130,23 +136,40 @@ class ProcessActionPlanner:
             self.close()
             raise RuntimeError(error or "action planner startup failed")
 
-    def plan(self, mode, token, actions, previous, now, action_dt, max_action_age):
+    def plan(
+        self, mode, token, actions, previous, now, action_dt, max_action_age,
+        action_source="model",
+    ):
         if self._process is None or not self._process.is_alive():
             raise RuntimeError("action planner unavailable; restart while HOLD")
         try:
-            self._conn.send((mode, token, actions, previous, now, action_dt, max_action_age))
+            self._conn.send((
+                mode, token, actions, previous, now, action_dt, max_action_age, action_source,
+            ))
             deadline = monotonic() + self.timeout
             while monotonic() < deadline:
                 if self._conn.poll(min(0.02, max(0, deadline - monotonic()))):
                     kind, payload = self._conn.recv()
                     if kind == "error":
                         raise ValueError(payload)
+                    if kind != "plan":
+                        raise RuntimeError("invalid action planner response")
                     return payload
                 if not self._process.is_alive():
                     raise RuntimeError("action planner exited")
             raise TimeoutError("action planner response timeout")
+        except TimeoutError:
+            # Replies have no request IDs. Once a response misses its deadline,
+            # this pipe must never serve another request: a late old plan could
+            # otherwise be installed with that next request's provenance.
+            self.close()
+            raise
         except (BrokenPipeError, EOFError, OSError):
+            self.close()
             raise RuntimeError("action planner communication failed") from None
+        except RuntimeError:
+            self.close()
+            raise
 
     def restart(self):
         self.close()

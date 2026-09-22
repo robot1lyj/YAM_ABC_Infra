@@ -11,13 +11,14 @@ import multiprocessing as mp
 import os
 import pickle
 import queue
-import signal
 import shutil
+import signal
 import time
 import traceback
 from pathlib import Path
 
 from ..resource_qos import place_on_cpus
+from ..storage_health import require_recording_storage
 from .storage import SegmentWriter
 
 SAVE_STALL_SECONDS = 120
@@ -98,6 +99,7 @@ def encode(
 
 class EncoderProcess:
     def __init__(self, path, fps, metadata, seconds, reserve, video_backend=None):
+        require_recording_storage(path)
         ctx = mp.get_context("spawn")
         self.incoming, self.result = ctx.Queue(), ctx.Queue(1)
         self.written = ctx.Value("q", 0)

@@ -267,3 +267,133 @@ def test_tda_plan_drops_targets_consumed_while_child_was_planning():
     assert arbiter.accept_plan(second, new_plan, 1.45)
     selected = arbiter.action_buffer.current(1.5)
     np.testing.assert_allclose(selected[0], planned_before[2])
+
+
+def _delayed_planner_response(conn):
+    """Inject one late response over a real process pipe."""
+    conn.send(("ready", None))
+    conn.recv()
+    time.sleep(0.2)
+    conn.send(("plan", {"stale": True}))
+    conn.close()
+
+
+def test_planner_timeout_closes_old_pipe_before_explicit_restart():
+    planner = ProcessActionPlanner(timeout=0.03)
+    parent, child = planner._context.Pipe()
+    process = planner._context.Process(target=_delayed_planner_response, args=(child,))
+    process.start()
+    child.close()
+    assert parent.poll(5)
+    assert parent.recv()[0] == "ready"
+    planner._conn, planner._process = parent, process
+    arbiter = Arbiter(Mode.INFERENCE, policy_fusion="sync_hold", external_planner=True)
+    arbiter.start(np.zeros(14))
+    token = arbiter.request(1, 1.0, 1.0)
+    try:
+        with pytest.raises(TimeoutError, match="response timeout"):
+            planner.plan("sync_hold", token, chunk(0.1), None, 1.1, 1 / 30, 3)
+        assert not planner.alive and planner._conn is None and planner._process is None
+        assert parent.closed and not process.is_alive()
+        with pytest.raises(RuntimeError, match="restart while HOLD"):
+            planner.plan("sync_hold", token, chunk(0.7), None, 1.2, 1 / 30, 3)
+        planner.timeout = 2
+        planner.restart()
+        assert planner._process.pid != process.pid
+        plan = planner.plan("sync_hold", token, chunk(0.7), None, 1.2, 1 / 30, 3)
+        np.testing.assert_allclose(plan["actions"][:, 0], 0.7)
+    finally:
+        planner.close()
+
+
+@pytest.mark.parametrize("mode", ["raw", "tda_smooth", "sync_hold"])
+@pytest.mark.parametrize("received_at", [1.1, 2.8, 4.0, 4.1])
+def test_local_and_process_plans_share_reply_deadlines(mode, received_at):
+    """Transport placement must not change the selected algorithm's clock contract."""
+    q = np.zeros(14)
+    results = []
+    for external in (False, True):
+        arbiter = Arbiter(
+            Mode.INFERENCE, streaming=True, external_planner=external,
+            policy_fusion=mode, action_dt=1 / 30, max_request_age=3, max_action_age=3,
+        )
+        arbiter.start(q)
+        token = arbiter.request(1, 1.0, 1.0)
+        # The reply may have waited before the controller consumed it.
+        plan = build_plan(mode, token, chunk(0.7), None, 1.1, 1 / 30, 3)
+        accepted = (
+            arbiter.accept_plan(token, plan, received_at)
+            if external else arbiter.accept(token, chunk(0.7), received_at)
+        )
+        results.append((accepted, arbiter.phase))
+        if accepted:
+            decision = arbiter.step(q, q, now=received_at, dt=1 / 30)
+            assert decision.source == "policy"
+            if mode == "sync_hold":
+                # Even an old observation gets the complete ordered block once
+                # the request itself meets the bounded RPC deadline.
+                for index in range(1, 50):
+                    decision = arbiter.step(q, q, now=received_at + index / 30, dt=1 / 30)
+                    assert decision.source == "policy" and decision.action_index == index
+    assert results[0] == results[1]
+    deadline = {"raw": 1 + 50 / 30, "tda_smooth": 4.0, "sync_hold": 4.0}[mode]
+    expected = received_at <= deadline if mode == "sync_hold" else received_at < deadline
+    assert results[0][0] is expected
+
+
+@pytest.mark.parametrize("failure", ["transport", "protocol", "planner"])
+def test_worker_failure_latches_readiness_until_its_boundary_restarts(failure):
+    planner_fails = failure == "planner"
+
+    class Client:
+        def restart(self):
+            pass
+
+        def infer(self, observation):
+            if failure == "transport":
+                raise ConnectionError("injected transport failure")
+            if failure == "protocol":
+                return {"actions": np.zeros((49, 14))}
+            return {"actions": chunk(0.5)}
+
+    class Planner:
+        alive = True
+
+        def restart(self):
+            pass
+
+        def plan(self, *args):
+            raise TimeoutError("injected planner failure")
+
+        def close(self):
+            pass
+
+    worker = PolicyWorker(Client(), planner=Planner())
+    arbiter = Arbiter(Mode.INFERENCE, policy_fusion="sync_hold")
+    arbiter.start(np.zeros(14))
+    token = arbiter.request(1, 1.0, 1.0)
+    worker.plan_context = lambda: ("sync_hold", None, 1 / 30, 3)
+    try:
+        deadline = time.monotonic() + 2
+        while not worker.ready and time.monotonic() < deadline:
+            time.sleep(0.001)
+        assert worker.ready and worker.submit(token, {})
+        reply = None
+        while reply is None and time.monotonic() < deadline:
+            reply = worker.poll()
+            time.sleep(0.001)
+        assert reply is not None and reply.planner_error is planner_fails
+        assert not worker.ready and not worker.submit(token, {})
+        assert worker.restart_error
+        if planner_fails:
+            assert worker.planner_restart_error and worker.transport_error is None
+            worker.request_planner_restart()
+        else:
+            assert worker.transport_error and worker.planner_restart_error is None
+            worker.request_restart()
+        deadline = time.monotonic() + 2
+        while not worker.ready and time.monotonic() < deadline:
+            time.sleep(0.001)
+        assert worker.ready and worker.restart_error is None
+    finally:
+        worker.close()

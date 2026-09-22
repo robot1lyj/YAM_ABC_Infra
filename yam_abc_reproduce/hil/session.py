@@ -16,8 +16,34 @@ class Session:
         self.rtc_limit_target = rtc_limit_target
         self.last_reply = None
         self.notice = None
+        self.policy_error = None
+        self._policy_recovering = False
         self.replay_next_frame = 0
         self._replay_block = None
+
+    def suspend_policy(self, state, leader, reason, *, planner=False):
+        """Quarantine external policy failures without stopping the SDK owner.
+
+        HOLD invalidates the pending epoch and future actions. Hardware faults
+        still belong to Runtime/Arbiter.fail; reconnecting policy never moves arms.
+        """
+        self.arbiter.hold(state)
+        self.arbiter._leader_frozen = np.asarray(leader).copy()
+        self.policy_error = self.notice = str(reason)
+        self._policy_recovering = False
+        if self.worker is not None and hasattr(self.worker, "mark_failed"):
+            self.worker.mark_failed(self.policy_error, planner=planner)
+
+    def begin_policy_recovery(self):
+        """Called only after an explicit independent worker restart was queued."""
+        self._policy_recovering = True
+
+    def check_policy_recovery(self):
+        if self._policy_recovering and self.worker is not None and self.worker.ready:
+            if self.notice == self.policy_error:
+                self.notice = None
+            self.policy_error = None
+            self._policy_recovering = False
 
     def submitted(self, decision):
         """Advance replay only after the control owner successfully submits IO."""
@@ -48,6 +74,12 @@ class Session:
         policy_tick=None,
     ):
         self.last_reply = None
+        self.check_policy_recovery()
+        if ((self.policy_error or (self.worker and not getattr(self.worker, "ready", True)))
+                and event in ("start", "resume_policy")
+                and self.arbiter.mode.value in ("inference", "hil")):
+            # A queued start from before the failure must not resume motion.
+            event = None
         # Local events take precedence over a policy response arriving this tick.
         if event in ("start", "resume_policy"):
             self.notice = None
@@ -80,7 +112,11 @@ class Session:
             and self.arbiter.rtc_timeline is None
             and self.arbiter.phase in (Phase.POLICY, Phase.RESUME)
         ):
-            self.arbiter.hold(state)
+            self.suspend_policy(
+                state, leader,
+                getattr(self.worker, "restart_error", None) or "动作规划进程不可用，请重载动作规划",
+                planner=True,
+            )
         if self.worker:
             reply = self.worker.poll()
             if reply is not None:
@@ -114,10 +150,7 @@ class Session:
                     self.notice = str(refusal)
                     self.last_reply["discarded"] = True
                 elif reply.error:
-                    if reply.planner_error:
-                        self.arbiter.hold(state)
-                    else:
-                        self.arbiter.fail(state, reply.error)
+                    self.suspend_policy(state, leader, reply.error, planner=reply.planner_error)
                 else:
                     try:
                         if (reply.server_timing or {}).get("source") == "recorded_replay" and self.arbiter.streaming:
@@ -147,11 +180,15 @@ class Session:
                             self.last_reply["new_vs_old_target_gripper_max"] = (
                                 buffer.last_seam_gripper_max
                             )
-                    except (ValueError, TypeError) as exc:
+                    except (ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
                         self.last_reply["discarded"] = True
                         reason = f"invalid policy response: {exc}"
                         self.last_reply["error"] = reason
-                        self.arbiter.fail(state, reason)
+                        self.suspend_policy(
+                            state, leader, reason,
+                            planner=(self.arbiter.external_planner
+                                     and self.arbiter.rtc_timeline is None),
+                        )
         decision = self.arbiter.step(
             state, leader, now=now, dt=dt, observation_fresh=fresh,
             leader_ready=leader_ready, policy_tick=policy_tick,

@@ -31,9 +31,19 @@ class Catalog:
             self.migrate(db)
             db.execute("CREATE INDEX IF NOT EXISTS episode_page ON episodes(deleted,id)")
             if recover_jobs:
-                db.execute(
-                    "UPDATE jobs SET state='interrupted' WHERE state IN ('queued','running')"
-                )
+                unfinished = db.execute(
+                    "SELECT * FROM jobs WHERE state IN ('queued','running')"
+                ).fetchall()
+                for row in unfinished:
+                    payload = json.loads(row["payload"])
+                    payload.update(
+                        error="上次数据集服务退出时任务尚未完成",
+                        message="服务中断；未自动重跑，请核对已生成文件后重新提交",
+                    )
+                    db.execute(
+                        "UPDATE jobs SET state='interrupted',payload=? WHERE id=?",
+                        (json.dumps(payload), row["id"]),
+                    )
 
     def migrate(self, db):
         if "format" in {r["name"] for r in db.execute("PRAGMA table_info(episodes)")}:

@@ -1,4 +1,8 @@
-"""Ordinary policy RPC for baseline or asynchronous replanning. No RTC protocol."""
+"""Single-flight policy worker for ordinary blocks and explicit RTC commitments.
+
+Transport and optional planning run off the control tick. The session remains
+the authority for epoch validation, action acceptance and recovery to HOLD.
+"""
 
 from __future__ import annotations
 
@@ -117,6 +121,16 @@ class PolicyWorker:
         self._update_ready()
         self._restart.set()
 
+    def mark_failed(self, error: str, *, planner: bool = False):
+        """Latch a failed boundary until its explicit restart validates it again."""
+        if planner:
+            self._planner_ready = False
+            self.planner_restart_error = str(error)
+        else:
+            self._client_ready = False
+            self.transport_error = str(error)
+        self._update_ready()
+
     @property
     def restart_error(self):
         return "; ".join(x for x in (self.transport_error, self.planner_restart_error) if x) or None
@@ -179,26 +193,37 @@ class PolicyWorker:
                     else:
                         response = self.client.infer(observation)
                     actions = np.array(response["actions"], copy=True)
+                    if actions.shape != (50, 14) or not np.isfinite(actions).all():
+                        raise ValueError("policy response must be finite (50,14)")
+                    server_timing = response.get("server_timing")
+                    if server_timing is not None and not isinstance(server_timing, dict):
+                        raise ValueError("policy server_timing must be a mapping")
                     plan = None
                     if self.planner is not None and not isinstance(observation, RtcJob):
                         planning = True
                         if self.plan_context is None:
                             raise RuntimeError("action planner context is not attached")
                         mode, previous, action_dt, max_action_age = self.plan_context()
+                        action_source = (
+                            "recorded_replay"
+                            if (server_timing or {}).get("source") == "recorded_replay"
+                            else "model"
+                        )
                         plan = self.planner.plan(
                             mode, token, actions, previous, time.monotonic(),
-                            action_dt, max_action_age,
+                            action_dt, max_action_age, action_source,
                         )
                     reply = Reply(
                         token, actions,
                         worker_elapsed_ms=(time.monotonic() - started) * 1000,
-                        server_timing=response.get("server_timing"),
+                        server_timing=server_timing,
                         client_timing=getattr(self.client, "last_timing", None),
                         plan=plan,
                     )
                 except Exception as exc:
-                    reply = Reply(token, None, f"{type(exc).__name__}: {exc}",
-                                  planner_error=planning)
+                    error = f"{type(exc).__name__}: {exc}"
+                    self.mark_failed(error, planner=planning)
+                    reply = Reply(token, None, error, planner_error=planning)
                 self._replies.put_nowait(reply)
         finally:
             close = getattr(self.client, "close", None)

@@ -13,6 +13,8 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from ..storage_health import require_recording_storage
+
 ROLES = ("top", "left", "right")
 VECTORS = (
     "measured_state",
@@ -258,6 +260,7 @@ class SegmentWriter:
         ):
             raise ValueError("positive finite fps/segment duration required")
         self.path, self.fps, self.metadata = Path(path), fps, metadata
+        require_recording_storage(self.path)
         self.limit = max(1, int(fps * segment_seconds))
         self.min_free_bytes = min_free_bytes
         self.segments, self.videos, self.counts = [], {}, {}
@@ -293,6 +296,8 @@ class SegmentWriter:
 
     def append(self, row, images):
         if self.samples is None:
+            # Segment creation is a writer-side boundary, never a control tick.
+            require_recording_storage(self.path)
             if shutil.disk_usage(self.path).free < self.min_free_bytes:
                 raise OSError("insufficient free disk space for recording")
             self.current = self.path / f"segment_{len(self.segments):06d}"

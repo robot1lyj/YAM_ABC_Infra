@@ -139,6 +139,11 @@ def create_app(runtime, *, control_access=False):
         invoke(runtime.restart_policy)
         return {"queued": "policy_restart"}
 
+    @app.post("/recording/restart")
+    def recording_restart():
+        invoke(runtime.restart_recording)
+        return {"queued": "recording_restart"}
+
     @app.post("/control/reload")
     def interaction_reload():
         invoke(runtime.reload_interaction)

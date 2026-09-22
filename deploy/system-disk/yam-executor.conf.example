@@ -1,0 +1,6 @@
+# Optional executor architecture only; installing this does not authorize it.
+# Install as yam-executor.service.d/20-system-disk.conf after safe migration.
+[Service]
+WorkingDirectory=%h/YAM-runtime
+ExecStart=
+ExecStart=%h/YAM-runtime/.venv/bin/python -m yam_abc_reproduce.hil.executor_service --station %h/YAM-runtime/configs/station_hil.yaml --socket %t/yam-executor/owner.sock

@@ -1,6 +1,8 @@
 import subprocess
 import sys
+import threading
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -161,3 +163,74 @@ def test_real_unix_process_session_reconnect_keeps_owner_pid(tmp_path):
             again.close()
         process.terminate()
         process.wait(timeout=5)
+
+
+def test_recording_hold_keeps_remote_lease_and_control_alive(tmp_path):
+    from yam_abc_reproduce.hil.recording import RecordingSession
+    from yam_abc_reproduce.hil.run import Runtime
+
+    path = tmp_path / "executor.sock"
+    process = subprocess.Popen(
+        [sys.executable, "-m", "yam_abc_reproduce.hil.executor_service",
+         "--socket", str(path), "--station", "configs/station_hil.yaml", "--mock"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )
+    io = recorder = runtime = thread = None
+    try:
+        deadline = time.monotonic() + 5
+        while not path.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert path.exists()
+        io = RemoteStationIO(path)
+        lease = io.lease
+        recorder = RecordingSession(tmp_path / "failed-recording", mode="teleop")
+        recorder.error = "injected recording failure"
+        cameras = [SimpleNamespace(role=role, history=lambda: []) for role in ("top", "left", "right")]
+        runtime = Runtime(io, cameras, None, recorder, mode="teleop")
+        thread = threading.Thread(target=runtime.run, kwargs={"duration": .2}, daemon=True)
+        thread.start()
+        thread.join(2)
+        assert not thread.is_alive()
+        assert runtime.status["phase"] == "hold"
+        assert runtime.status["error"] is None
+        assert runtime.status["recording_error"] == "injected recording failure"
+        assert runtime.status["tick"] >= 3
+        assert io.lease == lease and io._rpc({"op": "status"})["leased"]
+
+        q, leader, *_ = io.read()
+        decision = runtime.session.arbiter.step(q, leader, now=time.monotonic(), dt=1/30)
+        io.apply(decision, q, leader, dt=1/30)
+        assert io.close() == []
+        state = io._rpc({"op": "status"})
+        assert state["connected"] and not state["leased"]
+    finally:
+        if runtime is not None:
+            runtime.stopping.set()
+        if thread is not None:
+            thread.join(2)
+        if recorder is not None:
+            recorder.close("aborted")
+        if io is not None:
+            io.close()
+        process.terminate()
+        process.wait(timeout=5)
+
+
+def test_hold_rejects_foreign_lease_and_revokes_on_write_failure():
+    io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
+    owner = Executor(lambda: io)
+    try:
+        lease = owner.handle(dict(version=1, op="attach"))["lease"]
+        with pytest.raises(ValueError, match="expired executor lease"):
+            owner.handle(dict(version=1, op="hold", lease="wrong"))
+        assert owner.lease == lease
+
+        def fail(*args, **kwargs):
+            raise RuntimeError("injected CAN write failure")
+
+        owner._write = fail
+        with pytest.raises(RuntimeError, match="CAN write failure"):
+            owner.handle(dict(version=1, op="hold", lease=lease))
+        assert owner.lease is None and "SDK hold failed" in owner.fault
+    finally:
+        io.close()

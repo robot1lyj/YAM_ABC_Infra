@@ -18,6 +18,7 @@ from threading import Event
 import numpy as np
 
 from .interface import RobotInterface, TeleopAgent
+from .ownership import construct_owned_yam
 
 
 def _normalize(raw: float, lo: float, hi: float) -> float:
@@ -72,7 +73,9 @@ def _build_yam(
             "scripts/apply_i2rt_safety_patches.sh before connecting hardware"
         )
 
-    return get_robot_module.get_yam_robot(
+    # Resolve enums/arrays before acquiring ownership: these failures cannot have
+    # started an SDK thread and remain safely retryable in the same process.
+    options = dict(
         channel=channel,
         arm_type=ArmType.from_string_name(arm_type),
         gripper_type=GripperType.from_string_name(gripper_type),
@@ -82,6 +85,7 @@ def _build_yam(
         ),
         use_coulomb_friction=use_coulomb_friction,
     )
+    return construct_owned_yam(channel, lambda: get_robot_module.get_yam_robot(**options))
 
 
 def _age_from_stamp(stamp: float) -> float:
@@ -237,7 +241,7 @@ class YamRobot(RobotInterface):
         # Stop i2rt's background command thread only after every motor-off frame
         # has been attempted, so no later position command can re-enable a joint.
         try:
-            chain.close()
+            self.close_hil()
         except Exception as exc:  # noqa: BLE001
             failed["transport"] = str(exc)
         return {"disabled": disabled, "failed": failed}
@@ -270,15 +274,19 @@ class YamLeaderArm:
             ee_mass,
             use_coulomb_friction=True,
         )
-        self._n = num_arm_joints
-        # Remember the arm's native kp so bilateral scaling is relative to it.
-        self._native_kp = np.asarray(getattr(self._robot, "_kp", np.zeros(self._n)), dtype=float)
-        self._native_kd = np.asarray(
-            getattr(self._robot, "_kd", np.zeros(self._n)), dtype=float
-        ).copy()
-        self._hil_manual = None
-        kp = self._native_kp * bilateral_kp if bilateral_kp > 0 else np.zeros(self._n)
-        self._robot.update_kp_kd(kp=kp, kd=np.zeros(self._n))
+        try:
+            self._n = num_arm_joints
+            # Remember the arm's native kp so bilateral scaling is relative to it.
+            self._native_kp = np.asarray(getattr(self._robot, "_kp", np.zeros(self._n)), dtype=float)
+            self._native_kd = np.asarray(
+                getattr(self._robot, "_kd", np.zeros(self._n)), dtype=float
+            ).copy()
+            self._hil_manual = None
+            kp = self._native_kp * bilateral_kp if bilateral_kp > 0 else np.zeros(self._n)
+            self._robot.update_kp_kd(kp=kp, kd=np.zeros(self._n))
+        except BaseException:
+            self._robot.close()  # Successful cleanup releases ownership; failure retains it.
+            raise
 
     def get_state_with_age(self) -> tuple[np.ndarray, float, list[bool], float]:
         """One same-bus read -> (arm_joints, gripper_norm, [top, second] buttons).
@@ -421,7 +429,12 @@ class YamTeleop(TeleopAgent):
         return self._require_leader().control_status()
 
     def close_hil(self):
-        self._require_leader().close_hil()
+        leader = self._leader or getattr(self, "_released_leader", None)
+        if leader is not None:
+            close = getattr(leader, "close_hil", None) or getattr(leader, "stop", None)
+            if close:
+                close()
+            self._leader = self._released_leader = None
 
     def leader_raw(self) -> tuple[np.ndarray, np.ndarray] | None:
         """``(raw, cal)`` leader joint angles in radians for the live readout, or None for
@@ -461,6 +474,10 @@ class YamTeleop(TeleopAgent):
         leader, self._leader, self._cached = self._leader, None, None
         leader_stop = getattr(leader, "stop", None)
         if not callable(leader_stop):
+            # Autonomy deliberately retains powered leader gravity compensation.
+            # Keep the handle so the later explicit session teardown can close it.
+            if leader is not None:
+                self._released_leader = leader
             return False
         leader_stop()
         return True

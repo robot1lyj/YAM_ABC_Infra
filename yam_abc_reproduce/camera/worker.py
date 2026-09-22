@@ -102,17 +102,20 @@ class CameraWorker:
         # Join long enough for an in-flight blocking read to return (RealSense
         # wait_for_frames can take ~5s) before stopping the driver — overlapping
         # driver.stop() with a live read can crash librealsense. If the reader is
-        # still stuck after that, skip driver.stop() and leak rather than crash.
+        # still stuck after that, retain it for an explicit stop retry rather
+        # than overlapping driver.stop() with a live read.
         self._running = False
         if self._thread is not None:
-            self._thread.join(timeout=join_timeout)
-            if self._thread is not None and self._thread.is_alive():
+            # Thread.start can fail before a native thread exists. The driver
+            # still needs closing; joining that unstarted thread would prevent it.
+            if self._thread.ident is not None:
+                self._thread.join(timeout=join_timeout)
+            if self._thread.is_alive():
                 logging.warning(
                     "camera %r reader still running after %.0fs; skipping driver.stop()",
                     self.name,
                     join_timeout,
                 )
-                self._thread = None
-                return
+                raise RuntimeError(f"camera {self.name!r} reader has not stopped; retry close")
             self._thread = None
         self._driver.stop()

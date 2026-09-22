@@ -1,0 +1,13 @@
+# Install as yam-device.service.d/20-system-disk.conf only after migration.
+# This is the current, monolithic SDK-owner route. For the optional executor
+# route, also add --executor-socket=%t/yam-executor/owner.sock to this ExecStart;
+# do not leave a later drop-in that restores the old /data/YAM executable.
+[Service]
+WorkingDirectory=%h/YAM-runtime
+Environment=YAM_RECORDING_MOUNT=/data
+Environment=YAM_RECORDING_DEVICE=/dev/disk/by-uuid/501fb615-1346-455d-9d50-61c1d113faf5
+Environment=YAM_RECORDING_MIN_FREE_BYTES=1073741824
+ExecStart=
+ExecStart=%h/YAM-runtime/.venv/bin/yam-workstation --device-daemon --device-socket=%t/yam-device.sock --station %h/YAM-runtime/configs/station_hil.yaml --output /data/YAM/data/episodes --mode collect --url ws://192.168.250.1:8000
+# Deliberately no ExecStartPre mount gate: start diagnostics even with no NVMe.
+# Application preflight rejects creation of recordings on an unmounted /data.

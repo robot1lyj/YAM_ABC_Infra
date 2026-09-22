@@ -1,0 +1,85 @@
+{
+  "date": "2026-09-22",
+  "scope": "Local architecture and recoverability hardening; no IPC deployment, CAN mutation, camera access, Thor request or robot motion.",
+  "source_base": "a4e73c9",
+  "status": "offline_verified_pending_deployment",
+  "implemented": [
+    "Policy and planner failures invalidate epochs and HOLD without promoting network faults to SDK FAULT; explicit independent reload only, no automatic movement.",
+    "Planner timeout discards old process/pipe; replay retains submitted gripper targets; shared epoch/time validation.",
+    "Task changes and recorder recovery share a paused control barrier; disk/process work stays on background workers; cancellation prevents late writer installation.",
+    "Recorder recovery retains failed session, creates a fresh data session; candidate initialization failure preserves original error.",
+    "HIL recording failure allows explicit end-intervention to HOLD/teleop before data recovery.",
+    "Camera startup/close failures retain cleanup ownership; explicit close retry, no resource stacking; no permanent connecting/disconnecting on Thread.start/import failure.",
+    "Per-CAN-channel cooperative cross-process ownership for SDK, bring-up/reset/down; uncertain SDK construction retains ownership until owner exit.",
+    "Executor HOLD retains lease, detach revokes lease, session cleanup does not down executor-owned CAN.",
+    "Dataset Jobs extracted from Web; broken worker and submit errors release bounded capacity; next explicit submission recreates worker.",
+    "Spool and readable segments recovered into a new episode with original tick/time deduplication; sources unchanged, malformed files reported.",
+    "Optional system-disk runtime deployment templates and recording mount/device/free-space preflight; Web no longer Requires device service.",
+    "Wheel includes all three UIs and ABC schema; current architecture/quickstart corrected and historical architecture archived."
+  ],
+  "validation": [
+    {
+      "command": ".venv/bin/pytest -q -rs -o faulthandler_timeout=45",
+      "passed": 529,
+      "skipped": 4,
+      "subtests_passed": 17,
+      "duration_s": 64.5,
+      "exit": 0,
+      "warning": "Starlette TestClient/httpx deprecation; no dependency upgrade in this task"
+    },
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/wuyan-lyj/.cache/uv/archive-v0/KrEP2c2bzcbKP0Qo .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_package_resources.py",
+      "passed": 1,
+      "exit": 0,
+      "note": "Existing local setuptools cache only; no network/build dependency install. Built clean wheel and resolved extracted resources with isolated Python."
+    },
+    {
+      "command": ".venv/bin/pytest -q tests/test_recording_recovery_ui.py tests/test_ui_failure_recovery.py",
+      "passed": 6,
+      "exit": 0
+    },
+    {
+      "command": ".venv/bin/pytest -q tests/test_hil_runtime.py::test_rtc_219ms_rpc_does_not_block_control_loop tests/test_workbench.py::test_initialization_connect_does_not_require_collection_task",
+      "passed": 3,
+      "exit": 0
+    },
+    {
+      "command": "Ruff on changed Python files; node --check hil/static/app.js; git diff --check",
+      "exit": 0,
+      "note": "Existing unrelated passive_gello lint issues not changed; legacy gui/session existing UP037 ignored only for that file."
+    }
+  ],
+  "skips": [
+    "LeRobot dependency not installed",
+    "CONDAPI_ROOT cross-repository smoke not enabled",
+    "Legacy pi0 backend not installed",
+    "setuptools unavailable in default runtime; wheel test separately passed using cached declared build backend"
+  ],
+  "intermediate_failures": [
+    {
+      "symptom": "New background storage sampling used optional test args as required; preview health test failed.",
+      "resolution": "Use configured/default station and optional output; targeted 52 tests then full suites passed."
+    },
+    {
+      "symptom": "One repeat recorded 1 deadline miss in 2.5 s RTC 219 ms mock RPC test; all 10 replies accepted, 65 policy ticks.",
+      "resolution": "No timing threshold relaxed. Isolated d=8/d=9 tests passed, final full suite passed. Not proof of hardware hard real-time scheduling."
+    },
+    {
+      "symptom": "Initialization test could complete after camera health but before first SDK sample.",
+      "resolution": "Test now explicitly waits for both three healthy cameras and four fresh SDK samples; actual safety threshold unchanged."
+    }
+  ],
+  "preservation": {
+    "unrelated_dirty_files": "Existing dataset video preview/LAN edits left in working tree and excluded from this commit.",
+    "recorded_data": "No datasets deleted; recovery preserves original recordings.",
+    "runtime": "No live service changes or deployment."
+  },
+  "limitations": [
+    "Default yam-device still owns SDK. Optional persistent executor and system-disk runtime have not migrated to IPC; first deployment requires supported arms and explicit approval.",
+    "No physical USB hotplug, NVMe loss, long-duration recording, HIL motion or real CAN failure tested in this turn; physical/kernel fault root cause remains unknown.",
+    "Uncertain SDK factory failure retains CAN lock until owner exits; project lock cannot exclude arbitrary external scripts.",
+    "Mount preflight is a snapshot; require nonwritable underlying mount directory and normal I/O failure handling. New device sessions currently still initialize recording metadata, so strict missing-data-mount policy also refuses new device connection.",
+    "RAM frames not yet spooled cannot be guaranteed recoverable; recovered segments are re-encoded and require review.",
+    "run.py/workbench.py remain composition owners; no claim of arbitrary core hot replacement or completed system-wide rewrite."
+  ]
+}

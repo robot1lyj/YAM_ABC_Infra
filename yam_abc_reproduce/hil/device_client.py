@@ -84,6 +84,9 @@ class DeviceClient:
     def restart_policy(self):
         return self._request("POST", "/policy/restart")
 
+    def restart_recording(self):
+        return self._request("POST", "/recording/restart")
+
     def reload_interaction(self):
         return self._request("POST", "/control/reload")
 

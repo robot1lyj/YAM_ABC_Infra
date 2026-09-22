@@ -1,17 +1,11 @@
-"""Bring the CAN buses up.
-
-Run at go-live (first Start Teleop) on the hardware path and re-exposed as the GUI
-"Reset CAN" action. Reuses i2rt's vendored reset_all_can.sh.
-"""
+"""CAN mutations share the SDK's exclusive per-channel ownership boundary."""
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
 
-_SCRIPT = (
-    Path(__file__).resolve().parents[2] / "third_party" / "i2rt" / "scripts" / "reset_all_can.sh"
-)
+from .ownership import CanOwnershipError, reserve_can_channels
 
 
 def list_can_interfaces() -> list[str]:
@@ -44,47 +38,57 @@ def check_can_up(channels: list[str], timeout_s: float = 5.0) -> list[str]:
 
 
 def reset_can_buses(timeout_s: float = 30.0) -> tuple[bool, str]:
-    """Bring all ``can*`` interfaces up at 1 Mbit/s. Returns ``(ok, output)``."""
-    if not _SCRIPT.exists():
-        return False, f"CAN setup script not found: {_SCRIPT}"
+    """Explicitly reset the enumerated can* buses, only if none has a live owner.
+
+    Reserve all targets before changing any. Never delegate to a shell script that
+    could re-enumerate and reset a newly connected, unreserved interface.
+    """
+    channels = list_can_interfaces()
+    if not channels:
+        return False, "No CAN interfaces found"
     try:
-        r = subprocess.run(
-            ["bash", str(_SCRIPT)],
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            stdin=subprocess.DEVNULL,
-        )
-    except (subprocess.SubprocessError, OSError) as exc:
+        with reserve_can_channels(channels, purpose="explicit CAN reset"):
+            for channel in channels:
+                for state in ("down", "up"):
+                    error = _set_can(channel, state, timeout_s)
+                    if error:
+                        return False, error
+    except (CanOwnershipError, OSError, ValueError) as exc:
         return False, str(exc)
-    out = (r.stdout or "").strip()
-    if r.returncode == 0:
-        return True, out
-    return False, (r.stderr or out or f"exit code {r.returncode}").strip()
+    return True, "CAN reset at 1 Mbit/s: " + ", ".join(channels)
+
+
+def _set_can(channel, state, timeout_s):
+    command = ["sudo", "-n", "ip", "link", "set", channel, state]
+    if state == "up":
+        command.extend(("type", "can", "bitrate", "1000000"))
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout_s,
+                                stdin=subprocess.DEVNULL)
+    except (subprocess.SubprocessError, OSError) as exc:
+        return f"{channel}: {exc}"
+    if result.returncode:
+        detail = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
+        return f"{channel}: {detail}"
+    return None
 
 
 def bring_up_can_buses(channels: list[str], timeout_s: float = 5.0) -> list[str]:
     """Use the official normal CAN bring-up command, without bouncing live buses.
 
-    ``reset_all_can.sh`` remains an explicit recovery action for an unresponsive
-    adapter, not a required step of every arm connection.
+    Reset remains an explicit recovery action for an unresponsive adapter, not a
+    required step of every arm connection. Live SDK owners cannot be changed.
     """
     errors: list[str] = []
     for channel in dict.fromkeys(channels):
         try:
-            result = subprocess.run(
-                ["sudo", "-n", "ip", "link", "set", channel, "up", "type", "can", "bitrate", "1000000"],
-                capture_output=True,
-                text=True,
-                timeout=timeout_s,
-                stdin=subprocess.DEVNULL,
-            )
-        except (subprocess.SubprocessError, OSError) as exc:
+            with reserve_can_channels([channel], purpose="CAN bring-up"):
+                error = _set_can(channel, "up", timeout_s)
+        except (CanOwnershipError, OSError, ValueError) as exc:
             errors.append(f"{channel}: {exc}")
             continue
-        if result.returncode:
-            detail = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
-            errors.append(f"{channel}: {detail}")
+        if error:
+            errors.append(error)
     return errors
 
 
@@ -97,17 +101,11 @@ def stop_can_buses(channels: list[str], timeout_s: float = 10.0) -> list[str]:
     errors: list[str] = []
     for channel in dict.fromkeys(channels):
         try:
-            result = subprocess.run(
-                ["sudo", "-n", "ip", "link", "set", channel, "down"],
-                capture_output=True,
-                text=True,
-                timeout=timeout_s,
-                stdin=subprocess.DEVNULL,
-            )
-        except (subprocess.SubprocessError, OSError) as exc:
+            with reserve_can_channels([channel], purpose="CAN shutdown"):
+                error = _set_can(channel, "down", timeout_s)
+        except (CanOwnershipError, OSError, ValueError) as exc:
             errors.append(f"{channel}: {exc}")
             continue
-        if result.returncode:
-            detail = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
-            errors.append(f"{channel}: {detail}")
+        if error:
+            errors.append(error)
     return errors

@@ -1,0 +1,11 @@
+# Install as yam-workstation.service.d/20-system-disk.conf only after migration.
+# Code, configuration and a newly built venv must exist on the system disk.
+[Unit]
+# Also removes the device Requires relationship from an older installed base unit.
+Requires=
+Wants=yam-device.service
+
+[Service]
+WorkingDirectory=%h/YAM-runtime
+ExecStart=
+ExecStart=%h/YAM-runtime/.venv/bin/yam-workstation --web-only --device-socket=%t/yam-device.sock --web-port 8766 --web-host 192.168.110.140

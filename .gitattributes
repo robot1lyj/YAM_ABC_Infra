@@ -1,0 +1,2 @@
+# Unified-diff context lines deliberately prefix kernel tabs/blank lines with a space.
+scripts/gs_usb/*.patch whitespace=-blank-at-eol,-space-before-tab

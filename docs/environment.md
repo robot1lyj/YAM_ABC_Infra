@@ -233,6 +233,24 @@ device drop-in 显式传 `--output /data/YAM/data/episodes`，不依赖 `station
 
 ## RK3588 IPC USB-CAN 驱动（2026-09-14）
 
+### 2026-09-22 生命周期修复已加载
+
+针对现场独立模块回移五项 Linux 上游补丁，修复 RX 请求回收、CAN 打开失败清理和
+发送失败资源释放；现用版本为 `6.1.118-yam1`，仍安装于
+`/lib/modules/6.1.118/extra/gs_usb.ko`，执行 depmod 并实际重载成功。
+构建、原模块及维护工具保存在系统盘 `/home/linux/gs_usb-repair-20260922`；
+root 回滚副本为 `/var/lib/yam-gs-usb/20260922/gs_usb.ko.original`。
+源码、二进制指纹及安装/回滚步骤归[驱动包说明](../scripts/gs_usb/README.md)。
+该模块固定匹配本机 `6.1.118 PREEMPT_RT/aarch64`，没有升级 xHCI/PCIe/NVMe 内核。
+
+现场四口各 20 次仅接收停启通过；双 Leader 手柄各 20 次重开、2,000 次读取全部回包，
+无收发错误或丢包。服务已恢复，四 CAN DOWN、机械臂未连接；相机恢复请求因已有页面
+持有控制权返回 409，保持断开，由当前页面重连。未构造 SDK 或发送电机命令，
+不代表四臂运动、三相机并发或 NVMe 重启故障已验收。见[现场报告](evidence/20260922-ipc-usb-nvme.md)
+与[实测摘要](evidence/20260922-gs-usb-repair.json)。
+
+### 初次安装记录
+
 初始现场仅能通过 USB 枚举看到四个 CANable 2.5（`1d50:606f`），内核 `6.1.118` 的 `CONFIG_CAN_GS_USB` 未启用，因而没有 `can0`～`can3`。已使用匹配的 `/usr/src/linux-headers-6.1.118` 和官方 Linux stable `v6.1.118` 的 `drivers/net/can/usb/gs_usb.c` 编译模块；模块 vermagic 为 `6.1.118 SMP preempt_rt mod_unload aarch64`。
 
 模块已安装到 `/lib/modules/6.1.118/extra/gs_usb.ko`，执行 `depmod` 并加载成功；`/etc/modules-load.d/gs_usb.conf` 已登记 `gs_usb` 以便开机加载。当前四个 USB-backed CAN 接口已按固定 USB-Hub 下联口固化为 `can_lead_l`、`can_lead_r`、`can_left`、`can_right`，均保持 `DOWN/STOPPED`。适配器序列号仅作为审计信息，机械臂本体 S/N 不参与映射；该规则不替代四个机械臂接线/端接验收。详细证据见 [gs_usb 修复证据](evidence/20260914-rk3588-ipc-gs-usb.txt) 和 [CAN端口命名证据](evidence/20260914-rk3588-ipc-can-port-names.txt)。

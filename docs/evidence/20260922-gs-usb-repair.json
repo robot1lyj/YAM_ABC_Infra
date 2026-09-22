@@ -1,0 +1,134 @@
+{
+  "observed_at": "2026-09-22T14:54:43.994736+08:00",
+  "module": {
+    "version": "6.1.118-yam1",
+    "srcversion": "521DE9F01422C84B930CC90",
+    "sha256": "db11fa3f71f67b43abe141233cc64e92ba904fb923d2bbe60905e3f67e58b4de",
+    "original_sha256": "513caff387c8cb1c73df189fc0ee1d9ab8574dff74ff153b91110fa0967a8f66",
+    "source_sha256": "860ad6bc18f2ea8be8050c4e9981131538ea47d8132b129fc01ce760e6647b10",
+    "installed": true,
+    "loaded": true
+  },
+  "tests": {
+    "listen_only": {
+      "adapters": 4,
+      "cycles_each": 20,
+      "pass": true,
+      "rx_packets": 0,
+      "tx_packets": 0
+    },
+    "handle_queries": {
+      "started_epoch": 1790059817.1380374,
+      "finished_epoch": 1790059840.4127884,
+      "pass": true,
+      "interfaces": {
+        "can_lead_l": {
+          "requests": 2000,
+          "replies": 2000,
+          "cycles": 20,
+          "mean_ms": 0.35727489,
+          "max_ms": 0.430781,
+          "counters_after": {
+            "rx": {
+              "bytes": 12000,
+              "packets": 2000,
+              "errors": 0,
+              "dropped": 0,
+              "over_errors": 0,
+              "multicast": 0
+            },
+            "tx": {
+              "bytes": 4000,
+              "packets": 2000,
+              "errors": 0,
+              "dropped": 0,
+              "carrier_errors": 0,
+              "collisions": 0
+            }
+          }
+        },
+        "can_lead_r": {
+          "requests": 2000,
+          "replies": 2000,
+          "cycles": 20,
+          "mean_ms": 0.357694289,
+          "max_ms": 0.455572,
+          "counters_after": {
+            "rx": {
+              "bytes": 12000,
+              "packets": 2000,
+              "errors": 0,
+              "dropped": 0,
+              "over_errors": 0,
+              "multicast": 0
+            },
+            "tx": {
+              "bytes": 4000,
+              "packets": 2000,
+              "errors": 0,
+              "dropped": 0,
+              "carrier_errors": 0,
+              "collisions": 0
+            }
+          }
+        }
+      }
+    }
+  },
+  "status": {
+    "connection": "disconnected",
+    "camera_connection": "disconnected",
+    "camera_error": null,
+    "initializing": false,
+    "cleanup_error": null,
+    "connection_error": null,
+    "recording_error": null
+  },
+  "nvme_state": "live",
+  "boot_id": "e04dc60b-3395-4e50-bfec-abdfe0a1bcd7",
+  "kernel_after_switch": {
+    "argv": [
+      "journalctl",
+      "-k",
+      "-b",
+      "--since",
+      "2026-09-22 14:46:14",
+      "--no-pager"
+    ],
+    "returncode": 0,
+    "stdout": "Sep 22 14:46:18 linux kernel: usbcore: deregistering interface driver gs_usb\nSep 22 14:46:25 linux kernel: gs_usb 5-2.1:1.0: Configuring for 1 interfaces\nSep 22 14:46:25 linux kernel: gs_usb 5-2.2:1.0: Configuring for 1 interfaces\nSep 22 14:46:25 linux kernel: gs_usb 5-2.3:1.0: Configuring for 1 interfaces\nSep 22 14:46:25 linux kernel: gs_usb 5-2.4:1.0: Configuring for 1 interfaces\nSep 22 14:46:25 linux kernel: usbcore: registered new interface driver gs_usb\nSep 22 14:46:25 linux kernel: gs_usb 5-2.1:1.0 can_lead_l: renamed from can0\nSep 22 14:46:25 linux kernel: gs_usb 5-2.2:1.0 can_lead_r: renamed from can1\nSep 22 14:46:25 linux kernel: gs_usb 5-2.4:1.0 can_right: renamed from can3\nSep 22 14:46:25 linux kernel: gs_usb 5-2.3:1.0 can_left: renamed from can2\nSep 22 14:47:44 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:44 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:44 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:45 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:45 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:45 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:45 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:45 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:45 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:45 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:45 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:45 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:46 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:47 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:48 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_left: link becomes ready\nSep 22 14:47:49 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_right: link becomes ready\nSep 22 14:50:17 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:17 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:18 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:18 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:19 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:20 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:20 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:21 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:21 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:22 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:22 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:23 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:24 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:24 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:25 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:25 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:26 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:27 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:27 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:28 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:28 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:29 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:29 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:30 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:31 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:31 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:32 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:32 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:33 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:34 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:34 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:35 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:35 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:36 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:36 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:37 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:38 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:38 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\nSep 22 14:50:39 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_l: link becomes ready\nSep 22 14:50:39 linux kernel: IPv6: ADDRCONF(NETDEV_CHANGE): can_lead_r: link becomes ready\n",
+    "stderr": ""
+  },
+  "scope_limits": [
+    "No robot SDK constructed or motor enable/motion commands sent.",
+    "No injected USB transmission errors or CAN-open failure; those error paths reviewed and built, not fault-injection tested.",
+    "No USB host reset, PCIe reset, IPC reboot, SSD/APST/ASPM/firmware change.",
+    "No camera concurrent-load/robot-motion/long-duration acceptance.",
+    "Camera reconnect API returned HTTP 409: another browser session owns controls; cameras left disconnected.",
+    "Rollback module backed up and switch script prepared; live rollback not exercised."
+  ],
+  "incident_reference": "20260922-ipc-usb-nvme.md",
+  "raw_evidence": {
+    "/home/wuyan-lyj/YAM/ipc-diagnostics-20260922/repair-observations.json": "17093aca54639a56fa298e320d4dddadbf1f40d592192f4bd9544e5fa8026369"
+  },
+  "maintenance_tooling": {
+    "scripts/gs_usb/README.md": "0de7ccc6b20abbb739a3e398c2c98aeb61597a99f0e8a3c7fbc00ae604a9b691",
+    "scripts/gs_usb/build.sh": "4a417485be87eb83959cde323fb8c0bff3d0cf921cc57074ff8ab627c6c3b1c5",
+    "scripts/gs_usb/check_encoder_reopen.py": "6b375bfcdd054c9a4283b9c8af3f55a0f183b794cebb57098b12528cdd33bbd6",
+    "scripts/gs_usb/check_idle.py": "e73343e6cf27adb788ba5713bc74de3e1a247d59fccd95d60e9faf1988d69f52",
+    "scripts/gs_usb/check_receive_only.py": "12427c57fa2eaf7d5ab3372d902b5bf420befe9a515b767188359c65e5b8a2f2",
+    "scripts/gs_usb/switch.sh": "b2c3c2177af317569acec573fc2d71b9f9f13adc15671b328d795d3b473a7e5e",
+    "scripts/gs_usb/urb-lifecycle.patch": "2c1cab19c292825c5b25a126f86fc096c5945546df7e0b84c0eabf53651df986"
+  },
+  "checks": {
+    "native_build": "W=1/MODPOST passed; compiler version warning retained",
+    "local_ruff": "passed",
+    "bash_syntax": "passed",
+    "python_compile": "passed",
+    "project_memory": "passed; historical review_only records retained",
+    "diff_check": "passed",
+    "formatting_after_hardware_tests": "import order/format only; hardware tests not rerun for style changes",
+    "installer_timestamp_fix": "journalctl timestamp format corrected and log independently re-read after successful module load"
+  },
+  "kernel_error_matches_after_switch": []
+}

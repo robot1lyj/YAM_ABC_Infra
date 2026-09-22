@@ -1,0 +1,73 @@
+--- a/gs_usb.c
++++ b/gs_usb.c
+@@ -524,7 +524,7 @@
+ {
+ 	struct gs_usb *usbcan = urb->context;
+ 	struct gs_can *dev;
+-	struct net_device *netdev;
++	struct net_device *netdev = NULL;
+ 	int rc;
+ 	struct net_device_stats *stats;
+ 	struct gs_host_frame *hf = urb->transfer_buffer;
+@@ -644,8 +644,13 @@
+ 			  usb_rcvbulkpipe(usbcan->udev, GS_USB_ENDPOINT_IN),
+ 			  hf, dev->parent->hf_size_rx,
+ 			  gs_usb_receive_bulk_callback, usbcan);
++	usb_anchor_urb(urb, &usbcan->rx_submitted);
+ 
+ 	rc = usb_submit_urb(urb, GFP_ATOMIC);
++	if (!rc)
++		return;
++
++	usb_unanchor_urb(urb);
+ 
+ 	/* USB failure take down all interfaces */
+ 	if (rc == -ENODEV) {
+@@ -654,6 +659,9 @@
+ 			if (usbcan->canch[rc])
+ 				netif_device_detach(usbcan->canch[rc]->netdev);
+ 		}
++	} else if (rc != -ESHUTDOWN && net_ratelimit()) {
++		netdev_info(netdev, "failed to re-submit IN URB: %pe\n",
++			    ERR_PTR(rc));
+ 	}
+ }
+ 
+@@ -707,8 +715,21 @@
+ 	struct gs_can *dev = txc->dev;
+ 	struct net_device *netdev = dev->netdev;
+ 
+-	if (urb->status)
+-		netdev_info(netdev, "usb xmit fail %u\n", txc->echo_id);
++	if (!urb->status)
++		return;
++
++	if (urb->status != -ESHUTDOWN && net_ratelimit())
++		netdev_info(netdev, "failed to xmit URB %u: %pe\n",
++			    txc->echo_id, ERR_PTR(urb->status));
++
++	netdev->stats.tx_dropped++;
++	netdev->stats.tx_errors++;
++
++	can_free_echo_skb(netdev, txc->echo_id, NULL);
++	gs_free_tx_context(txc);
++	atomic_dec(&dev->active_tx_urbs);
++
++	netif_wake_queue(netdev);
+ }
+ 
+ static netdev_tx_t gs_can_start_xmit(struct sk_buff *skb,
+@@ -961,7 +982,7 @@
+ 	usb_free_urb(urb);
+ out_usb_kill_anchored_urbs:
+ 	if (!parent->active_channels)
+-		usb_kill_anchored_urbs(&dev->tx_submitted);
++		usb_kill_anchored_urbs(&parent->rx_submitted);
+ 
+ 	close_candev(netdev);
+ 
+@@ -1468,3 +1489,4 @@
+ "Entwicklungs- und Vertriebs UG. USB2.0 to CAN interfaces\n"
+ "and bytewerk.org candleLight USB CAN interfaces.");
+ MODULE_LICENSE("GPL v2");
++MODULE_VERSION("6.1.118-yam1");

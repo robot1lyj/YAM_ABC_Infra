@@ -23,6 +23,8 @@ follower 配标准平行夹爪。leader 不是被动 GELLO。
 
 ## 2026-09-22 右 Follower 夹爪端点复测
 
+本节记录最初的稳定值选择，已被下方“统一采用官方采样极值”替代；不是当前配置。
+
 因最近三集 RTC 抓取中右夹爪滑落，用户授权四臂支撑后断开会话，只使能
 `can_right` 的 7 号 DM4310 夹爪。复用固定 SDK `detect_gripper_limits`，参数为
 0.5 Nm、每方向最多 2 s、0.05 s 采样、0.01 rad 稳定阈值；没有臂关节位置目标、
@@ -46,6 +48,8 @@ follower 配标准平行夹爪。leader 不是被动 GELLO。
 
 ## 2026-09-22 左 Follower 闭合偏置对照
 
+本节保留复测时的配置与比较结论；当前端点以随后用户确认的官方采样极值为准。
+
 随后用户授权左侧相同两轮复测，现场确认正常合拢且无阻挡；开始时四臂已断开。
 仅启用 `can_left` 电机 7，参数、端点采样与右侧一致，不发送六关节目标或写编码器零位。
 
@@ -66,6 +70,28 @@ follower 配标准平行夹爪。leader 不是被动 GELLO。
 历史左端点差异的形成原因未确定。两轮均收到夹爪 OFF 应答，结束时四个 CAN 均 DOWN，
 设备/Web PID 未变，无自动重连；左口 CAN 错误及丢包计数为零。
 完整采样见[左夹爪端点对照](evidence/20260922-left-gripper-endpoint-comparison.json)。
+
+## 2026-09-22 统一采用官方采样极值
+
+用户明确要求使用官方函数的原始返回，不使用额外稳定平台筛选。两侧均采用各自
+**第二轮（最近一轮）** `detect_gripper_limits` 返回的 `[闭合端, 张开端]`，单位 rad：
+
+| Follower | 闭合端 | 张开端 |
+|---|---:|---:|
+| 左 | 6.53944457160296 | 1.2289234760051873 |
+| 右 | 6.544022278171969 | 1.2434195468070488 |
+
+不平均两轮、不另取跨轮最大值、不筛峰、不取稳定采样中位数、不舍入或手工减去 2π。
+先前右侧稳定值选择已撤销，左右使用同一官方口径；原始两轮证据保留，避免改写历史。
+本次仅更新配置，下一次正常连接读取，不自动重连、标定或运动，也不重启设备服务。
+这是端点选取口径的统一，尚不能宣称夹持效果已通过真机验收。
+
+官方 [`linear_4310` 配置](https://github.com/i2rt-robotics/i2rt/blob/main/i2rt/robots/config/linear_4310.yml)
+默认需要标定、未预设统一端点；
+[`detect_gripper_limits`](https://github.com/i2rt-robotics/i2rt/blob/main/i2rt/robots/utils.py)
+取本轮采样最小/最大值。
+[产品文档](https://doc.i2rt.com/products/yam)支持通过 `gripper_limits_override` 固定端点、跳过重复自动标定。
+部署核对见[官方极值配置记录](evidence/20260922-gripper-official-extrema-selection.json)。
 
 ## 第一步：设备身份登记 P0
 

@@ -1,0 +1,39 @@
+{
+  "date": "2026-09-22",
+  "purpose": "User requested official detect_gripper_limits sampled extrema, without additional endpoint filtering.",
+  "selection": "Use each side's latest completed pass (pass 2) return verbatim. No cross-pass average/max, stable-sample filtering, rounding or manual turn subtraction.",
+  "source_evidence": {
+    "left": "20260922-left-gripper-endpoint-comparison.json",
+    "right": "20260922-right-gripper-recalibration.json"
+  },
+  "limits_closed_open_rad": {
+    "left": [6.53944457160296, 1.2289234760051873],
+    "right": [6.544022278171969, 1.2434195468070488]
+  },
+  "supersedes_config_limits": {
+    "left": [0.62123, -5.04368],
+    "right": [0.07582, -5.03633]
+  },
+  "deployment": {
+    "host": "linux@192.168.110.140",
+    "path": "/data/YAM/configs/station_hil.yaml",
+    "backup": "/data/YAM/data/workstation/station_hil.before-official-extrema-20260922.yaml",
+    "previous_sha256": "ce21038f2e241e7b19aea946fd30176093bc446b0282ad3189a14a81171a1f88",
+    "deployed_sha256": "3b7dd38da251a4365dca1fab82826b8e151d4ff5a3d11971c1da5b1739184290",
+    "local_and_ipc_sha256_match": true,
+    "ipc_config_parse_and_refreshed_status_inventory_match": true,
+    "connection_before_and_after": "disconnected",
+    "device_pid_before_and_after": 970,
+    "web_pid_before_and_after": 1636,
+    "restarted": false,
+    "reconnected": false,
+    "hardware_commands_sent": false,
+    "effective_on": "Next normal robot connection"
+  },
+  "validation": {
+    "tests/test_gripper_limits.py": "9 passed",
+    "raw_endpoint_equality": "Both parsed config lists exactly equal source passes[-1].limits_closed_open",
+    "git_diff_check": "passed",
+    "grasp_performance_with_selected_endpoints": "Not tested; no motion authorized or performed in this configuration-only step"
+  }
+}

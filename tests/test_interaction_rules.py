@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
 from yam_abc_reproduce.hil.interaction_rules import load_rules
@@ -131,7 +132,8 @@ def test_intervention_start_cannot_bypass_pause_or_handback():
     assert a.phase == Phase.RESUME and not a.intervention_pending
 
 
-def test_jog_available_in_all_paused_modes_but_not_during_intervention():
+@pytest.mark.parametrize("command", [{"delta": .01}, {"target": .15}])
+def test_jog_available_in_all_paused_modes_but_not_during_intervention(command):
     import threading
 
     import pytest
@@ -144,22 +146,22 @@ def test_jog_available_in_all_paused_modes_but_not_during_intervention():
     r.emergency = threading.Event()
     r.maintenance = SimpleNamespace(latched=False, state="idle")
     r.session = SimpleNamespace(arbiter=SimpleNamespace(intervention_pending=False))
-    r.jog = SimpleNamespace(request=lambda *args: calls.append(args))
+    r.jog = SimpleNamespace(request=lambda *args, **kwargs: calls.append((args, kwargs)))
     for mode in Mode:
         r.status = {"mode": mode.value, "phase": "hold"}
-        r.request_jog("left", 0, .01)
+        r.request_jog("left", 6, **command)
     assert len(calls) == 4
     r.session.arbiter.intervention_pending = True
     with pytest.raises(ValueError, match="介入"):
-        r.request_jog("left", 0, .01)
+        r.request_jog("left", 6, **command)
     r.session.arbiter.intervention_pending = False
     r.recorder.recording = True
     with pytest.raises(ValueError):
-        r.request_jog("left", 0, .01)
+        r.request_jog("left", 6, **command)
     r.recorder.recording = False
     r.emergency.set()
     with pytest.raises(ValueError):
-        r.request_jog("left", 0, .01)
+        r.request_jog("left", 6, **command)
     assert len(calls) == 4
 
 

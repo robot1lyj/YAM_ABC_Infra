@@ -528,10 +528,10 @@
                 <button class="active" data-arm="left">左 Follower</button
                 ><button data-arm="right">右 Follower</button>
               </div>
-              <span>单击微调 · 夹爪单步 10%</span>
+              <span>关节微调 · 夹爪绝对开度</span>
             </div>
             <p class="device-note">
-              仅在「数据采集」模式、已暂停且未录制时可用。每次点击为一个有限步长；无连续按住运动。暂停立即取消待执行点动。
+              连接、暂停且无录制或介入时可用；暂停立即取消调试动作。
             </p>
             <div id="joint-controls"></div>
             <div class="gripper-control">
@@ -539,11 +539,13 @@
                 <h3>平行夹爪</h3>
                 <span id="gripper-value">开度 —</span>
               </div>
-              <button class="button jog-button" id="gripper-close">
-                收拢 10%</button
-              ><button class="button jog-button" id="gripper-open">
-                张开 10%
-              </button>
+              <label class="gripper-target-label" for="gripper-target">目标开度
+                <input id="gripper-target" type="number" min="0" max="1" step="0.01"
+                  inputmode="decimal" placeholder="0–1" required aria-describedby="gripper-scale" />
+              </label>
+              <output id="gripper-percent" for="gripper-target">—</output>
+              <span id="gripper-scale">0 闭合 · 1 张开</span>
+              <button class="button jog-button" id="gripper-apply">应用</button>
             </div>
           </section>
         </div>

@@ -129,9 +129,9 @@ class DeviceClient:
     def disconnect(self, **body):
         return self._request("POST", "/disconnect", body)
 
-    def request_jog(self, arm, joint, delta):
+    def request_jog(self, arm, joint, delta=None, *, target=None):
         return self._request(
-            "POST", "/jog", {"arm": arm, "joint": joint, "delta": delta}
+            "POST", "/jog", {"arm": arm, "joint": joint, "delta": delta, "target": target}
         )
 
     def preview(self, role):

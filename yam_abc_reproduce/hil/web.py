@@ -37,7 +37,8 @@ class JogRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     arm: str
     joint: int = Field(strict=True, ge=0, le=6)
-    delta: float = Field(allow_inf_nan=False)
+    delta: float | None = Field(default=None, allow_inf_nan=False)
+    target: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
 
 
 class InitializationComplete(BaseModel):
@@ -209,7 +210,7 @@ def create_app(runtime, *, control_access=False):
 
     @app.post("/jog")
     def jog(body: JogRequest):
-        invoke(runtime.request_jog, **body.model_dump())
+        invoke(runtime.request_jog, **body.model_dump(exclude_none=True))
         return {"queued": "jog"}
 
     @app.get("/camera/{role}.jpg")

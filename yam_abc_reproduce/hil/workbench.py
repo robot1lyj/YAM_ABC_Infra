@@ -810,12 +810,12 @@ class Workbench:
         self.runtime.event(event)
         self.log("指令已排队：" + event)
 
-    def request_jog(self, arm, joint, delta):
+    def request_jog(self, arm, joint, delta=None, *, target=None):
         if self.runtime is None or self.state != "connected":
             raise ValueError("请先连接设备")
         if time.monotonic() - self._heartbeat > 3:
             raise ValueError("操作台心跳已断开")
-        self.runtime.request_jog(arm, joint, delta)
+        self.runtime.request_jog(arm, joint, delta, target=target)
 
     def configure_policy(self, *, fusion, rtc_delay_steps=None):
         if self.runtime is None or self.state != "connected" or self.initializing:

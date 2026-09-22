@@ -1131,6 +1131,28 @@ footer {
   font-size: 12px;
   color: var(--muted);
 }
+.gripper-target-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.gripper-target-label input {
+  width: 86px;
+  min-height: 32px;
+  padding: 5px 9px;
+  border: 1px solid var(--line, #d9d9df);
+  border-radius: 7px;
+  background: white;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+#gripper-percent { min-width: 34px; font-size: 13px; font-variant-numeric: tabular-nums; }
+@media (max-width: 680px) {
+  .gripper-control { flex-wrap: wrap; }
+  #gripper-scale { display: none; }
+}
 dialog {
   width: min(560px, calc(100vw - 32px));
   max-height: 90dvh;

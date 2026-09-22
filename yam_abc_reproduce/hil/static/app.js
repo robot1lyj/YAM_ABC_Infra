@@ -592,9 +592,13 @@ function render() {
   text(
     "gripper-value",
     connected && q[offset + 6] != null
-      ? "当前开度 " + Math.round(q[offset + 6] * 100) + "%"
+      ? "实际 " + (q[offset + 6] * 100).toFixed(1) + "%"
       : "开度 —",
   );
+  $("gripper-target").disabled = !(canMaintain && idle && !intervening);
+  $("gripper-apply").disabled ||= !!state.jog_active;
+  $("gripper-apply").textContent = state.jog_active ? "调节中…" : "应用";
+  $("gripper-apply").title = "将所选 Follower 夹爪调至目标开度；不移动臂关节";
   const factoryZero = !!state.factory_zero_home;
   const homeBlockReason = !connected
     ? "机械臂未连接或状态已过期"
@@ -851,9 +855,17 @@ document.querySelectorAll("[data-joint]").forEach(
         delta: (Number(b.dataset.delta) * Math.PI) / 90,
       })),
 );
-$("gripper-open").onclick = () => action("/jog", { arm, joint: 6, delta: 0.1 });
-$("gripper-close").onclick = () =>
-  action("/jog", { arm, joint: 6, delta: -0.1 });
+$("gripper-target").oninput = () => {
+  const input = $("gripper-target");
+  text("gripper-percent", input.value !== "" && input.validity.valid
+    ? (input.valueAsNumber * 100).toFixed(0) + "%" : "—");
+};
+$("gripper-apply").onclick = async () => {
+  const input = $("gripper-target");
+  if (!input.reportValidity()) return;
+  $("gripper-apply").disabled = true;
+  await action("/jog", { arm, joint: 6, target: input.valueAsNumber });
+};
 $("preview-toggle").onclick = () =>
   action(
     "/event/" +

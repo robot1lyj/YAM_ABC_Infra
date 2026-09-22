@@ -295,7 +295,7 @@ class Runtime:
         else:
             self.events.put_nowait((event, time.monotonic()))
 
-    def request_jog(self, arm, joint, delta):
+    def request_jog(self, arm, joint, delta=None, *, target=None):
         if self.task_switching:
             raise ValueError("任务切换中，请稍候")
         if self.status.get("phase") != "hold":
@@ -309,7 +309,7 @@ class Runtime:
             or self.maintenance.state != "idle"
         ):
             raise ValueError("录制或紧急暂停时不可点动")
-        self.jog.request(arm, joint, delta)
+        self.jog.request(arm, joint, delta, target=target)
 
     def _queue_policy_command(self, command):
         if self.task_switching:

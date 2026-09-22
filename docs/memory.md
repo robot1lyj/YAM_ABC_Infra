@@ -39,9 +39,11 @@
 3. 热项按主题替换与合并。超限先将低频细节移回owner/冷记录、修正相对链接、留下短入口；不硬截断句子或条件，不删除独有事实/证据，不把旧错误状态搬成新当前状态。
 4. 每次记忆写回后统计上述完整文件字节，核对总量与路由；选择一个实际下一步确认能找到设备映射、操作或验收条件。超限应先整理，不能以达到读取额度为由中止用户工作。
 
-现有 `scripts/check_project_memory.py` 检查链接与record指纹，**尚不自动检查以上字节预算**；维护agent须同时执行文件字节统计（如 `wc -c AGENTS.md docs/cache/{kernel,context_index,checkpoint}.md`）与语义复核。不增加第二套缓存、检索服务或自动“清理历史”程序。完整owner、二级问题路由、records/evidence/archive均按问题搜索，不默认载入。
+`scripts/check_project_memory.py` 自动检查以上完整UTF-8字节预算、默认/续作合计及kernel最多8个顶层主题，同时检查当前文档和热入口的文件/Markdown章节链接、record指纹。缺失热文件、超预算、失效章节返回非零。章节解析覆盖本库使用的ATX标题及显式HTML锚点，不是通用Markdown渲染器；仍需语义复核。不增加第二套缓存、检索服务或自动“清理历史”程序。完整owner、二级问题路由、records/evidence/archive均按问题搜索，不默认载入。
 
 核查与本轮整理来源：[产品与记忆基线](evidence/20260914-product-memory-baseline.json)，实际字节统计与检查结果见 [写回检查](evidence/20260914-product-memory-check.json)。
+
+2026-09-22按冻结基线0bc1be5重新整理当前规范、归档和路由，见[本轮整理证据](evidence/20260922-memory-docs-refresh.json)。检查工具新增预算与章节验证，旧record不更新哈希冒充复验；人工合同抽查与机械检查不等同于真实agent任务效率评测，不宣称节省了多少token或时间。
 
 ## 架构固定与现场身份登记
 
@@ -138,7 +140,7 @@ python3 scripts/memory_gate.py validate-record --root . --record docs/cache/reco
 
 ## 检查工具负责什么
 
-`check_project_memory.py` 检查当前路由与中文入口的文件链接、record结构和可选工程字段、证据与依赖指纹、重复ID以及规范owner是否在路由中。verified记录失效返回非零，提示重新验证；非current的历史记录单独列出，不能当作通过当前验收。
+`check_project_memory.py` 检查当前路由、中文入口和cache顶层文档的文件/章节链接、热记忆预算、record结构和可选工程字段、证据与依赖指纹、重复ID以及规范owner是否在路由中。verified记录失效返回非零，提示重新验证；非current的历史记录单独列出，不能当作通过当前验收。不会遍历改写历史证据；归档中带日期的旧说法不能覆盖现行owner。
 
 它不修复内容、不自动提升candidate、不运行机械臂或模型，也不验证网页可达性、Markdown锚点、记录的语义真伪或完整上下文token。
 

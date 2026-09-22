@@ -1,0 +1,150 @@
+{
+  "schema": "yam-documentation-audit-v1",
+  "recorded_at": "2026-09-22T10:52:00+08:00",
+  "source_base": "0bc1be5744fac114edba956b1fc4783d6eb1ec0f",
+  "scope": {
+    "project": "YAM",
+    "task": "documentation-memory-consolidation",
+    "hardware_access": false,
+    "ipc_deployment": false,
+    "runtime_code_changed": false
+  },
+  "baseline": {
+    "frozen_git_revision": "0bc1be5",
+    "method": "Read canonical documents, compare selected claims with source/config and accepted user contract. Not a measured agent retrieval A/B trial."
+  },
+  "route_review": [
+    {
+      "question": "IPC SSH username?",
+      "baseline": "linux recorded in environment and kernel",
+      "updated": "linux@192.168.110.140 preserved, direct problem-index route added",
+      "result": "retained_and_routed",
+      "owner": "docs/environment.md"
+    },
+    {
+      "question": "Does HIL use relative takeover?",
+      "baseline": "collect/convert and decisions still described relative mapping",
+      "updated": "same absolute manual implementation as teleop; right-primary unlock, primary lock, explicit page return",
+      "source": "yam_abc_reproduce/hil/interaction_rules.py:manual_ready/button_event",
+      "result": "contradiction_corrected",
+      "owner": "docs/collect.md"
+    },
+    {
+      "question": "Must task change disconnect arms?",
+      "baseline": "collect described fixed task until disconnect",
+      "updated": "paused_data_session transactional swap, same SDK; recording/maintenance/intervention barriers retained",
+      "source": "yam_abc_reproduce/hil/data_session.py",
+      "result": "contradiction_corrected",
+      "owner": "docs/collect.md"
+    },
+    {
+      "question": "Is normal policy limited by 3 rad/s measured-position envelope?",
+      "baseline": "synchronization_design stated feedback-relative 3rad/s",
+      "updated": "default 30Hz direct SDK with no such envelope; optional second-order settings are not current path",
+      "source": "configs/station_hil.yaml",
+      "result": "contradiction_corrected",
+      "owner": "docs/synchronization_design.md"
+    },
+    {
+      "question": "Which time alignment contract applies?",
+      "baseline": "condapi interface mixed timestamp-prefix trimming with sync/TDA/RTC",
+      "updated": "three distinct contracts; sync full50, TDA consumption alignment, RTC explicit k/prefix d",
+      "source": "yam_abc_reproduce/hil/planner_process.py",
+      "result": "contract_separated",
+      "owner": "docs/condapi_interface.md"
+    },
+    {
+      "question": "Are removed waits physically seamless?",
+      "baseline": "convert retained relative mapping and blanket source-gap segmentation wording",
+      "updated": "continuous training frame_index/fps; original tick/time retained, expert-only segments separately",
+      "source": "yam_abc_reproduce/hil/intervention_recording.py",
+      "result": "contract_separated",
+      "owner": "docs/hil_dataset_fields.md"
+    },
+    {
+      "question": "Can device restart now preserve enable and is hardware fault fixed?",
+      "baseline": "architecture/checkpoint correctly said executor migration pending and physical cause unknown",
+      "updated": "preserved explicitly in deploy/acceptance/checkpoint",
+      "result": "retained",
+      "owner": "docs/dagger_architecture.md"
+    }
+  ],
+  "archive_integrity": [
+    {
+      "file": "docs/archive/collect_20260922.md",
+      "source": "0bc1be5:docs/collect.md",
+      "body_preserved": true,
+      "changes": "archive notice and relative links only"
+    },
+    {
+      "file": "docs/archive/synchronization_design_20260922.md",
+      "source": "0bc1be5:docs/synchronization_design.md",
+      "body_preserved": true,
+      "changes": "archive notice and relative links only"
+    },
+    {
+      "file": "docs/archive/condapi_interface_20260922.md",
+      "source": "0bc1be5:docs/condapi_interface.md",
+      "body_preserved": true,
+      "changes": "archive notice and relative links only"
+    },
+    {
+      "file": "docs/archive/decisions_20260922.md",
+      "source": "0bc1be5:docs/decisions.md",
+      "body_preserved": true,
+      "changes": "archive notice and relative links only"
+    },
+    {
+      "file": "docs/archive/deploy_20260922.md",
+      "source": "0bc1be5:docs/deploy.md",
+      "body_preserved": true,
+      "changes": "archive notice and relative links only"
+    },
+    {
+      "file": "docs/archive/acceptance_20260922.md",
+      "source": "0bc1be5:docs/acceptance.md",
+      "body_preserved": true,
+      "changes": "archive notice and relative links only"
+    }
+  ],
+  "validation": [
+    {
+      "command": ".venv/bin/python -m pytest -q tests/test_project_memory.py tests/test_memory_gate.py tests/test_engineering_memory.py",
+      "exit_code": 0,
+      "result": "45 passed, 17 subtests passed",
+      "duration_s": 0.55
+    },
+    {
+      "command": ".venv/bin/ruff check scripts/check_project_memory.py tests/test_project_memory.py",
+      "exit_code": 0,
+      "result": "All checks passed"
+    },
+    {
+      "command": "python3 scripts/check_project_memory.py",
+      "exit_code": 0,
+      "result": "Current file/heading links and hot budgets pass; historical records remain review-only"
+    },
+    {
+      "command": "Archive bodies compared against frozen source after explicit relative-link rewrite",
+      "result": "6/6 preserve historical body"
+    }
+  ],
+  "limitations": [
+    "No hardware/IPC inspection, service restart or deployment",
+    "529/4 skipped/17 subtests is prior architecture validation, not rerun this turn",
+    "No agent behavioral evaluation or measured retrieval-efficiency claim",
+    "Markdown checker supports repository ATX headings/explicit anchors, not every Markdown dialect",
+    "Historical records not bulk revalidated",
+    "Existing unrelated dataset workbench changes are excluded"
+  ],
+  "known_remaining_discrepancies": [
+    {
+      "source": "yam_abc_reproduce/hil/run.py",
+      "finding": "policy_url remains in row diagnostics despite older requirement; documented, not changed"
+    },
+    {
+      "source": "yam_abc_reproduce/hil/interaction_rules.py:alignment_step",
+      "finding": "timeout message still says relative teleop though manual_ready calls shared absolute implementation; documented for later code cleanup"
+    }
+  ]
+}

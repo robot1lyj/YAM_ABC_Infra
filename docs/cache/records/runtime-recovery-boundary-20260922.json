@@ -1,0 +1,50 @@
+{
+  "status": "verified",
+  "observed_at": "2026-09-22T10:52:00+08:00",
+  "recorded_at": "2026-09-22T10:53:00+08:00",
+  "recheck": "on_change",
+  "valid_until": null,
+  "supersedes": [],
+  "id": "runtime-recovery-boundary-20260922",
+  "kind": "fact",
+  "owner": "docs/dagger_architecture.md",
+  "scope": {
+    "project": "YAM",
+    "verification": "local-offline",
+    "domain": "recovery"
+  },
+  "claim": "0bc1be5离线恢复边界：策略/规划失败保持并废弃旧计划/管道；录制恢复与任务切换共用暂停数据会话事务；CAN锁避免本项目入口竞争。默认SDK仍归device，可选executor和系统盘运行时未现场迁移，NVMe/USB-CAN物理根因未定。",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260922-architecture-recovery.json",
+      "sha256": "9f56a9103cebe4590d1f891cecd927e88b44d76c1b6117fd6b9cf92a9e857131"
+    }
+  ],
+  "depends_on": {
+    "docs/dagger_architecture.md": "9b269959234fa0511a4d7b8bef85a64def1b19d9b213f91c004c6ba18b10e7e7",
+    "yam_abc_reproduce/hil/planner_process.py": "4f6cb7f655b41aaf13ab0d331787d7cf05fe82ea8401e32b852e2804f00d9617",
+    "yam_abc_reproduce/hil/data_session.py": "c752e122b3c13d0ffed1a76828489ffcb2fa68f82e7adf71a7bc2a29849686ac",
+    "yam_abc_reproduce/robot/ownership.py": "8af358a79e4e79c69f2d489c6c0e8ac8591d488590d2aea943eaa565dec712d3"
+  },
+  "retrieval": {
+    "terms": [
+      "解耦",
+      "重启",
+      "掉使能",
+      "CAN所有权",
+      "录制恢复",
+      "策略故障",
+      "掉盘"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/dagger_architecture.md#故障等级与恢复合同"
+      },
+      {
+        "relation": "prerequisite",
+        "source": "docs/deploy.md#改什么重启什么"
+      }
+    ]
+  }
+}

@@ -30,7 +30,7 @@ origin=`ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`；github=`git@github.c
 
 ## 设备与操作边界
 
-- 2标准YAM follower＋2官方电动leader＋3 D405；leader类型yam_lead_left/right、手柄yam_teaching_handle，不是GELLO。用户已确认两只Follower为标准DM4310直线夹爪，配置类型为linear_4310；实际行程仍须P3实测。
+- 2标准YAM follower＋2官方电动leader＋3 D405；leader类型yam_lead_left/right、手柄yam_teaching_handle，不是GELLO。两只Follower为标准DM4310直线夹爪，linear_4310与实测行程已登记；换设备须重查。
 - 不例行GELLO清零、写电机零位、刷固件或关闭超时；不显示零点标定/底层速度调参。真实机器人构造可能施力矩、自动校准夹爪；运动前确认固定、行程清空、有人照看。软件停止不能替代硬件急停。
 - 四产品模式：遥操作、纯推理、DAgger/HIL、数据采集；HOLD/人工/恢复为内部状态，维护/调试不另造第五种运行模式。所有目标经单一Runtime仲裁，维护不能与策略/遥操作同时写电机。
 - HIL介入：Follower保持、Leader辅助对齐，右①复用纯遥操作绝对映射，不设相对偏移或对齐门槛。人工①锁定、②无功能；页面交还，无主从偏差门槛。采集①开始/结束、②放弃；遥操作/推理手柄无功能，空格暂停。保留模型契约/时效/单位检查。

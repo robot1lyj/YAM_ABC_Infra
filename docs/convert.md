@@ -42,7 +42,7 @@ uv run --locked --script scripts/convert_lerobot.py /data/raw/yam --output /data
 
 ## 字段约定
 
-DAgger继续使用上述`yam_hil_v2`原始格式，策略→介入冻结→人工→交还等待→策略保存在同一集。`human_action`是原始Leader输入，HIL采用相对接管偏移，**专家训练action必须取`submitted_action`**；不能把Leader角度直接当Follower标签。夹爪为0关1开，关节为绝对rad，顺序左6+左夹爪+右6+右夹爪。介入时夹爪保持，扳机到达/跨过当前开度后取得控制权。
+DAgger使用上述`yam_hil_v2`原始格式，策略→人工→策略保存在同一集；当前录制侧删除介入待人工和人工锁定待交还两类等待帧，交还后的RESUME另行保留。`human_action`是原始Leader输入，HIL复用绝对1:1遥操作，不再用相对偏移；**专家训练action必须取`submitted_action`**，因为硬限位和夹爪软接管仍可能改变最终目标，不能把Leader角度直接当Follower标签。夹爪0关1开，关节绝对rad，顺序左6+左夹爪+右6+右夹爪。完整字段及等待规则归[数据合同](hil_dataset_fields.md)。
 
 每集开始记录实际运行的`policy_fusion`、`rtc`、`rtc_delay_steps`、`action_dt`和`streaming`，并冻结该配置快照，避免异步写盘时被下一集覆盖。此前热切换RTC的旧集manifest可能仍写启动时TDA；须结合逐帧`details.policy_fusion`及`policy_reply`审计，不能仅凭旧清单筛选，原件不自动改写。
 
@@ -69,7 +69,7 @@ DAgger继续使用上述`yam_hil_v2`原始格式，策略→介入冻结→人�
 
 `manifest.json`及LeRobot episode元数据补齐Evo-RL的`episode_success`，仅明确标注的`success`/`failure`有值；unknown/aborted不自动变成失败。上述字段按[已核对源码](reference_sources.md#evo-rl)映射，未增设奖励、干预原因、任务阶段或模型打分。原始记录已有相应来源、阶段、候选和结果，旧集可通过离线导出获得这些字段而不改原件。本站action仍取实际提交目标；Evo-RL该版写`action_values`而不是`_sent_action`，两者不能宣称完全相同。
 
-HIL的epoch变化不会拆episode，策略→人工→策略完整保留。真实帧号缺口会分段，避免伪造连续性。aborted和discarded不进入正式数据；失败但正常保存的集保留failure标签，由训练流程审核使用。训练时不能不加筛选地把所有policy/hold帧当作人工示范。
+HIL的epoch变化不直接拆episode，策略→人工→策略保留在同一集。普通导出使用连续帧序号时间；expert-only按有效人工片段及原始tick缺口分组。删等待后的连续timestamp不是物理时间无缝，原始tick/time和wait_boundary保留供追溯。aborted和discarded不进入正式数据；失败但正常保存的集保留failure标签，由训练流程审核使用。训练时不能不加筛选地把所有policy/hold帧当作人工示范。
 
 ## 离线重建与专家筛选
 

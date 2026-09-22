@@ -17,7 +17,7 @@
 | observation_state | 与观测图像配对的状态，14D；可能空 |
 | policy_action | 本tick选中的模型目标，14D；非策略帧可空 |
 | human_action | 人工阶段的原始Leader输入，14D；不是补偿后的Follower目标 |
-| selected_action | 仲裁选中目标，包含人工相对位移映射，14D |
+| selected_action | 仲裁选中目标，人工阶段复用绝对1:1映射，无相对偏移，14D |
 | bounded_action、bounded_at | 下发接口前目标与准备完成时刻 |
 | submitted_action、submitted_at、apply_returned_at | 实际提交SDK的目标、按臂写入时间戳、写调用返回时间；不代表电机到位时间 |
 | constraint_mask | 14维，提交目标与选中目标是否不同 |
@@ -68,7 +68,7 @@ segments每项：`path, steps, start_frame, video_frames, files, state`；files�
 
 每集录制器独立持有区间清单，在消费完本集FIFO后写入manifest，不再从设备进程复制跨集摘要。旧第02集只修正清单，未重写视频/样本删除旧HOLD帧。
 
-新录制规则（待首次部署）：保留帧新增`frame_index`（从0连续）、`timestamp=frame_index/fps`（秒）、`wait_boundary`（切除等待后的第一帧为true），存于HDF5 details。原始`tick/time`及相机时间不改；视频和样本整帧一起筛选，不插造动作、不自动拆集。普通LeRobot导出原已按帧序号生成连续时间；expert-only导出仍按其显式人工片段规则分组。连续时间不代表切点两边物理轨迹必然连续，切点标记用于追溯。
+当前录制侧实现：保留帧新增`frame_index`（从0连续）、`timestamp=frame_index/fps`（秒）、`wait_boundary`（切除等待后的第一帧为true），存于HDF5 details。原始`tick/time`及相机时间不改；视频和样本整帧一起筛选，不插造动作、不自动拆集。普通LeRobot导出原已按帧序号生成连续时间；expert-only导出仍按其显式人工片段规则分组。连续时间不代表切点两边物理轨迹必然连续，切点标记用于追溯。现场是否运行此规则应检查运行版本和新集字段，不从历史“待部署”或旧集推断；本轮未复测IPC。
 
 参考Evo-RL的同集策略/人工标注与默认帧序号时间：[recording_loop](https://github.com/MINT-SJTU/Evo-RL/blob/c735d69d098cdefd0fdaf8d2063af06d22dab130/src/lerobot/scripts/recording_loop.py)、[lerobot_dataset](https://github.com/MINT-SJTU/Evo-RL/blob/c735d69d098cdefd0fdaf8d2063af06d22dab130/src/lerobot/datasets/lerobot_dataset.py)。Evo-RL没有本站两段锁定等待，删除这些等待是本站规则，不宣称上游有同样处理。
 

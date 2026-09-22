@@ -1,23 +1,33 @@
-# 本地边缘推理与 HIL 部署
+# 部署与更新边界
 
-当前部署是现场 Thor + RK3588 网线连接。Thor 的模型服务由 condapi 管理，本项目负责设备、观测、动作执行和记录。
-开工先读 [2026-09-14 架构基线及工作包](dagger_architecture.md#2026-09-14-架构基线-v1)。IPC 已登记不等于 YAM 已安装；Thor 离线引擎不等于 WebSocket 服务已部署。当前开发机↔IPC网线、未来RK↔Thor直连及预留地址分别记录，不能沿用旧检查点推断网络在线。
+部署前读 [当前验收状态](acceptance.md)、[环境与unit配置](environment.md) 和 [工作站](workstation.md)。IPC使用 `linux@192.168.110.140`，不是开发机用户名；密码不入库，IP/挂载/进程必须重新检查。
 
-## 运行前
+## 改什么，重启什么
 
-- 先完成 [硬件核验](workstation.md)和 [环境安装](environment.md)。
-- 使用 [station_hil.yaml](../configs/station_hil.yaml)，不要使用上游 GELLO station。
-- 按 [condapi 接口](condapi_interface.md)确认图像、动作单位、归一化、模型版本和 `action_dt`。
-- 使用 `scripts/probe_thor_policy.py --help` 查看冻结观测探针参数，运行入口见 [中文手册](hil_quickstart.md)；本仓库不替你启动或验证真实模型服务器。
+| 修改 | 正常更新范围 | 是否可能掉使能 |
+|---|---|---|
+| 静态页面 / Web API | 更新资源、刷新浏览器或独立重启yam-workstation | 不应关闭SDK；重新附着可能请求HOLD |
+| Thor通信 / 动作块规划 | HOLD无活动录制时独立重载对应子进程 | 不关闭SDK，不自动开始 |
+| 每集录制筛选规则 | 按录制侧模块加载边界，在新集生效 | 不需要为筛选规则重启机械臂 |
+| 录制owner故障 | 新版后台恢复新数据session，保留旧原件 | 不重连SDK；新版需先完成部署 |
+| Runtime仲裁 / SDK代码 | 当前默认需受控更新yam-device | 可能释放力矩，需重新取得现场许可 |
+| 首次迁移独立yam-executor | 一次受控移交SDK/CAN所有权 | 迁移时需支撑；之后上层detach保持而非release |
 
-## 当前命令
+**可选executor尚未迁移IPC**。不能因源码已有解耦接口就承诺当前设备重启不掉力矩。系统盘程序、NVMe数据分离模板亦待现场迁移；旧程序仍可能依赖/data。模板不是自动迁移脚本。
+
+## 启动与检查
+
+无硬件检查：
 
 ```bash
-uv run --no-sync yam-workstation --mode inference --url ws://THOR_IP:8000 --web-port 8766
+uv run --no-sync yam-workstation --mock --mode collect --check
+uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 ```
 
-`THOR_IP`换为现场地址；`--mode hil`启用 Leader 接管。启动后先保持，点击开始才执行选定策略；但设备构造可能已上电/校准夹爪。
+真实设备使用服务部署和 [运行手册](hil_quickstart.md#真机配置与启动) 的配置，不能把mock命令简单改完就无人值守启动。CLI无界面会构造设备；Web入口先启动页面，连接按钮才构造。构造可能施加力矩。
 
-默认非 RTC 异步重规划；`--baseline`为普通分块比较路径。网络故障锁定状态，不自动重连后执行。主机接收时间配对不等于曝光同步。
+Thor不由本仓库启动；服务使用 [接口合同](condapi_interface.md)，模式须匹配训练式RTC或普通协议。冻结观测探针用 `scripts/probe_thor_policy.py --help`，先无电机验证再获准运动。
 
-旧 `yam-abc-deploy`/旧 Deploy 页面是另一生命周期，可能只构造 Follower 或释放 Leader，不能作为本项目的 HIL 入口。详细历史信息见 [英文归档](archive/deploy-1c04c83.md)。其中 LoRA 和单 GPU 默认仅属于旧工具，不覆盖 condapi 当前规范。
+部署顺序：确认现场与保存完成 → 核对挂载/版本/所有权 → 合并需要的核心更新，减少重复重启 → 离线/只读验证 → HOLD验证 → 用户明确开始。出现错误不连续重试连接或软件USB重新枚举，先保留日志和检查硬件。
+
+旧yam-abc-deploy/GUI是另一生命周期，不作为HIL工作台入口，见 [旧工具](legacy_tools.md)。历史部署说明见 [快照](archive/deploy_20260922.md)。

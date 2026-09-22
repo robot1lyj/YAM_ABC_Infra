@@ -1,0 +1,64 @@
+{
+  "status": "verified",
+  "observed_at": "2026-09-22T10:52:00+08:00",
+  "recorded_at": "2026-09-22T10:53:00+08:00",
+  "recheck": "on_change",
+  "valid_until": null,
+  "supersedes": [],
+  "id": "project-memory-check-20260922",
+  "kind": "procedure",
+  "owner": "docs/memory.md",
+  "scope": {
+    "project": "YAM",
+    "verification": "local-offline",
+    "domain": "documentation"
+  },
+  "claim": "文档记忆只读检查工具覆盖当前路由/热入口文件和章节链接、四份热文件UTF-8预算及核心主题上限、记录依赖指纹。45项记忆测试与17子测试通过；这不证明运行文档语义或现场状态。",
+  "evidence": [
+    {
+      "path": "docs/evidence/20260922-memory-docs-refresh.json",
+      "sha256": "f67929fedff9fda3c02ce0a532f92a7c2bda11caa8b27661b6c1055cd376aa8f"
+    }
+  ],
+  "depends_on": {
+    "scripts/check_project_memory.py": "6e633649361f8fb7605200998e4e5eade987e21c210f74dd99cd266a357f9f44",
+    "tests/test_project_memory.py": "7bdf9396335ea5c892f9aedcd31b75a9e1a4f298c8ab547135f3d7f19d28abfc",
+    "docs/memory.md": "768a5d6a5228d3cf752432abdecc8e245a794dc594616423496d4e6c230c0b86"
+  },
+  "capability": {
+    "entrypoint": "scripts/check_project_memory.py",
+    "invocation": "python3 scripts/check_project_memory.py",
+    "validation_command": ".venv/bin/python -m pytest -q tests/test_project_memory.py tests/test_memory_gate.py tests/test_engineering_memory.py",
+    "acceptance": "Current errors empty; hot files and combined bytes within owner limits; stale historical records remain review-only.",
+    "inputs": [
+      "Current docs and hot routes",
+      "Evidence records and their source fingerprints"
+    ],
+    "outputs": [
+      "JSON errors/review_only/validated_records/documents/hot_budget",
+      "Nonzero exit for current invalid links, budget or verified evidence"
+    ],
+    "config_paths": [],
+    "limitations": [
+      "ATX heading/explicit-anchor support, not a full Markdown engine",
+      "Does not certify factual correctness, safety, deployment or agent retrieval efficiency"
+    ]
+  },
+  "retrieval": {
+    "terms": [
+      "记忆",
+      "文档",
+      "失效链接",
+      "章节",
+      "预算",
+      "UTF-8",
+      "证据指纹"
+    ],
+    "related": [
+      {
+        "relation": "check",
+        "source": "docs/memory.md#热记忆预算与降级规则"
+      }
+    ]
+  }
+}

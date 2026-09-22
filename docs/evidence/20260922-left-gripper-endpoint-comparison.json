@@ -1,0 +1,807 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-22",
+  "scope": "Supervised left follower gripper endpoint comparison; no calibration or controller configuration modified",
+  "approval": {
+    "four_arms_supported": true,
+    "left_gripper_empty_and_clear": true,
+    "operator_present": true,
+    "disconnect_if_needed_approved": true,
+    "two_passes_approved": true,
+    "operator_confirmed_fully_closed_without_obstruction": true
+  },
+  "method": {
+    "channel": "can_left",
+    "motor_ids_enabled": [
+      7
+    ],
+    "sdk": "Pinned i2rt.robots.utils.detect_gripper_limits",
+    "parameters": {
+      "test_torque": 0.5,
+      "max_duration": 2,
+      "position_threshold": 0.01,
+      "check_interval": 0.05
+    },
+    "shared_with_right_test": "Same helper and parameters; only can_right/right changed to can_left/left",
+    "endpoint_summary": "Median of final three samples per torque direction; report SDK extrema separately.",
+    "encoder_zero_writes": false,
+    "arm_joint_targets_sent": false,
+    "service_restart": false
+  },
+  "saved": {
+    "config_closed_open": [
+      0.62123,
+      -5.04368
+    ],
+    "runtime_closed_open": [
+      6.904415307179586,
+      1.239505307179586
+    ],
+    "station_sha256": "ce21038f2e241e7b19aea946fd30176093bc446b0282ad3189a14a81171a1f88"
+  },
+  "passes": [
+    {
+      "channel": "can_left",
+      "motor_id": 7,
+      "motor_type": "DM4310",
+      "date": "2026-09-22T13:49:48+0800",
+      "parameters": {
+        "test_torque": 0.5,
+        "max_duration": 2,
+        "position_threshold": 0.01,
+        "check_interval": 0.05
+      },
+      "limits_closed_open": [
+        6.550125886930648,
+        1.247234302281223
+      ],
+      "span_rad": 5.302891584649425,
+      "samples": [
+        {
+          "t": 70137.696151494,
+          "direction": 0,
+          "pos": 1.3506141756313426,
+          "vel": -0.0073260073260073,
+          "eff": -0.0073260073260073,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70137.74650708,
+          "direction": 1,
+          "pos": 1.363202868696117,
+          "vel": 0.842490842490843,
+          "eff": 0.15873015873015817,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70137.79724649,
+          "direction": 1,
+          "pos": 1.4520866712443734,
+          "vel": 2.410256410256409,
+          "eff": 0.14896214896214843,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70137.847502911,
+          "direction": 1,
+          "pos": 1.6180285343709464,
+          "vel": 4.197802197802197,
+          "eff": 0.17338217338217277,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70137.897761375,
+          "direction": 1,
+          "pos": 1.860265506981003,
+          "vel": 5.487179487179489,
+          "eff": 0.16361416361416303,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70137.948140877,
+          "direction": 1,
+          "pos": 2.1787975890745397,
+          "vel": 7.128205128205131,
+          "eff": 0.16361416361416303,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70137.998869495,
+          "direction": 1,
+          "pos": 2.5740062561989774,
+          "vel": 8.402930402930401,
+          "eff": 0.1978021978021971,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.049427493,
+          "direction": 1,
+          "pos": 3.0573357747768366,
+          "vel": 10.336996336996336,
+          "eff": 0.17338217338217277,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.099672831,
+          "direction": 1,
+          "pos": 3.601319905394064,
+          "vel": 11.582417582417584,
+          "eff": 0.20268620268620197,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.149933336,
+          "direction": 1,
+          "pos": 4.226558327611201,
+          "vel": 13.120879120879124,
+          "eff": 0.20268620268620197,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.200318963,
+          "direction": 1,
+          "pos": 4.926565957122147,
+          "vel": 14.73260073260073,
+          "eff": 0.19291819291819223,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.251176203,
+          "direction": 1,
+          "pos": 5.726520180056458,
+          "vel": 16.358974358974358,
+          "eff": 0.1978021978021971,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.30142125,
+          "direction": 1,
+          "pos": 6.550125886930648,
+          "vel": 14.175824175824175,
+          "eff": 1.2283272283272275,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.351760503,
+          "direction": 1,
+          "pos": 6.5379186694132905,
+          "vel": -0.6813186813186825,
+          "eff": 1.780219780219781,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.402017508,
+          "direction": 1,
+          "pos": 6.449034866865034,
+          "vel": -2.7032967032967044,
+          "eff": 0.8571428571428577,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.452456217,
+          "direction": 1,
+          "pos": 6.344129091325247,
+          "vel": -1.3992673992673978,
+          "eff": 0.2124542124542117,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.502915342,
+          "direction": 1,
+          "pos": 6.329251544975968,
+          "vel": 0.2124542124542117,
+          "eff": 0.21733821733821657,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.553453507,
+          "direction": 1,
+          "pos": 6.355954833295186,
+          "vel": 0.6080586080586095,
+          "eff": 0.45177045177045194,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.603700012,
+          "direction": 1,
+          "pos": 6.377698939497979,
+          "vel": 0.1831501831501825,
+          "eff": 0.6080586080586077,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.653955559,
+          "direction": 1,
+          "pos": 6.378843366140231,
+          "vel": -0.0219780219780219,
+          "eff": 0.5250305250305249,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.704452892,
+          "direction": 1,
+          "pos": 6.377698939497979,
+          "vel": -0.0366300366300365,
+          "eff": 0.5054945054945055,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70138.754704355,
+          "direction": 1,
+          "pos": 6.377317463950561,
+          "vel": -0.0073260073260073,
+          "eff": 0.485958485958486,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.105093801,
+          "direction": -1,
+          "pos": 6.323910887312124,
+          "vel": -1.7362637362637372,
+          "eff": 0.012210012210012167,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.155591425,
+          "direction": -1,
+          "pos": 6.226253147173267,
+          "vel": -2.3516483516483504,
+          "eff": -0.1538461538461533,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.205838222,
+          "direction": -1,
+          "pos": 6.05497062638285,
+          "vel": -4.153846153846153,
+          "eff": -0.1538461538461533,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.256136642,
+          "direction": -1,
+          "pos": 5.802815289539939,
+          "vel": -5.912087912087912,
+          "eff": -0.1684981684981679,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.306388106,
+          "direction": -1,
+          "pos": 5.475127794308385,
+          "vel": -7.406593406593405,
+          "eff": -0.1684981684981679,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.356850148,
+          "direction": -1,
+          "pos": 5.052834363317313,
+          "vel": -9.282051282051281,
+          "eff": -0.1684981684981679,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.407097236,
+          "direction": -1,
+          "pos": 4.5569161516746775,
+          "vel": -10.424908424908423,
+          "eff": -0.17338217338217277,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.457378741,
+          "direction": -1,
+          "pos": 3.977073319600212,
+          "vel": -12.315018315018314,
+          "eff": -0.17338217338217277,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.507612122,
+          "direction": -1,
+          "pos": 3.3251316090638596,
+          "vel": -13.868131868131869,
+          "eff": -0.1978021978021971,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.557858627,
+          "direction": -1,
+          "pos": 2.607194628824292,
+          "vel": -15.142857142857142,
+          "eff": -0.2417582417582409,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.608425958,
+          "direction": -1,
+          "pos": 1.8068589303425657,
+          "vel": -16.358974358974358,
+          "eff": -0.20757020757020683,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.658852125,
+          "direction": -1,
+          "pos": 1.247234302281223,
+          "vel": -9.194139194139193,
+          "eff": -3.230769230769231,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.709504329,
+          "direction": -1,
+          "pos": 1.2476157778286403,
+          "vel": 0.0805860805860803,
+          "eff": -1.1159951159951156,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.759748209,
+          "direction": -1,
+          "pos": 1.2495231555657274,
+          "vel": 0.0073260073260073,
+          "eff": -0.5006105006105006,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70139.810291624,
+          "direction": -1,
+          "pos": 1.2495231555657274,
+          "vel": -0.0073260073260073,
+          "eff": -0.5006105006105006,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        }
+      ],
+      "endpoints_stable": {
+        "1": true,
+        "-1": true
+      },
+      "accepted_candidate": true,
+      "motor_off_acknowledged": true
+    },
+    {
+      "channel": "can_left",
+      "motor_id": 7,
+      "motor_type": "DM4310",
+      "date": "2026-09-22T13:50:42+0800",
+      "parameters": {
+        "test_torque": 0.5,
+        "max_duration": 2,
+        "position_threshold": 0.01,
+        "check_interval": 0.05
+      },
+      "limits_closed_open": [
+        6.53944457160296,
+        1.2289234760051873
+      ],
+      "span_rad": 5.310521095597773,
+      "samples": [
+        {
+          "t": 70191.820342594,
+          "direction": 0,
+          "pos": 1.254100862134738,
+          "vel": -0.0073260073260073,
+          "eff": -0.0024420024420024333,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70191.870685349,
+          "direction": 1,
+          "pos": 1.2712672617685215,
+          "vel": 0.8864468864468869,
+          "eff": 0.11965811965811923,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70191.920960439,
+          "direction": 1,
+          "pos": 1.3620584420538648,
+          "vel": 2.410256410256409,
+          "eff": 0.14896214896214843,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70191.971231445,
+          "direction": 1,
+          "pos": 1.5325780117494467,
+          "vel": 4.139194139194139,
+          "eff": 0.17338217338217277,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.021475327,
+          "direction": 1,
+          "pos": 1.7820630197604341,
+          "vel": 5.736263736263737,
+          "eff": 0.16361416361416303,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.071746917,
+          "direction": 1,
+          "pos": 2.1059357595178145,
+          "vel": 7.040293040293044,
+          "eff": 0.17338217338217277,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.121993423,
+          "direction": 1,
+          "pos": 2.5087739375906004,
+          "vel": 8.783882783882781,
+          "eff": 0.19291819291819223,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.172261222,
+          "direction": 1,
+          "pos": 2.9818036163881896,
+          "vel": 10.322344322344321,
+          "eff": 0.19291819291819223,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.222655017,
+          "direction": 1,
+          "pos": 3.5341802090486,
+          "vel": 11.362637362637365,
+          "eff": 0.17338217338217277,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.273351554,
+          "direction": 1,
+          "pos": 4.178873884184025,
+          "vel": 13.340659340659343,
+          "eff": 0.1831501831501825,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.32362606,
+          "direction": 1,
+          "pos": 4.884603646906232,
+          "vel": 14.937728937728934,
+          "eff": 0.19291819291819223,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.373932941,
+          "direction": 1,
+          "pos": 5.667391470206759,
+          "vel": 16.446886446886445,
+          "eff": 0.1978021978021971,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.42464552,
+          "direction": 1,
+          "pos": 6.516174563210498,
+          "vel": 15.435897435897438,
+          "eff": 0.9206349206349209,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.475085105,
+          "direction": 1,
+          "pos": 6.53944457160296,
+          "vel": -0.6373626373626387,
+          "eff": 1.9413919413919416,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.525507774,
+          "direction": 1,
+          "pos": 6.453612573434043,
+          "vel": -2.3809523809523796,
+          "eff": 0.8473748473748479,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.575955526,
+          "direction": 1,
+          "pos": 6.3467994201571685,
+          "vel": -1.4432234432234416,
+          "eff": 0.23199023199023117,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.626211075,
+          "direction": 1,
+          "pos": 6.329251544975968,
+          "vel": 0.1245421245421241,
+          "eff": 0.21733821733821657,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.676646285,
+          "direction": 1,
+          "pos": 6.353665980010682,
+          "vel": 0.5641025641025657,
+          "eff": 0.40781440781440814,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.72712087,
+          "direction": 1,
+          "pos": 6.377698939497979,
+          "vel": 0.2271062271062263,
+          "eff": 0.5982905982905979,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.777553456,
+          "direction": 1,
+          "pos": 6.379606317235066,
+          "vel": -0.0219780219780219,
+          "eff": 0.5201465201465201,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.828262535,
+          "direction": 1,
+          "pos": 6.379606317235066,
+          "vel": -0.0073260073260073,
+          "eff": 0.49572649572649574,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70192.879082736,
+          "direction": 1,
+          "pos": 6.379606317235066,
+          "vel": -0.0073260073260073,
+          "eff": 0.49572649572649574,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.229475109,
+          "direction": -1,
+          "pos": 6.323147936217289,
+          "vel": -1.8681318681318686,
+          "eff": 0.017094017094017033,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.27990507,
+          "direction": -1,
+          "pos": 6.223201342793928,
+          "vel": -2.527472527472529,
+          "eff": -0.14896214896214843,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.330468903,
+          "direction": -1,
+          "pos": 6.043907835507746,
+          "vel": -4.3296703296703285,
+          "eff": -0.14896214896214843,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.380715701,
+          "direction": -1,
+          "pos": 5.7879377431906605,
+          "vel": -6.058608058608058,
+          "eff": -0.1684981684981679,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.431012665,
+          "direction": -1,
+          "pos": 5.448424505989166,
+          "vel": -7.582417582417584,
+          "eff": -0.1684981684981679,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.48127113,
+          "direction": -1,
+          "pos": 5.028419928282599,
+          "vel": -8.945054945054945,
+          "eff": -0.1684981684981679,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.531524929,
+          "direction": -1,
+          "pos": 4.53593499656672,
+          "vel": -10.791208791208792,
+          "eff": -0.1831501831501825,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.582129885,
+          "direction": -1,
+          "pos": 3.9393072404058884,
+          "vel": -12.212454212454212,
+          "eff": -0.1831501831501825,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.632379017,
+          "direction": -1,
+          "pos": 3.297665369649806,
+          "vel": -13.384615384615383,
+          "eff": -0.1978021978021971,
+          "temp_rotor": 31,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.682813936,
+          "direction": -1,
+          "pos": 2.5602731364919507,
+          "vel": -15.113553113553113,
+          "eff": -0.21733821733821657,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.733430851,
+          "direction": -1,
+          "pos": 1.737048905165178,
+          "vel": -16.842490842490843,
+          "eff": -0.23687423687423603,
+          "temp_rotor": 30,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.783680858,
+          "direction": -1,
+          "pos": 1.2289234760051873,
+          "vel": -2.4249084249084234,
+          "eff": -3.445665445665446,
+          "temp_rotor": 31,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.833925906,
+          "direction": -1,
+          "pos": 1.2476157778286403,
+          "vel": 0.0805860805860803,
+          "eff": -1.062271062271062,
+          "temp_rotor": 31,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.884415074,
+          "direction": -1,
+          "pos": 1.24914168001831,
+          "vel": -0.0073260073260073,
+          "eff": -0.5054945054945055,
+          "temp_rotor": 31,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.934760162,
+          "direction": -1,
+          "pos": 1.24914168001831,
+          "vel": -0.0073260073260073,
+          "eff": -0.49572649572649574,
+          "temp_rotor": 31,
+          "temp_mos": 33
+        },
+        {
+          "t": 70193.985048959,
+          "direction": -1,
+          "pos": 1.24914168001831,
+          "vel": -0.0073260073260073,
+          "eff": -0.5054945054945055,
+          "temp_rotor": 31,
+          "temp_mos": 33
+        }
+      ],
+      "endpoints_stable": {
+        "1": true,
+        "-1": true
+      },
+      "accepted_candidate": true,
+      "motor_off_acknowledged": true
+    }
+  ],
+  "comparison": {
+    "settled_closed_rad": [
+      6.377698939497979,
+      6.379606317235066
+    ],
+    "settled_open_rad": [
+      1.2495231555657274,
+      1.24914168001831
+    ],
+    "saved_closed_minus_second_settled_rad": 0.5248089899445203,
+    "example_normalized_target": 0.15,
+    "example_raw_command": 6.054678807179586,
+    "example_effective_opening_fraction": 0.06333295968915409,
+    "reference_right_settled_closed_open": [
+      6.359006637674526,
+      1.2468528267338055
+    ],
+    "interpretation": "Saved left closed endpoint lies beyond both current settled endpoint and calibration transient maxima. Same numeric normalized target is consequently more closed on left relative to its measured usable stroke. This supports a mapping contribution to observed asymmetry; not a per-grasp force or success attribution.",
+    "unknowns": [
+      "Cause of historical left endpoint mismatch",
+      "Physical jaw width in mm",
+      "Contact forces and friction during each grasp",
+      "Outcome after future unified calibration"
+    ]
+  },
+  "exit": {
+    "motor_off_acknowledged_both_passes": true,
+    "all_four_can_down": true,
+    "station_config_unchanged": true,
+    "connection": "disconnected",
+    "device_pid": 970,
+    "web_pid": 1636,
+    "left_can_rx_errors": 0,
+    "left_can_tx_errors": 0,
+    "left_can_tx_dropped": 0,
+    "automatic_reconnect": false
+  },
+  "related_evidence": "docs/evidence/20260922-right-gripper-recalibration.json"
+}

@@ -9,7 +9,7 @@ robot:
   bilateral_kp: 0.0
   robots:
     - {type: yam_left, gripper: linear_4310, gripper_limits: [0.62123, -5.04368], channel: can_left}
-    - {type: yam_right, gripper: linear_4310, gripper_limits: [0.07038, -5.03948], channel: can_right}
+    - {type: yam_right, gripper: linear_4310, gripper_limits: [0.07582, -5.03633], channel: can_right}
   controllers:
     - {type: yam_lead_left, controls: yam_left, channel: can_lead_l}
     - {type: yam_lead_right, controls: yam_right, channel: can_lead_r}

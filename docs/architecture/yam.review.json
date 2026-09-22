@@ -1,0 +1,16 @@
+{
+  "diagram_type": "architecture",
+  "specification_sha256": "8a487ec5efa6f92a044fd74e5f631335c8823d25498477ef156c402d9c7d044b",
+  "artifact_sha256": "51750d30ef11aab4075660cb56b17041440fc54acb11ec7d4d0e2cc38073e1f9",
+  "validation": "9/9 showcase, 0 errors, 0 warnings",
+  "browser_evidence": "passed",
+  "visual_review": "passed",
+  "correction_rounds": 2,
+  "review_scope": "Image-capable review of four automated screenshots, light/dark at 1440x900 and 2048x1320. Checked node/card fit, routes, labels, legend and vertical balance. Interactive controls and exports were not manually exercised.",
+  "screenshots": [
+    "yam.visual-check.1440x900.dark.png",
+    "yam.visual-check.1440x900.light.png",
+    "yam.visual-check.2048x1320.dark.png",
+    "yam.visual-check.2048x1320.light.png"
+  ]
+}

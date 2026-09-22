@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/wuyan-lyj/YAM/yam-abc-reproduce/docs/architecture/yam.architecture.json",
+  "output": "/home/wuyan-lyj/YAM/yam-abc-reproduce/docs/architecture/yam.html",
+  "specification": {
+    "sha256": "8a487ec5efa6f92a044fd74e5f631335c8823d25498477ef156c402d9c7d044b",
+    "bytes": 5896
+  },
+  "artifact": {
+    "sha256": "51750d30ef11aab4075660cb56b17041440fc54acb11ec7d4d0e2cc38073e1f9",
+    "bytes": 811582
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  },
+  "evidence": {
+    "verified": true,
+    "repository": "ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git",
+    "revision": "76b6834d947475444a3d87503da15392745a11b9",
+    "references": 10,
+    "linkMode": "local-only"
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "date": "2026-09-22",
+  "revision": "76b6834d947475444a3d87503da15392745a11b9",
+  "scope": "Local source inspection; no robot, service or deployment validation. Archify SRC validates committed baseline paths, not worktree bytes.",
+  "files": [
+    {
+      "path": "deploy/yam-device.service",
+      "worktree_sha256": "8ee2060ce3cda374122682bc80439d28801f18b8dbcac352dfa9b78a362491a1",
+      "baseline_sha256": "8ee2060ce3cda374122682bc80439d28801f18b8dbcac352dfa9b78a362491a1",
+      "worktree_differs": false
+    },
+    {
+      "path": "deploy/yam-workstation.service",
+      "worktree_sha256": "7f3a01076be6cf5b3ede864737744339ce31df3379cbb82115c49498593bfaaf",
+      "baseline_sha256": "bc83fc3610d9190e57965d94a28ef0466fda3fb8c886888aaed1bc1afb5e41a8",
+      "worktree_differs": true
+    },
+    {
+      "path": "docs/condapi_interface.md",
+      "worktree_sha256": "e5e33d60807cf6c0b6208168fdbc9b63985135942c2021533683c72e5c403ea5",
+      "baseline_sha256": "e5e33d60807cf6c0b6208168fdbc9b63985135942c2021533683c72e5c403ea5",
+      "worktree_differs": false
+    },
+    {
+      "path": "docs/dagger_architecture.md",
+      "worktree_sha256": "8ef51b82d221c2d84fc9550620c5513a47c716a6ba3ecf7071b90a708d07b553",
+      "baseline_sha256": "49941c4a2537d46d26e81de9a5c82aa2e22e782f6c34e845400cb9f1721fe631",
+      "worktree_differs": true
+    },
+    {
+      "path": "yam_abc_reproduce/dataset_workbench/catalog.py",
+      "worktree_sha256": "47fcb2f1e621b3d6c4c5c18834069a25a9c7354b2aa7b1335b2eb5eaebf2afa7",
+      "baseline_sha256": "d35259eae75978fa63fb1fce002fc642311a6ea2c9cff81fb7bc607fa11fd02d",
+      "worktree_differs": true
+    },
+    {
+      "path": "yam_abc_reproduce/dataset_workbench/web.py",
+      "worktree_sha256": "f9d13405ed5710bf721988ecfb386ad130033036b8e6b69eabd483c85a0a3226",
+      "baseline_sha256": "901540049d9c8e3480a37799b099e1fe4db8334f126a2ce6ff881eb93399df5e",
+      "worktree_differs": true
+    },
+    {
+      "path": "yam_abc_reproduce/hil/executor_service.py",
+      "worktree_sha256": "94ce823624bdf0c4e09790d8e4c6080a0a76c71ca0c0aad31a1001fa4c8478dd",
+      "baseline_sha256": "2481c79595291615d692083538899095946a76d916ab25a7793fc7d317c0cc1c",
+      "worktree_differs": true
+    },
+    {
+      "path": "yam_abc_reproduce/hil/observation.py",
+      "worktree_sha256": "b1cc8201a2cedddfcdc59cedc1fb7976b45cdb06e794feea75f5db17a26ed537",
+      "baseline_sha256": "b1cc8201a2cedddfcdc59cedc1fb7976b45cdb06e794feea75f5db17a26ed537",
+      "worktree_differs": false
+    },
+    {
+      "path": "yam_abc_reproduce/hil/planner_process.py",
+      "worktree_sha256": "4f6cb7f655b41aaf13ab0d331787d7cf05fe82ea8401e32b852e2804f00d9617",
+      "baseline_sha256": "54c621af677bb6c0bb5fc06087073cff9ae85772ca70ddf02a40762e0a3139f8",
+      "worktree_differs": true
+    },
+    {
+      "path": "yam_abc_reproduce/hil/policy_process.py",
+      "worktree_sha256": "82b706a79ca538c98a7472d73d66355e22ae5c012057966c0c592dae10313c3c",
+      "baseline_sha256": "82b706a79ca538c98a7472d73d66355e22ae5c012057966c0c592dae10313c3c",
+      "worktree_differs": false
+    },
+    {
+      "path": "yam_abc_reproduce/hil/recording.py",
+      "worktree_sha256": "0ec82ff24af57cf8eace79a949acfd7f799407d28e8011ca7721dfd6f439faba",
+      "baseline_sha256": "0ec82ff24af57cf8eace79a949acfd7f799407d28e8011ca7721dfd6f439faba",
+      "worktree_differs": false
+    },
+    {
+      "path": "yam_abc_reproduce/hil/recording_service.py",
+      "worktree_sha256": "f34b9d4e5d46f3a00d7f848588d5ad4d57f5ee0f9fc7225c0b5faa4b436e4565",
+      "baseline_sha256": "fc9d813e9c3e7deb38bc38a639da134d31ad3e1c57ad5c9dfa31cef2a00d9671",
+      "worktree_differs": true
+    },
+    {
+      "path": "yam_abc_reproduce/hil/run.py",
+      "worktree_sha256": "4c433d1d78d4ac436a95f9802d264e70ec6fb1fcc541502f2fbf6b6bce330619",
+      "baseline_sha256": "1b0792fcc5b3d4e007b5ae7baebd1dbd5545dff00c765ce7e26858e94e3802db",
+      "worktree_differs": true
+    },
+    {
+      "path": "yam_abc_reproduce/hil/station.py",
+      "worktree_sha256": "af753124494a672accdd9768b34a0126541a2da3651eab65e85a419306a63484",
+      "baseline_sha256": "af753124494a672accdd9768b34a0126541a2da3651eab65e85a419306a63484",
+      "worktree_differs": false
+    },
+    {
+      "path": "yam_abc_reproduce/hil/web.py",
+      "worktree_sha256": "b551dbac98d87160ad092078275f31f1f1261fcbdf262ab17698bce4caa6aea2",
+      "baseline_sha256": "70689cc69be7c6afacdffea23ac1d2f0f1b26720fe3bfe240d157bc119e69014",
+      "worktree_differs": true
+    },
+    {
+      "path": "yam_abc_reproduce/hil/workbench.py",
+      "worktree_sha256": "420fe7539dbe6ee82343703d09e177bbad93480877ceb89632c4dbe260e5c730",
+      "baseline_sha256": "6e4ca25771d857adbf27f31d5c790efddb8430347e53f6119c0067b066179afc",
+      "worktree_differs": true
+    }
+  ]
+}

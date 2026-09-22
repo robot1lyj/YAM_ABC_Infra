@@ -1,0 +1,300 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "YAM · 设备采集与数据集架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1350,
+      690
+    ],
+    "repository": {
+      "url": "ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git",
+      "revision": "76b6834d947475444a3d87503da15392745a11b9",
+      "link_mode": "local-only"
+    }
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "操作员浏览器",
+      "sublabel": "局域网客户端",
+      "pos": [
+        60,
+        300
+      ],
+      "size": [
+        210,
+        80
+      ],
+      "sources": [
+        {
+          "path": "docs/dagger_architecture.md"
+        }
+      ]
+    },
+    {
+      "id": "workstation",
+      "type": "frontend",
+      "label": "设备与采集平台",
+      "sublabel": "Web / API · :8766",
+      "pos": [
+        400,
+        300
+      ],
+      "size": [
+        210,
+        80
+      ],
+      "sources": [
+        {
+          "path": "yam_abc_reproduce/hil/web.py"
+        }
+      ]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "四模式 Runtime",
+      "sublabel": "yam-device · 唯一控制仲裁",
+      "pos": [
+        740,
+        300
+      ],
+      "size": [
+        210,
+        80
+      ],
+      "sources": [
+        {
+          "path": "yam_abc_reproduce/hil/run.py"
+        }
+      ]
+    },
+    {
+      "id": "arms",
+      "type": "external",
+      "label": "四臂与 i2rt",
+      "sublabel": "2 Leader + 2 Follower",
+      "pos": [
+        1080,
+        300
+      ],
+      "size": [
+        210,
+        80
+      ],
+      "sources": [
+        {
+          "path": "yam_abc_reproduce/hil/station.py"
+        }
+      ]
+    },
+    {
+      "id": "cameras",
+      "type": "external",
+      "label": "三路 D405",
+      "sublabel": "RGB 配对观测",
+      "pos": [
+        400,
+        80
+      ],
+      "size": [
+        210,
+        80
+      ],
+      "sources": [
+        {
+          "path": "yam_abc_reproduce/hil/observation.py"
+        }
+      ]
+    },
+    {
+      "id": "policy",
+      "type": "backend",
+      "label": "策略与动作规划",
+      "sublabel": "通信 / 规划分属子进程",
+      "pos": [
+        740,
+        80
+      ],
+      "size": [
+        210,
+        80
+      ],
+      "sources": [
+        {
+          "path": "yam_abc_reproduce/hil/policy_process.py"
+        }
+      ]
+    },
+    {
+      "id": "thor",
+      "type": "external",
+      "label": "Thor / condapi",
+      "sublabel": "模型推理服务 · :8000",
+      "pos": [
+        1080,
+        80
+      ],
+      "size": [
+        210,
+        80
+      ],
+      "sources": [
+        {
+          "path": "docs/condapi_interface.md"
+        }
+      ]
+    },
+    {
+      "id": "recorder",
+      "type": "backend",
+      "label": "录制子进程",
+      "sublabel": "RemoteRecordingSession",
+      "pos": [
+        740,
+        530
+      ],
+      "size": [
+        210,
+        80
+      ],
+      "sources": [
+        {
+          "path": "yam_abc_reproduce/hil/recording_service.py"
+        }
+      ]
+    },
+    {
+      "id": "raw",
+      "type": "database",
+      "label": "原始 Episode",
+      "sublabel": "MP4 + HDF5 + JSON",
+      "pos": [
+        400,
+        530
+      ],
+      "size": [
+        210,
+        80
+      ],
+      "sources": [
+        {
+          "path": "yam_abc_reproduce/hil/recording.py"
+        }
+      ]
+    },
+    {
+      "id": "dataset",
+      "type": "frontend",
+      "label": "数据集平台",
+      "sublabel": "审核 / 离线转换 · :8767",
+      "pos": [
+        60,
+        530
+      ],
+      "size": [
+        210,
+        80
+      ],
+      "sources": [
+        {
+          "path": "yam_abc_reproduce/dataset_workbench/web.py"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "operator-workstation",
+      "from": "operator",
+      "to": "workstation",
+      "label": "HTTP 操作"
+    },
+    {
+      "id": "workstation-runtime",
+      "from": "workstation",
+      "to": "runtime",
+      "label": "Unix socket",
+      "labelAt": [
+        675,
+        366
+      ]
+    },
+    {
+      "id": "runtime-arms",
+      "from": "runtime",
+      "to": "arms",
+      "label": "CAN 目标"
+    },
+    {
+      "id": "cameras-runtime",
+      "from": "cameras",
+      "to": "runtime",
+      "label": "配对观测"
+    },
+    {
+      "id": "runtime-policy",
+      "from": "runtime",
+      "to": "policy",
+      "label": "观测 / 计划"
+    },
+    {
+      "id": "policy-thor",
+      "from": "policy",
+      "to": "thor",
+      "label": "WebSocket"
+    },
+    {
+      "id": "runtime-recorder",
+      "from": "runtime",
+      "to": "recorder",
+      "label": "有界录制队列",
+      "labelAt": [
+        845,
+        455
+      ]
+    },
+    {
+      "id": "recorder-raw",
+      "from": "recorder",
+      "to": "raw",
+      "label": "编码落盘"
+    },
+    {
+      "id": "raw-dataset",
+      "from": "raw",
+      "to": "dataset",
+      "label": "关闭后导入"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "控制边界 · RK3588 IPC",
+      "items": [
+        "Web 可独立重启；Runtime 仲裁遥操作、推理、HIL、采集。",
+        "CAN 反馈回到设备侧；图中主箭头表示目标提交方向。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "推理与数据边界",
+      "items": [
+        "策略往返：三路图像、14D 状态与任务 → 动作块。",
+        "数据集平台在工作站 / 服务器整理；显式导出 LeRobot，训练归 condapi。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "源码快照 · 非现场验收",
+      "items": [
+        "2026-09-22 工作区核查；SRC 定位基线 76b6834。",
+        "图示默认设备服务；可选 executor 独立 SDK 进程未展开。"
+      ]
+    }
+  ]
+}

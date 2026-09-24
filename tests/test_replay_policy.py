@@ -4,7 +4,40 @@ import time
 import numpy as np
 import pytest
 
-from yam_abc_reproduce.hil.replay_policy import ReplayPolicy, load_targets, load_xr1_eef_targets
+from yam_abc_reproduce.hil.replay_policy import (
+    ReplayPolicy, load_targets, load_xr1_eef_targets, retime_targets_for_step,
+    time_stretch_targets,
+)
+
+
+def test_replay_time_stretch_keeps_endpoints_and_reduces_step_size():
+    source = np.zeros((4, 14))
+    source[:, 0] = [0, 0.12, 0.24, 0.36]
+    source[:, 6] = [1, 1, 0, 0]
+    slowed = time_stretch_targets(source, .75)
+    assert len(slowed) == 5
+    np.testing.assert_array_equal(slowed[0], source[0])
+    np.testing.assert_array_equal(slowed[-1], source[-1])
+    assert np.max(np.diff(slowed[:, 0])) == pytest.approx(.09)
+    assert np.min(slowed[:, 6]) >= 0 and np.max(slowed[:, 6]) <= 1
+    np.testing.assert_array_equal(time_stretch_targets(source), source)
+    with pytest.raises(ValueError, match="playback rate"):
+        time_stretch_targets(source, 1.1)
+
+
+def test_replay_adaptive_retime_preserves_path_and_caps_arm_step():
+    source = np.zeros((4, 14))
+    source[:, 0] = [0, .01, .11, .12]
+    source[:, 6] = [1, 1, 0, 0]
+    output = retime_targets_for_step(source, .03)
+    assert len(output) == 7
+    np.testing.assert_array_equal(output[0], source[0])
+    np.testing.assert_array_equal(output[-1], source[-1])
+    assert np.max(np.abs(np.diff(output[:, 0]))) <= .03 + 1e-12
+    assert output[1, 0] == pytest.approx(source[1, 0])
+    assert np.min(output[:, 6]) >= 0 and np.max(output[:, 6]) <= 1
+    with pytest.raises(ValueError, match="max arm replay step"):
+        retime_targets_for_step(source, 0)
 
 
 def test_replay_preserves_targets_and_holds_last_without_looping():

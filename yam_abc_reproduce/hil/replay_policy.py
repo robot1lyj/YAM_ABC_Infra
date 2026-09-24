@@ -87,13 +87,66 @@ def load_xr1_eef_targets(episode, *, start=0, steps=50, max_joint_error_rad=0.05
     return converted
 
 
+def time_stretch_targets(targets, playback_rate=1.0):
+    """Slow a recorded trajectory at the same 30 Hz command cadence.
+
+    ``playback_rate`` is source frames per output frame. Interpolation happens
+    only after the complete EEF->IK conversion, so it never changes the IK
+    branch or invokes the model. The first and last source targets are kept.
+    """
+    source = np.asarray(targets, dtype=np.float64)
+    if source.ndim != 2 or source.shape[1] != 14 or len(source) < 1 or not np.isfinite(source).all():
+        raise ValueError("replay targets must be finite (N,14), N>=1")
+    if not np.isfinite(playback_rate) or not 0 < playback_rate <= 1:
+        raise ValueError("playback rate must be in (0,1]")
+    if playback_rate == 1 or len(source) == 1:
+        return source.copy()
+    count = int(np.ceil((len(source) - 1) / playback_rate)) + 1
+    position = np.minimum(np.arange(count, dtype=np.float64) * playback_rate, len(source) - 1)
+    lower = np.floor(position).astype(np.int64)
+    upper = np.minimum(lower + 1, len(source) - 1)
+    alpha = (position - lower)[:, None]
+    result = source[lower] * (1 - alpha) + source[upper] * alpha
+    result[0], result[-1] = source[0], source[-1]
+    return result
+
+
+def retime_targets_for_step(targets, max_arm_step_rad):
+    """Spend extra 30 Hz ticks on steep replay edges without changing their path.
+
+    Each source interval gets at least one output interval, so no part of the
+    recording is sped up. This is confined to recorded replay, after IK.
+    """
+    source = np.asarray(targets, dtype=np.float64)
+    if source.ndim != 2 or source.shape[1] != 14 or len(source) < 1 or not np.isfinite(source).all():
+        raise ValueError("replay targets must be finite (N,14), N>=1")
+    if not np.isfinite(max_arm_step_rad) or max_arm_step_rad <= 0:
+        raise ValueError("max arm replay step must be finite and positive")
+    if len(source) == 1:
+        return source.copy()
+    arm_step = np.max(np.abs(np.diff(source[:, JOINTS], axis=0)), axis=1)
+    divisions = np.maximum(1, np.ceil(arm_step / max_arm_step_rad).astype(np.int64))
+    result = np.empty((int(divisions.sum()) + 1, 14), dtype=np.float64)
+    result[0] = source[0]
+    cursor = 1
+    for index, count in enumerate(divisions):
+        alpha = (np.arange(1, count + 1, dtype=np.float64) / count)[:, None]
+        result[cursor : cursor + count] = source[index] * (1 - alpha) + source[index + 1] * alpha
+        cursor += count
+    return result
+
+
 class ReplayPolicy:
-    def __init__(self, targets, *, start_tolerance_rad=.2, action_representation="joint"):
+    def __init__(self, targets, *, start_tolerance_rad=.2, action_representation="joint",
+                 playback_rate=1.0, source_frames=None, max_arm_step_rad=None):
         self.targets = np.asarray(targets, dtype=np.float64)
         if not np.isfinite(start_tolerance_rad) or start_tolerance_rad <= 0:
             raise ValueError("start tolerance must be finite and positive")
         self.tolerance = start_tolerance_rad
         self.action_representation = action_representation
+        self.playback_rate = playback_rate
+        self.source_frames = len(self.targets) if source_frames is None else source_frames
+        self.max_arm_step_rad = max_arm_step_rad
         self.cursor = 0
         self.epoch = None
 
@@ -132,6 +185,9 @@ class ReplayPolicy:
                 "action_representation": self.action_representation,
                 "replay_start_frame": start,
                 "replay_source_frames": len(self.targets),
+                "replay_input_frames": self.source_frames,
+                "replay_playback_rate": self.playback_rate,
+                "replay_max_arm_step_rad": self.max_arm_step_rad,
                 "replay_final_block": start + 50 >= len(self.targets),
             },
         }
@@ -150,9 +206,24 @@ def main():
         help="convert recorded targets through XR-1 EEF deltas and official YAM IK before replay",
     )
     parser.add_argument("--start-tolerance-rad", type=float, default=.2)
+    parser.add_argument(
+        "--playback-rate", type=float, default=1.0,
+        help="source-frame advance per 30 Hz output frame; 0.75 slows replay to 75%%",
+    )
+    parser.add_argument(
+        "--max-arm-step-rad", type=float,
+        help="adaptively add 30 Hz replay ticks so each arm joint step stays within this value",
+    )
     args = parser.parse_args()
+    if args.max_arm_step_rad is not None and args.playback_rate != 1:
+        parser.error("select playback rate or max arm step, not both")
     load = load_xr1_eef_targets if args.xr1_eef_roundtrip else load_targets
-    targets = load(args.episode, start=args.start, steps=None if args.all else args.steps)
+    source_targets = load(args.episode, start=args.start, steps=None if args.all else args.steps)
+    targets = (
+        retime_targets_for_step(source_targets, args.max_arm_step_rad)
+        if args.max_arm_step_rad is not None
+        else time_stretch_targets(source_targets, args.playback_rate)
+    )
     representation = "xr1_eef_delta_roundtrip" if args.xr1_eef_roundtrip else "joint"
     from openpi_client import msgpack_numpy
     from websockets.exceptions import ConnectionClosed
@@ -162,6 +233,8 @@ def main():
         replay = ReplayPolicy(
             targets, start_tolerance_rad=args.start_tolerance_rad,
             action_representation=representation,
+            playback_rate=args.playback_rate, source_frames=len(source_targets),
+            max_arm_step_rad=args.max_arm_step_rad,
         )
         packer = msgpack_numpy.Packer()
         ws.send(packer.pack({
@@ -181,7 +254,10 @@ def main():
         except ConnectionClosed:
             pass
 
-    print(f"Replay only ({representation}): {len(targets)} frames at ws://127.0.0.1:{args.port}; "
+    pacing = (f"max arm step {args.max_arm_step_rad:g} rad"
+              if args.max_arm_step_rad is not None else f"{args.playback_rate:g}x")
+    print(f"Replay only ({representation}): {len(source_targets)} source -> {len(targets)} output "
+          f"frames, {pacing}, ws://127.0.0.1:{args.port}; "
           "select sync_hold; EOF holds last target until operator pauses", flush=True)
     with serve(handler, "127.0.0.1", args.port, compression=None,
                max_size=32 * 1024 * 1024) as server:

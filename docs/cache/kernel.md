@@ -1,11 +1,8 @@
-# 核心记忆
+# 核心摘要
 
-仅保留稳定原则与路由；完整UTF-8≤3KiB，最多8条主题。按需读取owner，不展开全部链接。
+仅在需要项目概览、且已加载的 `AGENTS.md` 与[一级路由](context_index.md)不足时读取。这里不放运行快照或阶段日志。
 
-- **产品方向**：完整可靠、不过度防御，以用户完整流程交付。长期维护设备与采集平台（初始化/调试/维护/采集）及数据集平台；两平台需局域网跨平台浏览器访问。依据：[产品架构](../dagger_architecture.md#产品交付原则2026-09-14)。
-- **职责**：四臂与三D405由RK3588 IPC采集/控制/仲裁/原始记录；Thor模型服务、训练与转换归condapi。四臂各自USB-CAN经USB Hub接IPC，单一控制写入。IPC SSH用户名为`linux`；Wi-Fi IP由DHCP分配，不能从历史记录复制固定地址，连接前查 [环境](../environment.md#日常操作) 并现场复核。密码不入库。依据：[架构](../dagger_architecture.md)、[硬件](../workstation.md)。
-- **控制原则**：四运行模式；所有人工路径共用绝对遥操作，不恢复相对偏移。单一SDK写入者，维护与运行互斥；局部故障恢复不自动运动，真实连接可能施力矩。按钮/回零按 [运行手册](../hil_quickstart.md)，重启影响按 [部署](../deploy.md)，不凭“已解耦”推断不会掉使能。
-- **数据与模型**：原始MP4/HDF5/JSON，显式离线LeRobot转换；14D absolute动作、三RGB与prompt的模型合同归 [接口](../condapi_interface.md)。采集/数据整理共享任务与数据身份，各自生命周期独立，操作/诊断由界面承载。
-- **自动提交**：每轮更新检查后自动提交本任务，先Gitea再GitHub，核对同一SHA，无需再次询问。规则/地址归 [AGENTS](../../AGENTS.md)、[环境](../environment.md)。
-- **记忆纪律**：先owner后摘要、按主题替换；细节与历史降至冷资料，写回检查文件和合计预算。不得删除证据或用新增热文件规避上限。方法归 [记忆规则](../memory.md#热记忆预算与降级规则)，技能为condapi共享mlops-memory。
-- **续作与查找**：阶段进度及当前目标只看 [checkpoint](checkpoint.md)；设备身份/环境/测试与故障分别由 [一级路由](context_index.md)、[问题路由](problem_index.md)定位。用户确认、实现、模拟和真机验收分开，现场动态条件按需复查。
+- **系统职责**：RK3588 IPC 控四臂/三D405并录原始数据，Thor 负责模型推理；训练/转换归condapi。设备身份和当前网络查[环境](../environment.md)与[硬件](../workstation.md)，不能从旧IP推断在线。
+- **控制边界**：四模式共用单一写入者，人工路径为绝对1:1；维护和运行互斥，故障恢复不自动运动。重启/连接可能影响力矩；操作查[手册](../hil_quickstart.md)，部署查[边界](../deploy.md)。
+- **数据合同**：原始MP4/HDF5/JSON，LeRobot仅显式离线转换；14D目标、三RGB和prompt的模型合同查[接口](../condapi_interface.md)，HIL字段查[数据字段](../hil_dataset_fields.md)。
+- **检索纪律**：先按[一级路由](context_index.md)选一个owner，故障才查[问题路由](problem_index.md)；进度只在续作时读[检查点](checkpoint.md)。历史证据不作当前许可，写回规则归[记忆owner](../memory.md)。

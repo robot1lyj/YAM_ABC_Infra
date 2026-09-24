@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from check_project_memory import check
+from check_project_memory import check, report
 
 
 def add_hot_files(root):
@@ -98,11 +98,20 @@ def test_hot_budget_aggregate_at_exact_limits(tmp_path):
     for name, limit in HOT_LIMITS.items():
         (tmp_path / name).write_text("x" * limit)
     budget, errors = hot_budget(tmp_path)
-    assert budget["default_bytes"] == 13312
-    assert budget["resumed_bytes"] == 16384
+    assert budget["default_bytes"] == 8192
+    assert budget["resumed_bytes"] == 9216
     assert not errors
 
 
 def test_missing_route_reports_error_without_crashing(tmp_path):
     result = check(tmp_path)
     assert any("context_index.md" in error for error in result["errors"])
+
+
+def test_default_report_summarizes_history_without_hiding_errors():
+    result = {"errors": ["bad link"], "review_only": ["old-a", "old-b"], "validated_records": 1}
+    compact = report(result)
+    assert compact["errors"] == ["bad link"]
+    assert compact["review_only_count"] == 2
+    assert "review_only" not in compact
+    assert report(result, details=True) is result

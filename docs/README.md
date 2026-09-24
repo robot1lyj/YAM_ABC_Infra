@@ -1,6 +1,6 @@
 # 文档导航
 
-当前文档按职责维护，不按开发日期堆叠。**源码已实现、已部署、现场通过是三件事**；先看验收和当前检查点，再决定是否能在现场使用。
+当前文档按职责维护，不按开发日期堆叠。**源码已实现、已部署、现场通过是三件事**；从当前任务对应的owner入手，现场使用时再核验验收与实时状态，续作才读检查点。
 
 ## 使用与维护
 
@@ -20,7 +20,7 @@
 | 模块分层、资源拥有者、局部失败恢复 | [架构](dagger_architecture.md) |
 | 同步50步、TDA、RTC及Thor合同 | [接口](condapi_interface.md)、[同步与性能](synchronization_design.md) |
 | 用户已接受的约束 | [决策](decisions.md) |
-| 什么测过、什么未部署 | [验收状态](acceptance.md)、[当前续作](cache/checkpoint.md) |
+| 什么测过、什么未部署 | [验收状态](acceptance.md)；跨回合续作才读[检查点](cache/checkpoint.md) |
 | 怎么检索/维护项目记忆 | [记忆规则](memory.md)、[任务路由](cache/context_index.md) |
 | 官方来源与旧入口 | [来源](reference_sources.md)、[legacy工具](legacy_tools.md) |
 

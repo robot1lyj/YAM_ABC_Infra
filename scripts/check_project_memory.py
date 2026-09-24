@@ -10,10 +10,10 @@ from urllib.parse import unquote, urlsplit
 from memory_gate import validate_record
 
 HOT_LIMITS = {
-    "AGENTS.md": 6144,
-    "docs/cache/kernel.md": 3072,
-    "docs/cache/context_index.md": 4096,
-    "docs/cache/checkpoint.md": 3072,
+    "AGENTS.md": 3584,
+    "docs/cache/kernel.md": 1536,
+    "docs/cache/context_index.md": 3072,
+    "docs/cache/checkpoint.md": 1024,
 }
 
 
@@ -69,7 +69,7 @@ def hot_budget(root):
             errors.append(f"热记忆超限：{name} {sizes[name]} > {limit} bytes")
     default = sum(size for name, size in sizes.items() if not name.endswith("checkpoint.md"))
     resumed = sum(sizes.values())
-    for name, value, limit in (("default", default, 13312), ("resumed", resumed, 16384)):
+    for name, value, limit in (("default", default, 8192), ("resumed", resumed, 9216)):
         if value > limit:
             errors.append(f"热记忆合计超限：{name} {value} > {limit} bytes")
     kernel = root / "docs/cache/kernel.md"
@@ -135,12 +135,22 @@ def check(root):
     }
 
 
+def report(result, *, details=False):
+    """默认只给行动所需摘要；历史条目明细由显式开关请求。"""
+    if details:
+        return result
+    return {key: value for key, value in result.items() if key != "review_only"} | {
+        "review_only_count": len(result["review_only"])
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--details", action="store_true", help="列出全部历史审阅记录")
     args = parser.parse_args()
     result = check(args.root)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(json.dumps(report(result, details=args.details), ensure_ascii=False, indent=2))
     raise SystemExit(bool(result["errors"]))
 
 

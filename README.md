@@ -228,7 +228,7 @@ git diff --check
 | 安装、服务、硬件身份 | [环境](docs/environment.md) · [部署](docs/deploy.md) · [工作站](docs/workstation.md) |
 | 模块职责、时序、模型协议 | [架构](docs/dagger_architecture.md) · [同步](docs/synchronization_design.md) · [接口](docs/condapi_interface.md) |
 | 数据审阅、字段与训练导出 | [数据集平台](docs/dataset_workbench.md) · [字段](docs/hil_dataset_fields.md) · [转换](docs/convert.md) |
-| 开发接手、历史依据 | [当前检查点](docs/cache/checkpoint.md) · [记忆路由](docs/cache/context_index.md) · [验收](docs/acceptance.md) |
+| 开发任务定位 | [记忆路由](docs/cache/context_index.md)；续作才读[检查点](docs/cache/checkpoint.md)，验收按需查[状态](docs/acceptance.md) |
 | 全部文档与旧工具 | [文档中心](docs/README.md) · [legacy说明](docs/legacy_tools.md) |
 
 ```text

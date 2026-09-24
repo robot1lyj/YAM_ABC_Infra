@@ -4,7 +4,7 @@ import time
 import numpy as np
 import pytest
 
-from yam_abc_reproduce.hil.replay_policy import ReplayPolicy, load_targets
+from yam_abc_reproduce.hil.replay_policy import ReplayPolicy, load_targets, load_xr1_eef_targets
 
 
 def test_replay_preserves_targets_and_holds_last_without_looping():
@@ -147,6 +147,36 @@ def test_replay_loading_uses_submitted_not_leader_or_model(tmp_path, monkeypatch
     rows[-1]["tick"] = 4
     with pytest.raises(ValueError, match="tick gap"):
         load_targets(tmp_path)
+
+
+def test_xr1_eef_replay_roundtrip_uses_recorded_observation(tmp_path, monkeypatch):
+    from yam_abc_reproduce.hil import replay_policy
+
+    (tmp_path / "manifest.json").write_text(json.dumps({"fps": 30, "outcome": "unknown"}))
+    observed = np.array(
+        [0.2, 1.1, 1.0, -0.3, 0.1, 0.2, 0.7, -0.1, 1.4, 0.8, 0.2, -0.1, 0.3, 0.3]
+    )
+    recorded = np.tile(observed, (35, 1))
+    recorded[:, 0] += np.linspace(0, 0.02, 35)
+    recorded[:, 6] = np.linspace(0.7, 0.2, 35)
+    rows = [
+        {
+            "tick": i,
+            "observation_state": observed.copy(),
+            "submitted_action": target.copy(),
+        }
+        for i, target in enumerate(recorded)
+    ]
+    monkeypatch.setattr(replay_policy, "read_rows", lambda _: iter(rows))
+    converted = load_xr1_eef_targets(tmp_path, steps=None)
+    assert converted.shape == recorded.shape
+    np.testing.assert_allclose(converted[:, [6, 13]], recorded[:, [6, 13]], atol=1e-6)
+    assert np.max(np.abs(converted - recorded)) < 0.002
+    replay = ReplayPolicy(converted, action_representation="xr1_eef_delta_roundtrip")
+    reply = replay.infer(
+        {"observation.state": converted[0], "_replay_cursor": {"next_frame": 0, "epoch": 1}}
+    )
+    assert reply["server_timing"]["action_representation"] == "xr1_eef_delta_roundtrip"
 
 
 def test_replay_preserves_grippers_through_worker_and_real_planner_process():

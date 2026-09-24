@@ -204,7 +204,7 @@ function render() {
   text("recording-restart", recoveringRecording ? "录制服务恢复中…" : "恢复录制服务");
   $("recording-restart").title = "保留故障数据并创建新数据会话，不断开机械臂、不自动开始运动";
   $("policy-panel").hidden = !["inference", "hil"].includes(mode);
-  text("policy-mode", state.policy_fusion === "tda_smooth" ? "TDA 推理" : state.policy_fusion === "sync_hold" ? (state.policy_waiting_for_reply ? "同步推理 · 保持" : "同步推理") : state.policy_fusion === "rtc" ? "RTC 推理" : "旧模式");
+  text("policy-mode", state.policy_fusion === "tda_smooth" ? "TDA 推理" : state.policy_fusion === "sync_hold" ? (state.policy_url === "ws://127.0.0.1:8003" ? "XR-1 末端回放" : state.policy_waiting_for_reply ? "同步推理 · 保持" : "同步推理") : state.policy_fusion === "rtc" ? "RTC 推理" : "旧模式");
   text("policy-rtt", state.policy_observed_rtt_p95_s == null ? "—" : `${Math.round(state.policy_observed_rtt_p95_s * 1000)} ms`);
   text("policy-buffer", state.policy_buffer_seconds == null ? "—" : `${Math.max(0, state.policy_buffer_seconds).toFixed(2)} s`);
   text("policy-trim", state.policy_fusion === "rtc"
@@ -228,6 +228,7 @@ function render() {
   $("policy-source-apply").disabled = !sourceEditable;
   $("policy-source-url").disabled = !sourceEditable;
   $("policy-source-local").disabled = !sourceEditable;
+  $("policy-source-xr1-eef").disabled = !sourceEditable;
   $("interaction-reload").disabled = !policyEditable;
   $("policy-source-thor").disabled = !sourceEditable;
   if (!$("policy-source-url").value) $("policy-source-url").value = state.policy_url || "";
@@ -1222,6 +1223,7 @@ $("policy-source-form").onsubmit = async (e) => {
   if (await action("/policy/source", { url })) toast("来源切换已提交；机械臂保持连接，不自动运动");
 };
 $("policy-source-local").onclick = () => { $("policy-source-url").value = "ws://127.0.0.1:8002"; };
+$("policy-source-xr1-eef").onclick = () => { $("policy-source-url").value = "ws://127.0.0.1:8003"; };
 $("interaction-reload").onclick = async () => {
   if (await action("/control/reload")) toast("交互规则已提交重载；设备保持连接，不自动运动");
 };

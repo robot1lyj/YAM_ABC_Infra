@@ -15,6 +15,8 @@ import numpy as np
 from i2rt.robots.kinematics import Kinematics
 from i2rt.robots.utils import ArmType, GripperType, combine_arm_and_gripper_xml
 
+SDK_JOINT_LIMIT_BUFFER_RAD = 0.15
+
 
 @dataclass(frozen=True)
 class EefState:
@@ -68,8 +70,15 @@ class YamEefKinematics:
         flange = self._arm.fk(zero)
         grasp = gripper.fk(np.zeros(gripper._configuration.model.nq))
         self._flange_to_grasp = np.linalg.inv(flange) @ grasp
-        self.joint_limits = self._arm._configuration.model.jnt_range[:6].copy()
-        self._limits = [mink.ConfigurationLimit(self._arm._configuration.model)]
+        model = self._arm._configuration.model
+        # i2rt.get_robot extends each arm limit by 0.15 rad before giving it
+        # to MotorChainRobot, which clips real position commands to that range.
+        # Use the same effective bounds for IK; raw MJCF/URDF bounds reject
+        # legitimate recorded targets near joint 2/3 zero.
+        model.jnt_range[:6, 0] -= SDK_JOINT_LIMIT_BUFFER_RAD
+        model.jnt_range[:6, 1] += SDK_JOINT_LIMIT_BUFFER_RAD
+        self.joint_limits = model.jnt_range[:6].copy()
+        self._limits = [mink.ConfigurationLimit(model)]
 
     def fk(self, joints) -> np.ndarray:
         q = _vector(joints, 6, "joints")

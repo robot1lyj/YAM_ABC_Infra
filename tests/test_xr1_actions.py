@@ -5,6 +5,7 @@ import pytest
 from i2rt.robots.kinematics import Kinematics
 from i2rt.robots.utils import ArmType, GripperType, combine_arm_and_gripper_xml
 
+from yam_abc_reproduce.hil.kinematics import SDK_JOINT_LIMIT_BUFFER_RAD
 from yam_abc_reproduce.hil.xr1_actions import XR1YamCodec, action_mask
 
 
@@ -26,6 +27,12 @@ def test_fk_matches_official_linear_4310_grasp_site(codec, state):
     np.testing.assert_allclose(
         codec.kinematics.left.fk(state[:6]),
         model.fk(np.r_[state[:6], 0.0, 0.0]),
+        atol=1e-8,
+    )
+    np.testing.assert_allclose(
+        codec.kinematics.left.joint_limits,
+        model._configuration.model.jnt_range[:6]
+        + np.array([-SDK_JOINT_LIMIT_BUFFER_RAD, SDK_JOINT_LIMIT_BUFFER_RAD]),
         atol=1e-8,
     )
 

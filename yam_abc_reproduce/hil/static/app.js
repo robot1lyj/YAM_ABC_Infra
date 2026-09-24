@@ -104,6 +104,7 @@ function camerasConnected() {
   return online && state.camera_connection === "connected";
 }
 function render() {
+  const xr1Replay = state.policy_url === "ws://127.0.0.1:8003";
   const connected = activeDevice(),
     latched = !!state.stop_latched,
     maint = state.maintenance || "idle",
@@ -277,13 +278,13 @@ function render() {
                 : "等待开始指令"
               : state.phase === "human"
                 ? "Leader 正在控制 Follower"
-                : "本地策略控制中",
+                : xr1Replay ? "末端回放执行中" : "本地策略控制中",
   );
   text(
     "start",
     mode === "collect" || mode === "teleop"
       ? "▶ 开始遥操作"
-      : "▶ 开始模型执行",
+      : xr1Replay ? "▶ 开始末端回放" : "▶ 开始模型执行",
   );
   const intervening = mode === "hil" && (state.intervention_pending || ["takeover", "human"].includes(state.phase));
   $("start").disabled = !(canRun && paused && idle) || intervening;
@@ -326,10 +327,10 @@ function render() {
                 : state.source === "human"
                   ? "Leader 遥操作"
                   : state.policy_waiting_for_reply
-                    ? "等待 Thor · 姿态保持"
+                    ? `${xr1Replay ? "等待回放" : "等待 Thor"} · 姿态保持`
                   : state.policy_trajectory_active
-                    ? `Thor 模型 / ${state.policy_trajectory_hz} Hz 二阶轨迹`
-                    : "Thor 模型"),
+                    ? `${xr1Replay ? "末端回放" : "Thor 模型"} / ${state.policy_trajectory_hz} Hz 二阶轨迹`
+                    : xr1Replay ? "末端回放" : "Thor 模型"),
   );
   $("record").disabled = !(
     canRecord &&
@@ -450,7 +451,7 @@ function render() {
       }[commandState] || "待确认", commandState === "accepted");
     }
     healthRow(
-      "Thor 模型",
+      xr1Replay ? "末端回放" : "Thor 模型",
       state.policy_configured
         ? state.mock
           ? "模拟策略"

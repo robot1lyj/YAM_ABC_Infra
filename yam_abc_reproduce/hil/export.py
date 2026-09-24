@@ -19,19 +19,30 @@ from ..data.schema import WRITE_COMPLETE_FLAG, CameraMeta, EpisodeMeta
 from .storage import read_rows
 
 
-def _segments(rows):
+def iter_expert_segments(rows):
+    """Select contiguous, camera-aligned human rows for all expert exporters.
+
+    A storage segment or HIL wait boundary starts a new training sequence even
+    when adjacent control ticks happen to be consecutive.
+    """
     current = []
     for row in rows:
+        video_indices = row.get("video_indices") or {}
         valid = (
             row.get("expert_valid")
             and row.get("source") == "human"
+            and row.get("observation_valid", True)
+            and not row.get("wait_boundary")
             and row.get("observation_state") is not None
-            and set(row.get("video_indices", {})) == {"top", "left", "right"}
+            and row.get("submitted_action") is not None
+            and set(video_indices) == {"top", "left", "right"}
+            and all(isinstance(value, int) and value >= 0 for value in video_indices.values())
         )
         if current and (
             not valid
             or row["tick"] != current[-1]["tick"] + 1
             or row["epoch"] != current[-1]["epoch"]
+            or row.get("_segment") != current[-1].get("_segment")
         ):
             yield current
             current = []
@@ -92,7 +103,7 @@ def export(source: Path, output: Path):
     output.mkdir(parents=True, exist_ok=False)
     fps = manifest["fps"]
     total = 0
-    for index, rows in enumerate(_segments(read_rows(source))):
+    for index, rows in enumerate(iter_expert_segments(read_rows(source))):
         dst = output / f"episode_{index:06d}"
         dst.mkdir()
         state = np.array([r["observation_state"] for r in rows])

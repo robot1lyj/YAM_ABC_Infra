@@ -109,19 +109,38 @@ class XR1YamCodec:
         """
         observation = self.kinematics.forward(observation_state)
         target_poses, target_grippers = self.kinematics.forward_batch(target_actions)
+        return self.encode_poses(
+            np.stack((observation.left, observation.right)),
+            [observation.left_gripper, observation.right_gripper],
+            target_poses,
+            target_grippers,
+        )
+
+    @staticmethod
+    def encode_poses(observation_poses, observation_grippers, target_poses, target_grippers):
+        """Shared FK result -> native XR-1 deltas, without another FK pass."""
+        bases = np.asarray(observation_poses, dtype=np.float64)
+        base_grips = np.asarray(observation_grippers, dtype=np.float64)
+        target_poses = np.asarray(target_poses, dtype=np.float64)
+        target_grippers = np.asarray(target_grippers, dtype=np.float64)
+        if bases.shape != (2, 4, 4) or base_grips.shape != (2,):
+            raise ValueError("XR-1 observation poses/grippers must be (2,4,4)/(2,)")
+        if target_poses.ndim != 4 or target_poses.shape[1:] != (2, 4, 4):
+            raise ValueError("XR-1 target poses must be (N,2,4,4)")
+        if target_grippers.shape != (len(target_poses), 2):
+            raise ValueError("XR-1 target grippers must be (N,2)")
         if not 1 <= len(target_poses) <= ACTION_HORIZON:
             raise ValueError("XR-1 target action length must be 1–30")
+        if not all(np.isfinite(value).all() for value in (bases, base_grips, target_poses, target_grippers)):
+            raise ValueError("XR-1 poses/grippers must be finite")
         raw = np.zeros((len(target_poses), ACTION_DIM), dtype=np.float32)
-        for side, pose, grip, offset in (
-            (observation.left, target_poses[:, 0], target_grippers[:, 0], 0),
-            (observation.right, target_poses[:, 1], target_grippers[:, 1], 8),
-        ):
+        for index, offset in ((0, 0), (1, 8)):
+            side, pose = bases[index], target_poses[:, index]
             rotation = side[:3, :3]
             raw[:, offset : offset + 3] = (pose[:, :3, 3] - side[:3, 3]) @ rotation
             relative = np.einsum("ij,njk->nik", rotation.T, pose[:, :3, :3])
             raw[:, offset + 3 : offset + 6] = Rotation.from_matrix(relative).as_rotvec()
-            current_grip = observation.left_gripper if offset == 0 else observation.right_gripper
-            raw[:, offset + 6] = grip - current_grip
+            raw[:, offset + 6] = target_grippers[:, index] - base_grips[index]
         return raw
 
     def decode(self, observation_state, action_deltas) -> np.ndarray:

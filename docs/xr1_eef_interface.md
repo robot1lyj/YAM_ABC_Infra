@@ -1,6 +1,6 @@
 # XR-1 末端动作与 YAM 正逆解接口
 
-状态：2026-09-24 完成控制侧**离线接口、录制回放数值验收和独立末端回放入口**。末端回放尚不等于 XR-1 模型在线推理；在线服务协议和真机验收需单独确认。Xiaomi-Robotics-1 源码位于本机 `/home/wuyan-lyj/Xiaomi-Robotics-1/xr1/`；动作语义以 `mibot/utils/io.py` 的 `ACTION_PARTS`、`recover_action` 和 `mibot/data/datasets/json_dataset.py::_arm_action` 为准。不能把先前 OpenWAM 14D 关节模型合同用于 XR-1。
+状态：2026-09-24 完成控制侧**离线接口、录制回放数值验收、独立末端回放入口和专家数据反向清洗接口**。末端回放尚不等于 XR-1 模型在线推理；在线服务协议和真机验收需单独确认。Xiaomi-Robotics-1 源码位于本机 `/home/wuyan-lyj/Xiaomi-Robotics-1/xr1/`；动作语义以 `mibot/utils/io.py` 的 `ACTION_PARTS`、`recover_action` 和 `mibot/data/datasets/json_dataset.py::_arm_action` 为准。不能把先前 OpenWAM 14D 关节模型合同用于 XR-1。
 
 ## 合同和坐标系
 
@@ -22,8 +22,12 @@ YAM 采用官方 YAM MJCF 和标准 `linear_4310` 的 `grasp_site`，左右各�
 ## 可复用接口
 
 - `yam_abc_reproduce.hil.kinematics.DualArmEefConverter`：`forward(14D)`、`inverse(EEF, seed14)`、`forward_batch(N,14)`、`inverse_batch(N,2,4,4; N,2; seed14)`。它复用官方 `Kinematics` 的 FK/IK；以同一个官方带夹爪 MJCF 求固定法兰→抓取点偏移。没有 SDK/CAN 副作用。
-- `yam_abc_reproduce.hil.xr1_actions.XR1YamCodec`：`state60`、`robot_state` 用于模型输入；`encode(observation14, absolute_targets[N,14])` 用于录制数据反向生成 XR-1 训练动作；`decode(observation14, denormalized_deltas[N,60])` 和 `decode_targets(observation14, Xiaomi action_targets)` 用于回译绝对关节目标。`action_mask(length)` 标记有效 YAM 动作槽。
-- `scripts/audit_xr1_kinematics.py EPISODE_DIR`：只读抽样审计 FK→XR-1 编码→IK，不修改原集，不把策略帧冒充人工专家帧。正式训练清洗须按 `expert_valid`、`observation_valid`、片段与 `wait_boundary` 选择样本，并确认 action 对齐；末端标签取 `submitted_action`，反馈取 `measured_state/observation_state`，不能互换。
+- **推理接口** `yam_abc_reproduce.hil.xr1_actions.XR1YamCodec`：`state60`、`robot_state` 用于模型输入；`decode(observation14, denormalized_deltas[N,60])` 和 `decode_targets(observation14, Xiaomi action_targets)` 经同一官方 TCP FK/IK 回译绝对关节目标。每个解码器实例有可变 IK 状态，只在其所属的推理线程内使用；解码后的目标再交给既有时间规划/安全仲裁，不在该接口内触发 CAN。输入必须是**反归一化**的 XR-1 动作，不可把 Pi 的 `(50,14)` 直接传入。
+- **数据清洗接口** `yam_abc_reproduce.hil.xr1_dataset.iter_cleaned_expert_segments(episode)`：复用 `hil.export.iter_expert_segments` 的人工专家筛选；按 `expert_valid`、有记录时的 `observation_valid`、`source=human`、三相机帧索引、连续 tick/epoch、存储片段和 `wait_boundary` 切段。每行分别保留同帧 `observation_state` 和实际下发的 `submitted_action`，各做官方 FK；`segment.window(i)` 按 XR-1 规则生成 `(30,60)` 相对动作、同帧状态、有效时刻/维度 mask，尾部按小米原生规则重复最后动作。`XR1YamCodec.encode` 与 `window` 调用同一个 `encode_poses` 数学实现，训练与推理不会因另写一套坐标变换而分叉。跨段、HOLD、模型动作和介入等待帧不会偷偷拼成一个窗口。
+- **只读导出** `python -m yam_abc_reproduce.hil.xr1_dataset EPISODE --output NEW_DIR`：产生逐专家片段 `.npz` 和索引清单，保存观测/提交目标关节、各自 TCP、夹爪、原始 tick/时间与三路视频帧索引；不修改原集、不复制/重编码视频，也不覆盖已有目录。它是可追溯的 EEF 清洗中间层，**不是**未经 condapi 图像/语言预处理确认即可训练的完整 XR-1 数据集。
+- `scripts/audit_xr1_kinematics.py EPISODE_DIR`：只读抽样审计 FK→XR-1 编码→IK，不修改原集；它不负责专家样本筛选。正式清洗使用上述 `xr1_dataset` 接口，末端目标取 `submitted_action`，反馈取 `observation_state`；不可互换。
+
+本轮接口验证（**离线**）：10 项定向测试通过，覆盖官方 TCP、XR-1 相对动作往返、非有限/不可达动作拒绝、专家段切分、原生尾部 padding、sidecar 无 pickle 重读。另在本机旧集 `session_20260911_114849_dae0d9/episode_000001` 只读运行清洗，识别 7 段/2056 专家行；首段 30 步从 EEF 编码再 IK 回译，相对源 `submitted_action` 最大关节差 `7.25e-5 rad`。该旧集验证不代表最新 IPC 集或在线模型已通过。
 
 ## 最新录制集的数值验证
 

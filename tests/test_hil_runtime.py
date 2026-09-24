@@ -588,6 +588,7 @@ def test_expert_export_splits_at_policy_gaps_and_preserves_video(tmp_path):
                 "epoch": 1 if i < 2 else 2,
                 "source": source,
                 "expert_valid": source == "human",
+                "observation_valid": True,
                 "observation_state": np.zeros(14),
                 "submitted_action": np.zeros(14),
                 "sync": {

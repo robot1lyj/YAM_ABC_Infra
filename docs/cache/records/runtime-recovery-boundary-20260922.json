@@ -1,5 +1,5 @@
 {
-  "status": "verified",
+  "status": "stale",
   "observed_at": "2026-09-22T10:52:00+08:00",
   "recorded_at": "2026-09-22T10:53:00+08:00",
   "recheck": "on_change",

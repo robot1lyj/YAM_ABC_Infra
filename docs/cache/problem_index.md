@@ -7,7 +7,7 @@
 
 | 问题/关键词 | 检查方法及前提 | 历史尝试 / 可复用工具 |
 |---|---|---|
-| SSH登录被拒、IPC用户名 | [环境](../environment.md#日常操作)：linux@192.168.110.140；不是开发机用户，不在记忆存密码 | 网络/IP/凭据可用性现场复查，不连续猜用户名 |
+| SSH登录被拒、IPC用户名/IP | [环境](../environment.md#日常操作)：用户名 `linux`；Wi-Fi DHCP 地址先现场确认，最近实测 `10.18.10.39` | 历史 IP 不能作当前入口；先核对主机指纹及网络，不连续猜用户名 |
 | 重载模型为什么断臂、页面错误锁死全部操作 | [故障分域](../dagger_architecture.md#故障等级与恢复合同)、[重启边界](../deploy.md#改什么重启什么) | [本地恢复证据](../evidence/20260922-architecture-recovery.json)；默认SDK仍属device，executor未迁移 |
 | episode queue full、录制owner退出、掉盘 | [记录与恢复](../dagger_architecture.md#记录恢复与数据身份)、[字段](../hil_dataset_fields.md) | 保留失败原件；后台新session恢复不等于救回全部RAM；NVMe物理根因未知 |
 | HIL手感重、相对映射、按键无效 | [共用人工实现](../collect.md#遥操作与-hil-共用实现) | 绝对1:1、右①解锁、人工①锁定、页面交还；SDK补偿与实际增益分别检查 |

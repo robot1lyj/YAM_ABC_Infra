@@ -7,5 +7,6 @@ Wants=yam-device.service
 
 [Service]
 WorkingDirectory=%h/YAM-runtime
+Environment=YAM_WORKSTATION_ROOT=%h/YAM-runtime
 ExecStart=
-ExecStart=%h/YAM-runtime/.venv/bin/yam-workstation --web-only --device-socket=%t/yam-device.sock --web-port 8766 --web-host 192.168.110.140
+ExecStart=/usr/bin/bash %h/YAM-runtime/scripts/start_ipc_web.sh

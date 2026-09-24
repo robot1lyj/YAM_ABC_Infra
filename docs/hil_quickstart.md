@@ -6,14 +6,13 @@
 
 交付时系统记录会话、操作者动作请求、设备/配置身份、关键状态变化和操作结果/错误，用户可在页面查看或导出；维护/调试记录与训练episode区分，不能把回位/调试动作混成训练示范。已有页面功能、自动记录覆盖和需要补齐的部分须按实际实现检查，用户说已有界面不等于完整记录链已验收。
 
-正式部署通过IPC地址和8766（可配置）直接访问；目标IPC当前入口为
-`http://192.168.110.140:8766`。默认仍绑定127.0.0.1用于开发，正式服务显式传
-`--web-host 192.168.110.140`，Host与Origin检查保持启用。数据平台8767及完整跨平台验证边界归
+正式部署通过 IPC 当前 Wi-Fi 地址和8766（可配置）直接访问；2026-09-24实测入口为
+`http://10.18.10.39:8766/`，地址由 DHCP 分配，使用前须核对。默认仍绑定127.0.0.1用于开发；正式服务由 [启动脚本](../scripts/start_ipc_web.sh) 读取当前地址，Host与Origin检查保持启用。数据平台8767及完整跨平台验证边界归
 [局域网交付](dagger_architecture.md#局域网访问与跨平台交付)。
 
 本版入口为 `uv run --no-sync yam-workstation`，使用独立的四模式界面与统一执行循环。
 旧 `yam-abc-gui` 保留上游采集/转换等功能；不要同时让旧会话和新工作站打开相同CAN设备。
-四臂、三D405与短集录制已在RK3588现场验证；Thor真实模型、长时完整性及急停/恢复全流程仍待验收。
+四臂、三D405、短集录制及Thor模型推理均有带日期的现场记录；具体模型效果、长时完整性与故障恢复以 [验收](acceptance.md) 的适用范围为准。
 
 ## 环境与无硬件试用
 
@@ -38,13 +37,14 @@ uv run --no-sync yam-workstation --device-daemon \
   --mode collect --url ws://192.168.250.1:8000
 
 # 生产：可独立重启的Web/API
+ipc_web_host=$(ip -4 -o addr show dev wlan0 | awk '{split($4, a, "/"); print a[1]; exit}')
 uv run --no-sync yam-workstation --web-only \
   --device-socket /run/user/$(id -u)/yam-device.sock \
-  --web-port 8766 --web-host 192.168.110.140
+  --web-port 8766 --web-host "$ipc_web_host"
 
 # 兼容开发：旧单进程入口
 uv run --no-sync yam-workstation --mode collect --web-port 8766 \
-  --web-host 192.168.110.140
+  --web-host "$ipc_web_host"
 ```
 
 systemd正式部署直接使用`deploy/yam-device.service`和`deploy/yam-workstation.service`；日常页面更新只执行`systemctl --user restart yam-workstation.service`。首次从旧单进程迁移或重启`yam-device`会释放力矩，必须先支撑机械臂。通配监听`0.0.0.0`不会隐式信任所有Host，必须至少补一个`--web-allowed-host <IP或主机名>`。
@@ -227,9 +227,10 @@ CONDAPI_ROOT=/home/wuyan-lyj/condapi uv run --no-sync pytest -q tests/test_conda
 Thor提供已核验的普通WebSocket policy后，在已支撑、行程清空且有人现场照看的IPC上使用当前服务的启动配置加入下列参数；若8766服务已运行，不另启第二个控制进程。先做无电机合同回放，再获现场许可进入短时纯推理：
 
 ```bash
+ipc_web_host=$(ip -4 -o addr show dev wlan0 | awk '{split($4, a, "/"); print a[1]; exit}')
 uv run --no-sync yam-workstation --station configs/station_hil.yaml \
   --mode inference --url ws://192.168.250.1:8000 --policy-fusion tda_smooth \
-  --web-port 8766 --web-host 192.168.110.140
+  --web-port 8766 --web-host "$ipc_web_host"
 ```
 
 普通10w模型使用`--policy-fusion tda_smooth`；完整块同步对照使用`--policy-fusion sync_hold`；训练式RTC服务使用`--policy-fusion rtc`，或在HOLD页面切换。旧`raw`不再是启动或页面选项。RTC要求控制周期与动作间隔均为1/30秒、`policy_trajectory_hz=0`；不满足则拒绝启动。现场由用户明确开始真机推理，不能把离线探针当作运动验收。请求超时、缓冲耗尽仍保持；软件急停、接管、模式切换或重置后旧回复不能恢复运动。

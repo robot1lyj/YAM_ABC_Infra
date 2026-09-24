@@ -202,7 +202,7 @@ top/left/right MP4逐项回读897帧；预选后从开启录制到首次观察�
 （SHA-256 `f300fe92842db508603e52fcca4d0b7720f2753e1a58ae81fdccc7dbdbbf7e90`）。
 
 2026-09-15在操作员确认四臂固定、行程清空并现场照看后，IPC代码`757f0e8`通过
-`http://192.168.110.140:8766/`的真实工作台完成三D405＋四臂双臂遥操作/录制两集。
+当时的真实工作台完成三D405＋四臂双臂遥操作/录制两集；历史访问地址不作为现在的入口。
 第一集27.063秒/813步，未标结果（`unknown`）；第二集89.379秒/2677步，页面标记
 `success`，60秒分段为1800＋877步。`session.json`无错误，最终已写3490步；每段
 HDF5 `committed_rows`和三路`video_indices`均连续且一一对应，通过系统`ffprobe -count_frames`
@@ -329,9 +329,9 @@ DM4310、`kp=10`，官方`minimum_gello.py`设备轮询周期2 ms，而本采集
 退出、Power Off Arms 或 Reset Session 可能撤掉力矩，应先支撑机械臂。
 手柄按钮在启动时保持松开，以便当前驱动学习空闲电平。
 
-## RK3588 IPC 现场事实（2026-09-14）
+## RK3588 IPC 历史现场快照（2026-09-14）
 
-已现场登录并核验一台作为 YAM 底层控制器的 IPC。产品资料对应 KiWiBot/阿普奇 TER30R-A2；设备树实际标识为
+以下“当前”仅指2026-09-14当次核查，不代表现在的设备/网络状态；现行连接入口见[环境](environment.md#日常操作)。当时已现场登录并核验一台作为 YAM 底层控制器的 IPC。产品资料对应 KiWiBot/阿普奇 TER30R-A2；设备树实际标识为
 `Rockchip RK3588 EVB7 LP4 V10 Board`，因此设备树型号不能单独替代机箱标签核验。
 
 - 系统为 Ubuntu 22.04.3 LTS、`arm64`，内核 `6.1.118 PREEMPT_RT`。
@@ -341,11 +341,11 @@ DM4310、`kp=10`，官方`minimum_gello.py`设备轮询周期2 ms，而本采集
 - 当前 USB 下联口与稳定名为：`5-2.1`→`can_lead_l`（适配器审计S/N `207F34A658455017`）、`5-2.2`→`can_lead_r`（`205534A258455017`）、`5-2.3`→`can_left`（`207D34A258455017`）、`5-2.4`→`can_right`（`207C378445465006`）。运行时锁定的是 USB 口；机械臂本体 S/N 不参与映射。
 - 三台 D405 已按物理标签和 RealSense API 序列号登记：`right=260422271123`、`top=260522275397`、`left=260522271298`。IPC 已应用 `/etc/udev/rules.d/91-yam-cameras.rules`，建立 `/dev/yam-camera-right`、`/dev/yam-camera-top`、`/dev/yam-camera-left`；当前分别解析到 `video12`、`video6`、`video0`。`/data/YAM/configs/cameras.yaml` 已使用上述 RealSense S/N。
 - NPU 节点为 `/dev/dri/renderD129`；`bcan0`～`bcan3` 均存在，但现场均为 `STOPPED/DOWN`，尚未接 CAN 总线或机械臂验收。
-- 网卡命名为 `wlan0`、`lan1`～`lan5`。当前 `wlan0=192.168.110.140/23` 保持 IPC 上网；`lan1=192.168.250.2/24` 为无网关、无 DNS 的独立调试链路。
+- 网卡命名为 `wlan0`、`lan1`～`lan5`。`wlan0` 使用 DHCP，最近实测地址见 [环境](environment.md#日常操作)，不能沿用本节2026-09-14的旧地址；`lan1=192.168.250.2/24` 为无网关、无 DNS 的独立调试链路。
 - 本机通过 `enp1s0=192.168.250.1/24` 强制走网线 SSH 验证成功。IPC 和本机的互联网默认路由均未由该私网口接管。
 - SSH 密钥通行已完成：本机管理公钥已加入 IPC `linux` 用户的 `authorized_keys`，网线免密登录已验证。
 - IPC 已生成独立 Gitea 客户端 Ed25519 密钥，路径为 `/home/linux/.ssh/id_ed25519_gitea`；私钥不离开 IPC，公钥指纹为 `SHA256:L7VjWh8BHNTOMsrNp0l6St2v/OYQ14WPcIXDOBJNhtA`。
-- 当前 Wi-Fi 配置 `琶洲模方` 已是 `connection.autoconnect=yes` 且 `wlan0` 在线；Gitea 已接受 IPC 专用密钥并认证为 `wuyan_lyj`，目标为 `192.168.110.142:2222`。
+- 2026-09-14 核查时 Wi-Fi 配置 `琶洲模方` 为 `connection.autoconnect=yes`；当时 Gitea 接受了 IPC 专用密钥。Wi-Fi 与 Gitea 主机地址均须按[环境](environment.md)重新确认。
 - 当前 IPC 使用 uv `0.12.13`（`aarch64-unknown-linux-gnu`）管理 Python 3.12 环境；YAM 主 checkout 已迁移至 `/data/YAM`，并在新路径完成锁定依赖同步。首次 bootstrap 时的 Python 3.10/未部署状态仅保留在历史证据中。
 - `ssh.service` 与厂商 `autorun.service` 正在运行；本次未停止服务、未启动 YAM、未操作电机或 CAN。
 

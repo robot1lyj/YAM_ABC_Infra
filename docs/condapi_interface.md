@@ -1,6 +1,6 @@
 # Thor / condapi 对接合同
 
-本页负责 YAM 控制侧契约；模型训练、检查点转换及 Thor 服务由 condapi 管理。当前源码基线为 `0bc1be5`；不代表现场服务版本或性能。历史服务快照和测量保留在 [历史接口记录](archive/condapi_interface_20260922.md) 与 [验收](acceptance.md)。
+本页负责 YAM 控制侧契约；模型训练、检查点转换及 Thor 服务由 condapi 管理。现场服务版本和性能须按[验收](acceptance.md)单独核对；历史快照和测量留在 [历史接口记录](archive/condapi_interface_20260922.md)。
 
 ## v1 接口验收合同
 

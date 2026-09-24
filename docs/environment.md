@@ -30,7 +30,7 @@
 
 主仓库为 YAM-ABC-Reproduce 的本地工作站分支，保留上游历史。
 内网优先，两个托管地址都同步：
-- `origin`：`ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`，主远端，main跟踪origin/main。
+- `origin`：本机Gitea `ssh://git@127.0.0.1:2222/wuyan_lyj/YAM.git`，主远端，main跟踪origin/main；其他机器须使用开发机当前可达地址，不照搬历史LAN IP或本机回环地址。
 - `github`：`git@github.com:robot1lyj/YAM_ABC_Infra.git`，同步远端。
 - 顺序：`git push -u origin main`，然后 `git push github main`；核对两端SHA一致。失败时保留本地提交，报告未同步的远端，不强制覆盖远端历史。
 
@@ -42,8 +42,10 @@ i2rt 使用 `third_party/i2rt` 固定提交，不依赖工作区同级 i2rt 目�
 
 ## 首次安装
 
+以下克隆地址仅适用于运行 Gitea 的开发机本地。IPC 等其他机器须先确认开发机当前 LAN 地址、Gitea 端口与 SSH 主机密钥，再替换回环地址。
+
 ```bash
-git clone --recurse-submodules ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git
+git clone --recurse-submodules ssh://git@127.0.0.1:2222/wuyan_lyj/YAM.git
 cd YAM
 git remote add github git@github.com:robot1lyj/YAM_ABC_Infra.git
 scripts/apply_i2rt_safety_patches.sh
@@ -94,10 +96,12 @@ uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 浏览器访问 http://127.0.0.1:8766 。真机前按 [工作站核验](workstation.md)填写
 [专用配置](../configs/station_hil.yaml)。带 `--web-port` 时先打开未连接的工作台，点击“连接设备”才构造设备，构造期间可能施力矩和校准夹爪；不带界面的CLI会在启动时连接。
 
-RK3588正式实例包含常驻`yam-device.service`（独占四臂、相机、推理与安全仲裁）及可独立重启的`yam-workstation.service` Web/API，私有接口为`%t/yam-device.sock`，局域网入口为`http://192.168.110.140:8766`。IPC SSH用户名为`linux`，连接目标`linux@192.168.110.140`；不是开发机用户名`wuyan-lyj`，密码不入库。2026-09-17只读核查：IPC `wlan0=192.168.110.140/23`，与本机`wlp2s0=192.168.110.142/23`同连“琶洲模方”、默认网关同为`192.168.111.254`；这些网络状态下次操作仍要复查。新版设备会话在连接时另启动录制owner子进程：控制进程只向有界RAM队列提交引用，低优先级传输线程序列化三路RGB，录制进程负责NVMe暂存、HDF5与编码子进程；录制故障返回控制进程HOLD。该子进程目前随设备会话创建/结束，**不是**可单独systemd重启或在活动集内无损热升级的服务。监听LAN不会关闭Host/Origin校验。重启Web不会关闭SDK或释放机械臂，但新Web附着时先发送HOLD；重启或停止`yam-device`仍会释放硬件，必须执行真机安全流程。设备服务预设Thor `ws://192.168.250.1:8000`，启动本身保持未连接。分进程已部署IPC并完成四臂断开下90秒三相机录制/读回；运动和长时验收仍待完成，见[验收](archive/acceptance_20260922.md#2026-09-16录制owner-ipc三相机短测)。
+RK3588正式实例包含常驻`yam-device.service`（独占四臂、相机、推理与安全仲裁）及可独立重启的`yam-workstation.service` Web/API，私有接口为`%t/yam-device.sock`。IPC SSH用户名为`linux`，不是开发机用户名`wuyan-lyj`；密码不入库。**Wi-Fi 地址由 DHCP 分配，不把某次地址当固定入口。**截至2026-09-24 现场复核，`wlan0=10.18.10.39/23`，可用 `linux@10.18.10.39` 和 `http://10.18.10.39:8766/`；每次网络切换或重启后先从现场网络确认当前地址。Web 服务启动时通过 [start_ipc_web.sh](../scripts/start_ipc_web.sh) 读取 `wlan0` 当前 IPv4 并仅绑定该地址，Host/Origin 检查保持启用。
+
+新版设备会话在连接时另启动录制owner子进程：控制进程只向有界RAM队列提交引用，低优先级传输线程序列化三路RGB，录制进程负责NVMe暂存、HDF5与编码子进程；录制故障返回控制进程HOLD。该子进程目前随设备会话创建/结束，**不是**可单独systemd重启或在活动集内无损热升级的服务。重启Web不会关闭SDK或释放机械臂，但新Web附着时先发送HOLD；重启或停止`yam-device`仍会释放硬件，必须执行真机安全流程。设备服务预设Thor `ws://192.168.250.1:8000`，启动本身保持未连接。分进程已部署IPC并完成四臂断开下90秒三相机录制/读回；运动和长时验收仍待完成，见[验收](archive/acceptance_20260922.md#2026-09-16录制owner-ipc三相机短测)。
 
 首次从旧单进程服务迁移需要一次有计划的力矩释放：现场支撑机械臂后安装两个unit、执行`systemctl --user daemon-reload`，停止旧`yam-workstation`，再依次启用并启动`yam-device`和`yam-workstation`。迁移完成后的页面更新只重启后者；设备代码、驱动或配置变更才重启前者。
-2026-09-24 网络更新：IPC 重启后 `wlan0=10.18.10.39/23`，开发机同网段；上述 `192.168.110.140` 是历史地址，不应作为固定入口。Web 服务使用 [start_ipc_web.sh](../scripts/start_ipc_web.sh) 在启动时读取 `wlan0` 当前 IPv4 并绑定该地址，Host 校验继续只接受实际监听地址。当前入口为 `http://10.18.10.39:8766/`、SSH 为 `linux@10.18.10.39`；DHCP 未来可能再次变化。`lan1=192.168.250.2/24` 未变。此次只重启 Web 服务；复核 `yam-device` 保持 PID 949、启动时间 09:36，面板 HTTP 200。
+2026-09-24 网络核查：开发机与 IPC 当前同处 `10.18.10.0/23`；独立直连 `lan1=192.168.250.2/24` 未变。更新 Web 启动方式时只重启了 Web 服务，`yam-device` 保持 PID 949、启动时间 09:36，面板 HTTP 200。旧 Wi-Fi 地址只在带日期的历史记录中保留，不再作为当前操作命令。
 2026-09-15曾试验按角色分区：UI/相机/桥接/预览0–3号A55、控制及四臂读数
 4–5号A76、MPP编码6–7号A76。现场运动A/B发现两核控制分区的遥操作体感退化，
 并在30秒运动窗口出现最大约169ms控制间隔；临时恢复旧CPU4–7掩码后的
@@ -134,13 +138,13 @@ uv sync 会移除本次未选择的 extras/groups。
 
 ## RK3588 IPC 现场环境（2026-09-14）
 
-现场 IPC 已通过网线管理链路接入：IPC `lan1=192.168.250.2/24`，本机 `enp1s0=192.168.250.1/24`，两端均不设置网关或 DNS；IPC 的 Wi-Fi `wlan0=192.168.110.140/23` 继续承担默认路由。网线 SSH 已强制绑定 `enp1s0` 验证成功，IPC 访问互联网仍经 `wlan0`。
+2026-09-14 现场快照：IPC `lan1=192.168.250.2/24`，本机 `enp1s0=192.168.250.1/24`，两端均不设置网关或 DNS；当时 IPC Wi-Fi 位于 `192.168.110.0/23` 网段并承担默认路由。网线 SSH 曾强制绑定 `enp1s0` 验证成功；现用 Wi-Fi 地址以“日常操作”节的最新实测为准。
 
-首次 bootstrap 快照为 Ubuntu 22.04.3 LTS、6.1.118 `PREEMPT_RT`、`arm64`、Python 3.10.12，未找到 `uv`，也未在有限搜索范围内发现 YAM checkout；随后已完成 P1 的 Python 3.12/uv/YAM 部署并迁移至 NVMe，当前状态见下方 P1 与 NVMe 小节。`bcan0`～`bcan3` 已枚举但均为停止状态，Thor 地址、模型服务可达性、四臂 USB-CAN 角色和相机流仍待现场验收；三台 D405 的身份映射已完成。
+首次 bootstrap 快照为 Ubuntu 22.04.3 LTS、6.1.118 `PREEMPT_RT`、`arm64`、Python 3.10.12，当时未找到 `uv` 或 YAM checkout；随后已完成 Python 3.12/uv/YAM 部署并迁移至 NVMe。当时尚未验收的 Thor/四臂/相机项目已有后续现场记录；不能再沿用首次 bootstrap 的“未验收”状态，当前状态按[验收](acceptance.md)及实时查询核对。
 
 详细证据：[20260914-rk3588-ipc-bootstrap.txt](evidence/20260914-rk3588-ipc-bootstrap.txt)。
 
-Wi-Fi 配置 `琶洲模方` 已现场复核为 `connection.autoconnect=yes`，`wlan0` 当前在线；IPC 的 Gitea 专用密钥已成功认证到 `git@192.168.110.142:2222`，Gitea 身份为 `wuyan_lyj`。详细证据见 [20260914-rk3588-ipc-gitea-wifi.txt](evidence/20260914-rk3588-ipc-gitea-wifi.txt)。
+2026-09-14 曾复核 Wi-Fi 配置 `琶洲模方` 的 `connection.autoconnect=yes`，IPC 的 Gitea 专用密钥当时认证成功。该次网络地址和服务可用性不代表当前状态；历史证据见 [20260914-rk3588-ipc-gitea-wifi.txt](evidence/20260914-rk3588-ipc-gitea-wifi.txt)。
 
 正式部署按 [架构基线 P1](dagger_architecture.md#2026-09-14-架构基线-v1)执行：认证成功不等于目标 YAM 仓库/子模块已 clone；优先复用项目锁文件核验 ARM64 的相机、编码、HDF5 和 i2rt 二进制依赖，不能只做模块可发现性检查。NVMe 已完成初始化并挂载到 `/data`，YAM 绝对路径为 `/data/YAM`；后续原始数据的绝对 `save_root` 仍需在运行配置中明确，不能回落 eMMC。保留 eMMC 系统盘与已登记管理网络。配置/代码可以自启动为未连接界面，不随开机自动构造机器人、开始推理或恢复上一轮运动。
 
@@ -258,7 +262,7 @@ root 回滚副本为 `/var/lib/yam-gs-usb/20260922/gs_usb.ko.original`。
 
 ## RK3588 IPC D405 相机身份与稳定入口（2026-09-14）
 
-三台 D405 已按用户确认的物理标签与 RealSense API 拔插复核完成角色登记：`right=260422271123`、`top=260522275397`、`left=260522271298`。`/data/YAM/configs/cameras.yaml` 已使用这些 RealSense S/N。IPC 已应用 `/etc/udev/rules.d/91-yam-cameras.rules`，当前稳定入口为 `/dev/yam-camera-right`→`video12`、`/dev/yam-camera-top`→`video6`、`/dev/yam-camera-left`→`video0`；入口只作为 UVC 便利路径，应用层仍按 RealSense S/N 选择设备。2026-09-14 15:54 复核时三台相机均为 USB 3.2/5000M，三台 UVC 父设备均暴露稳定内部序列号，规则不依赖 `videoN` 或当前物理路径。此步骤未启动相机采集或任何电机/CAN动作。
+三台 D405 已按用户确认的物理标签与 RealSense API 拔插复核完成角色登记：`right=260422271123`、`top=260522275397`、`left=260522271298`。`/data/YAM/configs/cameras.yaml` 已使用这些 RealSense S/N，IPC 已应用 `/etc/udev/rules.d/91-yam-cameras.rules`。`/dev/yam-camera-{right,top,left}` 是按身份的稳定入口；`videoN` 编号随重启和枚举变化，不写成当前固定映射。2026-09-14 15:54 曾核验三台 USB 3.2/5000M，实测细节留在[相机证据](evidence/20260914-rk3588-ipc-cameras-usb3.txt)。
 
 ## 构建失败的检查与重试条件
 

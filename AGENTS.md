@@ -11,7 +11,7 @@
 
 每轮代码更新完成、执行适用检查和 `git diff --check` 后，自动提交本任务代码及配置/文档/记忆，无需询问；不混入其他agent未完成修改。
 内网优先，提交后先 `git push -u origin main`，再 `git push github main`，核对同一SHA；失败保留本地提交并报告未同步端，不force push。
-origin=`ssh://git@192.168.110.142:2222/wuyan_lyj/YAM.git`；github=`git@github.com:robot1lyj/YAM_ABC_Infra.git`；main跟踪origin/main，upstream保留i2rt-robotics/yam-abc-reproduce。
+origin=`ssh://git@127.0.0.1:2222/wuyan_lyj/YAM.git`；github=`git@github.com:robot1lyj/YAM_ABC_Infra.git`；main跟踪origin/main，upstream保留i2rt-robotics/yam-abc-reproduce。IPC访问须查开发机现址。
 
 ## 分层记忆
 

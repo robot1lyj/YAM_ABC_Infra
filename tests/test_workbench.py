@@ -347,10 +347,10 @@ def test_dashboard_accepts_explicit_ipc_lan_host_without_relaxing_origin():
     runtime = SimpleNamespace(
         status={"connection": "disconnected"},
         event=events.append,
-        args=SimpleNamespace(web_host="192.168.110.140", web_allowed_host=[]),
+        args=SimpleNamespace(web_host="192.0.2.10", web_allowed_host=[]),
     )
-    with TestClient(create_app(runtime), base_url="http://192.168.110.140:8766") as client:
-        headers = {"X-YAM-Control": "1", "Origin": "http://192.168.110.140:8766"}
+    with TestClient(create_app(runtime), base_url="http://192.0.2.10:8766") as client:
+        headers = {"X-YAM-Control": "1", "Origin": "http://192.0.2.10:8766"}
         assert client.get("/status").status_code == 200
         assert client.post("/event/start", headers=headers).status_code == 200
         assert (

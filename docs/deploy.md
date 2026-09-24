@@ -1,6 +1,6 @@
 # 部署与更新边界
 
-部署前读 [当前验收状态](acceptance.md)、[环境与unit配置](environment.md) 和 [工作站](workstation.md)。IPC使用 `linux@192.168.110.140`，不是开发机用户名；密码不入库，IP/挂载/进程必须重新检查。
+部署前读 [当前验收状态](acceptance.md)、[环境与unit配置](environment.md) 和 [工作站](workstation.md)。IPC SSH 用户为 `linux`，2026-09-24 最近实测 Wi-Fi 地址为 `10.18.10.39`；地址由 DHCP 分配，连接前重新核对。不是开发机用户名；密码不入库，挂载与进程也必须重新检查。
 
 ## 改什么，重启什么
 

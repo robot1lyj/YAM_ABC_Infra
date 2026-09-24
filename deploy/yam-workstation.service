@@ -9,7 +9,7 @@ Type=simple
 WorkingDirectory=/data/YAM
 Environment=PYTHONUNBUFFERED=1
 CPUAffinity=0 1 2 3
-ExecStart=/data/YAM/.venv/bin/yam-workstation --web-only --device-socket=%t/yam-device.sock --web-port 8766 --web-host 192.168.110.140
+ExecStart=/usr/bin/bash /data/YAM/scripts/start_ipc_web.sh
 Restart=on-failure
 RestartSec=3
 KillSignal=SIGINT

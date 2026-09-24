@@ -9,7 +9,8 @@ if [[ -z "$ipc_web_host" ]]; then
     exit 1
 fi
 
-exec /data/YAM/.venv/bin/yam-workstation \
+ipc_runtime_root=${YAM_WORKSTATION_ROOT:-/data/YAM}
+exec "$ipc_runtime_root/.venv/bin/yam-workstation" \
     --web-only \
     --device-socket="${XDG_RUNTIME_DIR}/yam-device.sock" \
     --web-port 8766 \

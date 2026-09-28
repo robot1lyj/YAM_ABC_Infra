@@ -106,6 +106,7 @@ def test_real_unix_process_session_reconnect_keeps_owner_pid(tmp_path):
         io = RemoteStationIO(path)
         pid = io._rpc({"op": "status"})["pid"]
         q, h, _, _ = io.read()
+        assert io.gripper_feedback == [None, None]  # Mock must not invent torque.
         a = Arbiter(Mode.HIL)
         decision = a.step(q, h, now=time.monotonic(), dt=1/30)
         submitted, stamps = io.apply(decision, q, h, dt=1/30)

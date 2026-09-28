@@ -43,6 +43,8 @@ class Executor:
         return result
 
     def _read(self):
+        # Copy published SDK scalars only; consumers decide whether to record.
+        self.io.grasp_diagnostics_enabled = True
         q, h, buttons, ages = self.io.read()
         if max(ages) > self.timeout:
             raise ValueError("SDK state update stale")
@@ -50,6 +52,7 @@ class Executor:
                              ages=ages, sampled_at=time.monotonic(),
                              limits=[x.tolist() for x in self.io._limits],
                              gripper_limits=self.gripper_limits,
+                             gripper_feedback=getattr(self.io, "gripper_feedback", [None, None]),
                              control=self.io.leader_control_status())
 
     def freeze(self, *, revoke_lease=True):

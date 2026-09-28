@@ -668,6 +668,8 @@ main {
 .policy-metrics span { display: block; color: #606066; font-size: 11px; }
 .policy-metrics strong { display: block; margin-top: 3px; font-size: 15px; font-variant-numeric: tabular-nums; }
 .policy-settings { display: grid; grid-template-columns: 1fr 76px auto; align-items: end; gap: 7px; margin-top: 10px; }
+#inference-recording-form { grid-template-columns: minmax(0, 1fr) auto; }
+#grasp-recording-status { margin-top: 5px; font-size: 11px; }
 .policy-settings label { color: #606066; font-size: 11px; }
 .policy-settings select, .policy-settings input { width: 100%; height: 34px; margin-top: 4px; padding: 4px 7px; border: 1px solid #dcdce2; border-radius: 6px; background: white; color: #202027; }
 .policy-settings .button { height: 34px; padding: 0 12px; }

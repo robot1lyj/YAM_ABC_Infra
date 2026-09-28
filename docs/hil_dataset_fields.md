@@ -1,4 +1,4 @@
-# HIL 原始数据字段（按当前写入代码，2026-09-21）
+# HIL 原始数据字段（按当前写入代码，2026-09-28）
 
 原始格式为 `yam_hil_v2`：每集 manifest.json，每段 samples.h5 和 top/left/right.mp4；不是LeRobot导出格式。三路RGB视频独立存储，不在HDF5中存像素。下列字段可空，不能把空值当作0。
 
@@ -27,6 +27,7 @@
 | request | 当前动作来源的请求标识，结构见下 |
 | policy_reply | 本tick收到的模型回复及计时，不是每帧都有 |
 | policy_selection | 规划器的选择来源信息，结构随模式变化，可空 |
+| grasp_diagnostics | 可选抓取诊断快照，普通记录不写；见下 |
 | policy_write_trace | 可选高频写入追踪；当前30Hz直发可空，不能宣称每次电机写入均有独立追踪 |
 | policy_url | 当前代码仍写入策略来源地址；无模型名称/检查点指纹字段 |
 | obs_id、sync、sdk_state_age_s | 观测编号、同步质量详情、各SDK反馈年龄 |
@@ -43,6 +44,26 @@ request及policy_reply.token：`epoch, request_id, observation_id, created_at, o
 policy_reply：`token, received_at, discarded, error, worker_elapsed_ms, server_timing, client_timing, actions`；RTC额外`rtc_takeover_tick, rtc_reply_tick, rtc_slack_ticks`。actions为原始返回动作块（通常50×14），异常可空。server_timing按服务返回保留，非固定训练字段。client_timing可含`pack_ms, send_ms, wait_response_ms, unpack_ms, payload_bytes`。
 
 sync：`age_s, arrival_skew_s, sync_warning, reference_time, state_bracket, cameras`。cameras按top/left/right含`device_timestamp_ms, timestamp_domain, device_frame_number, host_received_at, color_space, sequence`。无有效观测时sync可为空；沿用上一帧图像时observation_valid=false，应按标志过滤。
+
+### 抓取诊断（可选，不改变控制）
+
+模型推理面板选择「抓取诊断 · 夹爪力矩」并应用，HOLD且未录制时生效，后续每集沿用；重连新Runtime默认普通记录。manifest `recording_mode` 为 `standard` 或 `grasp_diagnostics`。设置不重启服务、不清RTC缓冲、不改变动作/增益；首次安装本代码仍需按部署边界更新设备owner，不能仅刷新页面冒充已启用。
+
+诊断帧的 `grasp_diagnostics`：`schema_version=1`、`sample_phase=before_command`、`followers=[left,right]`。每侧可能为null，否则包含：
+
+| 子字段 | 定义 |
+|---|---|
+| position | 反馈开度，0闭1开；与本帧measured_state同一SDK快照 |
+| velocity | 归一化开度/秒，有符号 |
+| effort_nm | SDK电机反馈力矩，Nm、有符号；不是指尖力，也不是重力补偿指令 |
+| sdk_updated_at | SDK更新时间，Unix秒；不是独立CAN接收/接触时间 |
+| sampled_at | IPC读取快照的单调秒；在本帧目标下发之前 |
+| feedback_age_s | 读取时SDK更新时间年龄；跨进程分析还需考虑缓存年龄 |
+| valid | 速度/力矩是否为有限可用值；不保证新鲜，仍需检查时间戳 |
+
+只复用SDK发布状态，不新增CAN查询；常驻执行器向会话传递同一快照。缺少反馈（包括mock或旧执行器）写null/invalid，不用0冒充。全部原始字段保留，不在线判成功、不在线去噪改原值。检测器离线运行，见[使用手册](hil_quickstart.md#抓空排查记录)。
+
+RTC策略帧 `policy_selection` 新增明确来源：`fusion=rtc, request, target_tick, model_index, observation_policy_tick, rtc_delay_steps`。`model_index`为0起始块内索引，`target_tick=observation_policy_tick+model_index`。已承诺前缀保留原来生成该目标的旧请求来源，不误标成新请求；重置清除。`request`顶层旧RTC字段仍可能空，优先读取`policy_selection.request`；旧集缺字段不能补造。下发目标索引不等于物理接触索引，离线候选同时保留事件时刻和前一条已下发命令来源。
 
 ### HDF5物理结构
 
@@ -72,4 +93,4 @@ segments每项：`path, steps, start_frame, video_frames, files, state`；files�
 
 参考Evo-RL的同集策略/人工标注与默认帧序号时间：[recording_loop](https://github.com/MINT-SJTU/Evo-RL/blob/c735d69d098cdefd0fdaf8d2063af06d22dab130/src/lerobot/scripts/recording_loop.py)、[lerobot_dataset](https://github.com/MINT-SJTU/Evo-RL/blob/c735d69d098cdefd0fdaf8d2063af06d22dab130/src/lerobot/datasets/lerobot_dataset.py)。Evo-RL没有本站两段锁定等待，删除这些等待是本站规则，不宣称上游有同样处理。
 
-当前没有逐帧reward、discount、done、terminated/truncated，未记录完整电机电流/力矩/温度，也没有人工抓取成功的自动真值。用于RL时这些不能凭expert_valid或phase臆造。
+当前没有逐帧reward、discount、done、terminated/truncated，未记录完整电机电流/力矩/温度；抓取诊断仅补充两只Follower夹爪力矩与速度。没有抓取成功的自动真值，用于RL时不能凭expert_valid、phase或接触候选臆造。

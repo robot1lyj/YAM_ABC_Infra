@@ -52,6 +52,11 @@ class PolicySource(BaseModel):
     url: str = Field(min_length=1, max_length=500)
 
 
+class RecordingSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["standard", "grasp_diagnostics"]
+
+
 class PolicySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     fusion: Literal["sync_hold", "tda_smooth", "rtc"]
@@ -134,6 +139,11 @@ def create_app(runtime, *, control_access=False):
     def policy_settings(body: PolicySettings):
         invoke(runtime.configure_policy, **body.model_dump(exclude_none=True))
         return {"queued": "policy_settings"}
+
+    @app.post("/recording/settings")
+    def recording_settings(body: RecordingSettings):
+        invoke(runtime.configure_recording, **body.model_dump())
+        return {"queued": "recording_settings"}
 
     @app.post("/policy/restart")
     def policy_restart():

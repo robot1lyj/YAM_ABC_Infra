@@ -71,6 +71,7 @@ class StationIO:
             raise ValueError("invalid SDK joint limits")
 
     def read(self):
+        self.gripper_feedback = [None, None]
         if self.mock:
             q = vector(np.concatenate([u.robot.get_joint_pos() for u in self.units]))
             if self._manual:
@@ -80,13 +81,17 @@ class StationIO:
 
         def read_follower(unit):
             started = time.monotonic()
+            diagnostic = getattr(unit.robot, "hil_read_with_gripper", None)
+            if getattr(self, "grasp_diagnostics_enabled", False) and callable(diagnostic):
+                pos, age, feedback = diagnostic()
+                return pos, age, time.monotonic() - started, feedback
             read = getattr(unit.robot, "hil_read", None)
             if callable(read):
                 pos, age = read()
             else:
                 pos = unit.robot.get_joint_pos()
                 age = unit.robot.feedback_age()
-            return pos, age, time.monotonic() - started
+            return pos, age, time.monotonic() - started, None
 
         def read_leader(unit):
             started = time.monotonic()
@@ -97,6 +102,7 @@ class StationIO:
         follower_futures = [self._read_pool.submit(read_follower, unit) for unit in self.units]
         leader_futures = [self._read_pool.submit(read_leader, unit) for unit in self.units]
         followers = [future.result() for future in follower_futures]
+        self.gripper_feedback = [result[3] for result in followers]
         leaders_read = [future.result() for future in leader_futures]
         self.read_timings_s = {
             **{

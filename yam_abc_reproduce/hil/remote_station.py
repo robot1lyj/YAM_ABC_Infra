@@ -80,6 +80,7 @@ class RemoteStationIO(StationIO):
         if self.cache is None:
             raise RuntimeError("executor is disconnected")
         age = max(0, time.monotonic()-self.cache["sampled_at"])
+        self.gripper_feedback = self.cache.get("gripper_feedback", [None, None])
         return (np.asarray(self.cache["q"]), np.asarray(self.cache["leader"]),
                 self.cache["buttons"], [a+age for a in self.cache["ages"]])
 

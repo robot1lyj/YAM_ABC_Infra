@@ -817,6 +817,12 @@ class Workbench:
             raise ValueError("操作台心跳已断开")
         self.runtime.request_jog(arm, joint, delta, target=target)
 
+    def configure_recording(self, *, mode):
+        if self.runtime is None or self.state != "connected" or self.initializing:
+            raise ValueError("请先连接设备并退出初始化向导")
+        self.runtime.configure_recording(mode=mode)
+        self.log(f"记录模式设置已提交：{mode}")
+
     def configure_policy(self, *, fusion, rtc_delay_steps=None):
         if self.runtime is None or self.state != "connected" or self.initializing:
             raise ValueError("请先连接设备并退出初始化向导")

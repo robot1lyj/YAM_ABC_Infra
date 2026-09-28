@@ -155,6 +155,7 @@ class Runtime:
         self.policy_commands = queue.Queue(maxsize=4)
         self.task_releases = queue.SimpleQueue()
         self.policy_command_status = None
+        self.recording_mode = "standard"
         self.task_switching = False
         self.takeovers = queue.Queue(maxsize=1)
         self.intervention_id = 0
@@ -348,6 +349,7 @@ class Runtime:
             self.outcome = "unknown"
             self.recorder.set_mode(a.mode.value, self.outcome)
             self.recorder.metadata.update({
+                "recording_mode": self.recording_mode,
                 "rtc": a.rtc_timeline is not None,
                 "policy_fusion": a.action_buffer.fusion,
                 "streaming": a.streaming,
@@ -361,6 +363,13 @@ class Runtime:
             a._leader_frozen = frozen
             return False
         return True
+
+    def configure_recording(self, *, mode: str):
+        if mode not in ("standard", "grasp_diagnostics"):
+            raise ValueError("记录模式需为普通记录或抓取诊断")
+        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
+            raise ValueError("请先暂停运动并结束本集，再切换记录模式")
+        self._queue_policy_command(("recording_mode", mode))
 
     def configure_policy(self, *, fusion: str, rtc_delay_steps: int | None = None):
         if fusion not in ("tda_smooth", "sync_hold", "rtc"):
@@ -501,6 +510,16 @@ class Runtime:
                 if self.task_switching:
                     if command_receipt is not None:
                         command_receipt.update(state="rejected", error="任务切换中，设置未应用")
+                    policy_command = None
+                if policy_command is not None and policy_command[0] == "recording_mode":
+                    # Recording configuration must NOT reset control epochs, RTC
+                    # commitments, targets, or any device/policy process.
+                    if a.phase != Phase.HOLD or getattr(self.recorder, "recording", False):
+                        command_receipt.update(state="rejected", error="请先暂停并结束本集")
+                    else:
+                        self.recording_mode = policy_command[1]
+                        self.io.grasp_diagnostics_enabled = self.recording_mode == "grasp_diagnostics"
+                        command_receipt.update(state="accepted", applied_at=time.monotonic())
                     policy_command = None
                 if policy_command is not None:
                     if (a.phase != Phase.HOLD or getattr(self.recorder, "recording", False)
@@ -862,11 +881,18 @@ class Runtime:
                     "action_index": decision.action_index,
                     "submitted_at": stamps,
                 }
+                if self.recording_mode == "grasp_diagnostics":
+                    row["grasp_diagnostics"] = {
+                        "schema_version": 1,
+                        "sample_phase": "before_command",
+                        "followers": getattr(self.io, "gripper_feedback", [None, None]),
+                    }
                 if isinstance(self.recorder, RECORDING_SESSIONS):
                     # Snapshot the running policy, not the startup YAML. Mode
                     # changes are permitted in HOLD between recorded episodes.
                     if not self.recorder.recording:
                         self.recorder.metadata.update({
+                            "recording_mode": self.recording_mode,
                             "rtc": a.rtc_timeline is not None,
                             "policy_fusion": a.action_buffer.fusion,
                             "streaming": a.streaming,
@@ -978,6 +1004,11 @@ class Runtime:
                         if a.phase == Phase.RESUME else None
                     ),
                     "policy_command": dict(self.policy_command_status) if self.policy_command_status else None,
+                    "recording_mode": self.recording_mode,
+                    "grasp_feedback_available": [
+                        bool(f and f.get("valid")) for f in
+                        getattr(self.io, "gripper_feedback", [None, None])
+                    ],
                     "policy_tda_drop_max": getattr(a.action_buffer, "drop_max", None),
                     "policy_joint_speed_rad_s": (
                         self.io.policy_joint_speed

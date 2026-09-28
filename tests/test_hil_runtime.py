@@ -265,6 +265,13 @@ def test_mock_rtc_executes_only_post_commit_suffix_at_30hz(tmp_path):
         assert result["rtc_delay_steps"] == 9
         recorder.close("aborted")
         rows = list(read_rows(recorder.path))
+        policy_rows = [row for row in rows if row["source"] == "policy"]
+        assert policy_rows
+        for row in policy_rows:
+            owner = row["policy_selection"]
+            assert owner["target_tick"] == row["action_index"]
+            assert owner["model_index"] == owner["target_tick"] - owner["request"]["observation_policy_tick"]
+            assert owner["rtc_delay_steps"] <= owner["model_index"] < 50
         replies = [row["policy_reply"] for row in rows if row.get("policy_reply")]
         assert any(not reply["discarded"] for reply in replies)
         policy = [row for row in rows if row.get("policy_valid")]

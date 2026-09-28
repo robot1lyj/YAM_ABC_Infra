@@ -95,8 +95,8 @@ def _age_from_stamp(stamp: float) -> float:
     return max(0.0, age)
 
 
-def _joint_snapshot(robot) -> tuple[np.ndarray, float]:
-    """Copy one complete published i2rt state without waiting on its CAN lock.
+def _published_joint_state(robot):
+    """Acquire one complete published i2rt state without waiting on its CAN lock.
 
     i2rt builds a new ``JointStates`` object, then replaces ``_joint_state`` in
     one Python reference assignment; it does not mutate that published object's
@@ -108,6 +108,11 @@ def _joint_snapshot(robot) -> tuple[np.ndarray, float]:
     state = robot._joint_state
     if state is None:
         raise RuntimeError("i2rt motor feedback unavailable")
+    return state
+
+
+def _joint_snapshot(robot) -> tuple[np.ndarray, float]:
+    state = _published_joint_state(robot)
     return np.array(state.pos, dtype=np.float64, copy=True), _age_from_stamp(state.timestamp)
 
 
@@ -158,6 +163,41 @@ class YamRobot(RobotInterface):
         arm = q[: self._n]
         grip = _normalize(q[self._n], self._g_closed, self._g_open)
         return np.concatenate([arm, [grip]]), age
+
+    def hil_read_with_gripper(self):
+        """Same published snapshot as position; no extra CAN query or SDK lock.
+
+        Effort is signed motor feedback in Nm, NOT commanded gravity torque or
+        fingertip force. The timestamp is an SDK update, not CAN arrival time.
+        """
+        state = _published_joint_state(self._robot)
+        sampled_at = time.monotonic()
+        age = _age_from_stamp(state.timestamp)
+        q = np.array(state.pos, dtype=np.float64, copy=True)
+        q[self._n] = _normalize(q[self._n], self._g_closed, self._g_open)
+
+        def scalar(name):
+            values = getattr(state, name, None)
+            try:
+                value = float(values[self._n])
+            except (TypeError, ValueError, IndexError, OverflowError):
+                # Optional diagnostics must not break the existing position path.
+                return None
+            return value if np.isfinite(value) else None
+
+        velocity = scalar("vel")
+        span = self._g_open - self._g_closed
+        velocity = velocity / span if velocity is not None and span else None
+        if velocity is not None and not np.isfinite(velocity):
+            velocity = None
+        effort = scalar("eff")
+        feedback = {
+            "position": float(q[self._n]), "velocity": velocity,
+            "effort_nm": effort, "sdk_updated_at": float(state.timestamp),
+            "sampled_at": sampled_at, "feedback_age_s": age,
+            "valid": velocity is not None and effort is not None,
+        }
+        return q[: self._n + 1], age, feedback
 
     def command_joint_pos(self, pos: np.ndarray) -> None:
         pos = np.asarray(pos, dtype=np.float64).reshape(-1)

@@ -31,6 +31,8 @@ class RtcTimeline:
         self._submitted = deque(maxlen=64)
         self._committed: dict[int, tuple[np.ndarray, str]] = {}
         self._plan: dict[int, np.ndarray] = {}
+        self._owners: dict[int, dict] = {}
+        self.last_selection = None
         self._last_target: np.ndarray | None = None
         self.pending: RtcCommitment | None = None
         self.has_accepted_plan = False
@@ -41,6 +43,8 @@ class RtcTimeline:
         self._submitted.clear()
         self._committed.clear()
         self._plan.clear()
+        self._owners.clear()
+        self.last_selection = None
         self._last_target = None
         self.pending = None
         self.has_accepted_plan = False
@@ -58,11 +62,13 @@ class RtcTimeline:
         """Return the one immutable target for this controller tick."""
         if type(tick) is not int or tick < 0:
             raise ValueError("invalid controller tick")
+        self.last_selection = self._owners.get(tick)
         if tick in self._committed:
             target, source = self._committed[tick]
             return target.copy(), source
         if tick in self._plan:
             return self._plan[tick].copy(), "policy"
+        self.last_selection = None
         return self._action(self._last_target if self._last_target is not None else hold_target), "hold"
 
     def record_submitted(self, tick: int, target):
@@ -82,6 +88,9 @@ class RtcTimeline:
         self._submitted.append((tick, action.copy()))
         self._last_target = action
         self._plan.pop(tick, None)
+        for old in tuple(self._owners):
+            if old <= tick:
+                del self._owners[old]
         for old in tuple(self._plan):
             if old < tick:
                 del self._plan[old]
@@ -125,7 +134,7 @@ class RtcTimeline:
         return commitment
 
     def install(self, commitment: RtcCommitment, actions, *, current_tick: int,
-                limit_target) -> bool:
+                limit_target, request: dict | None = None) -> bool:
         """Reject a stale reply; never slide its fixed takeover tick forward."""
         if commitment is not self.pending:
             return False
@@ -148,6 +157,17 @@ class RtcTimeline:
             )
             for index, row in enumerate(rows[d:], start=d)
         }
+        # A new request owns only its suffix. The immutable prefix still belongs
+        # to the older prediction that produced it, NOT the latest request.
+        self._owners = {tick: owner for tick, owner in self._owners.items()
+                        if tick < commitment.takeover_tick}
+        self._owners.update({
+            tick: {"fusion": "rtc", "request": dict(request or {}),
+                   "target_tick": tick, "model_index": tick - commitment.observation_tick,
+                   "observation_policy_tick": commitment.observation_tick,
+                   "rtc_delay_steps": d}
+            for tick in self._plan
+        })
         self.has_accepted_plan = True
         self.accepted_replies += 1
         return True

@@ -346,6 +346,13 @@
                   <div><span>新块丢步</span><strong id="policy-trim">—</strong></div>
                   <div><span>下发路径</span><strong id="policy-speed">—</strong></div>
                 </div>
+                <form id="inference-recording-form" class="policy-settings">
+                  <label>记录模式
+                    <select id="inference-recording-mode"><option value="standard">普通记录</option><option value="grasp_diagnostics">抓取诊断 · 夹爪力矩</option></select>
+                  </label>
+                  <button class="button" id="recording-mode-apply" type="submit">应用</button>
+                </form>
+                <p class="muted" id="grasp-recording-status" role="status"></p>
                 <details class="policy-disclosure"><summary>推理设置</summary>
                 <form id="policy-form" class="policy-settings">
                   <label>动作块模式

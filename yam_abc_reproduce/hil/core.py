@@ -301,6 +301,7 @@ class Arbiter:
         commitment = self.rtc_timeline.pending
         accepted = self.rtc_timeline.install(
             commitment, actions, current_tick=current_tick, limit_target=limit_target,
+            request=vars(token),
         )
         self.pending = None
         self._policy_rtts.append(age)
@@ -539,6 +540,7 @@ class Arbiter:
             self._active_request if policy is not None else None,
             action_index,
             self._leader_frozen is not None,
-            self.action_buffer.last_selection if policy is not None and self.streaming else None,
+            (self.rtc_timeline.last_selection if self.rtc_timeline is not None
+             else self.action_buffer.last_selection) if policy is not None and self.streaming else None,
             self._leader_frozen.copy() if self._leader_frozen is not None else None,
         )

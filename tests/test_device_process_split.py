@@ -15,6 +15,7 @@ class FakeDeviceOwner:
         self.heartbeats = 0
         self.policy_settings = []
         self.policy_restarts = 0
+        self.recording_settings = []
 
     @property
     def status(self):
@@ -31,6 +32,9 @@ class FakeDeviceOwner:
 
     def restart_policy(self):
         self.policy_restarts += 1
+
+    def configure_recording(self, **settings):
+        self.recording_settings.append(settings)
 
     def preview(self, role):
         return b"jpeg" if role == "top" else None
@@ -68,6 +72,9 @@ def test_unix_proxy_restart_holds_without_closing_device_owner(tmp_path):
         second_web.restart_policy()
         assert owner.policy_settings == [{"fusion": "tda_smooth"}, {"fusion": "rtc", "rtc_delay_steps": 7}]
         assert owner.policy_restarts == 1
+        second_web.configure_recording(mode="grasp_diagnostics")
+        assert owner.recording_settings == [{"mode": "grasp_diagnostics"}]
+        assert owner.events == ["hold", "hold"]  # No added hold/disconnect/restart.
     finally:
         server.should_exit = True
         thread.join(timeout=3)

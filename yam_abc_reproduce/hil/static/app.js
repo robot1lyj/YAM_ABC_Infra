@@ -23,6 +23,7 @@ let state = {},
   online = false,
   busy = false,
   policyDraft = null,
+  recordingDraft = null,
   toastTimer,
   lastPoll = 0;
 function text(id, value) {
@@ -220,6 +221,16 @@ function render() {
     $("rtc-delay-steps").value = state.rtc_delay_steps ?? 9;
   }
   const policyEditable = connected && !state.task_switching && paused && !latched && !recording && maint === "idle";
+  if (recordingDraft === state.recording_mode) recordingDraft = null;
+  if (!recordingDraft) $("inference-recording-mode").value = state.recording_mode || "standard";
+  $("inference-recording-form").hidden = mode !== "inference";
+  $("grasp-recording-status").hidden = mode !== "inference";
+  $("inference-recording-mode").disabled = !policyEditable;
+  $("recording-mode-apply").disabled = !policyEditable;
+  $("recording-mode-apply").title = policyEditable ? "只切换记录内容，不改变动作" : "连接后暂停运动、结束本集即可设置";
+  text("grasp-recording-status", state.recording_mode === "grasp_diagnostics"
+    ? `已启用抓取诊断 · 左/右力矩 ${[0, 1].map(i => state.grasp_feedback_available?.[i] ? "可用" : "待反馈").join(" / ")}`
+    : "当前：普通记录");
   const sourceEditable = online && !state.initializing && !state.mock &&
     (state.connection === "disconnected" || policyEditable);
   $("policy-fusion").disabled = !policyEditable;
@@ -1202,6 +1213,14 @@ function keepPolicyDraft() {
   if (fusion === "rtc") policyDraft.rtc_delay_steps = Number($("rtc-delay-steps").value);
   $("rtc-delay-steps").disabled = $("policy-fusion").disabled || fusion !== "rtc";
 }
+$("inference-recording-mode").onchange = () => { recordingDraft = $("inference-recording-mode").value; };
+$("inference-recording-form").onsubmit = async (e) => {
+  e.preventDefault();
+  recordingDraft = $("inference-recording-mode").value;
+  if (await action("/recording/settings", {mode: recordingDraft})) {
+    toast("记录模式已提交，下集使用；不会改变推理动作");
+  } else recordingDraft = null;
+};
 $("policy-fusion").onchange = keepPolicyDraft;
 $("rtc-delay-steps").onchange = keepPolicyDraft;
 $("policy-form").onsubmit = async (e) => {

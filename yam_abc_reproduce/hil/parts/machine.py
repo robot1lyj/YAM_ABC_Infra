@@ -15,7 +15,8 @@ class Attempts:
         self.config, self.emit = config, emit
         self.phase = dict.fromkeys(ARMS, "READY")
         self.eligibility = {
-            a: dict(eligible=False, empty_hand=False, source="rules_auto_v1") for a in ARMS
+            a: dict(eligible=False, empty_hand=False, source=config.selector["schema"])
+            for a in ARMS
         }
         self.entry_armed = dict.fromkeys(ARMS, False)
         self.previous = {}
@@ -115,7 +116,9 @@ class Attempts:
         self.cancel("reset", tick, now)
         self.phase = dict.fromkeys(ARMS, "READY")
         for arm in ARMS:
-            self.eligibility[arm] = dict(eligible=False, empty_hand=False, source="rules_auto_v1")
+            self.eligibility[arm] = dict(
+                eligible=False, empty_hand=False, source=self.config.selector["schema"]
+            )
         self.event("reset", tick, now)
 
     def observe(self, *, tick, now, epoch, heights, feedback, policy_active, preserve_events=False):

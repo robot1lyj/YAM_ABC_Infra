@@ -87,7 +87,6 @@ def test_height_uses_calibration_not_base_z_and_unknown_goal_null():
     data = mock_config().as_dict()
     data["left"]["table"]["point"][2] = 0.1
     data["right"]["table"] = None
-    data["right"]["grasp_xy_polygon_m"] = None
     data["left"]["h_goal_m"] = None
     h = Heights(PartsConfig.from_dict(data), MockKinematics())
     q = np.zeros(14)

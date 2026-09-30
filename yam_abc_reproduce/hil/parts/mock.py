@@ -44,16 +44,14 @@ def mock_config(mode="shadow"):
         budget_s=4,
         table=table,
         B_rad=[0.01] * 6,
-        grasp_xy_polygon_m=[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]],
-        grasp_region_frame="mock_table",
-        grasp_region_calibration_id="fixture_only",
         open_position_min=0.8,
-        open_confirm_s=0.1,
+        open_confirm_s=0.3,
+        open_confirm_samples=10,
     )
     return PartsConfig.from_dict(
         dict(
             mode=mode,
-            contract_sha="mock-contract-auto-v1",
+            contract_sha="mock-contract-auto-v2",
             behavior_snapshot_id="mock-behavior-v1",
             behavior_manifest_ref="mock://behavior-v1",
             feature_schema_id="mock-feature-v1",

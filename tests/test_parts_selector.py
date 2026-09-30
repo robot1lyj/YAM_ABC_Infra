@@ -8,7 +8,6 @@ import pytest
 from yam_abc_reproduce.hil.parts import PartsClient, PartsConfig
 from yam_abc_reproduce.hil.parts.mock import MockKinematics, mock_config, mock_metadata
 from yam_abc_reproduce.hil.parts.protocol import handshake
-from yam_abc_reproduce.hil.parts.selector import validate_polygon
 from yam_abc_reproduce.hil.rtc_timeline import RtcTimeline
 
 
@@ -51,7 +50,7 @@ class Cycle:
                 effort_nm=effort,
                 sdk_updated_at=self.now + 1000 if stamp is None else stamp,
                 sampled_at=self.now,
-                feedback_age_s=0.005,
+                feedback_age_s=0.005 if stamp is None else max(0.005, 1000 + self.now - stamp),
                 valid=valid,
             )
             for i in (6, 13)
@@ -71,7 +70,7 @@ class Cycle:
         return self.client.arm_snapshots()["left"]
 
     def ready(self, **kw):
-        for _ in range(6):
+        for _ in range(12):
             self.step(**kw)
         return self.client.arm_snapshots()["left"]
 
@@ -87,6 +86,54 @@ class Cycle:
 
     def kinds(self):
         return [v["kind"] for k, v in self.logs if k == "event"]
+
+
+def test_actual_open_at_point_eight_requires_ten_fresh_samples_and_point_three_seconds():
+    h = Cycle()
+    h.enter()
+    h.submit(0.1)
+    h.ready(z=0.04, position=0.2, effort=0.9)
+    h.client.machine.handback(tick=h.tick, now=h.now)
+    h.submit(0.9)
+    start = h.now + 1 / 30
+    for _ in range(9):
+        snap = h.step(position=0.8)
+        assert not snap["actual_open_confirmed"] and not snap["eligible"]
+    snap = h.step(position=0.8)
+    assert h.now - start == pytest.approx(0.3)
+    assert snap["actual_open_confirmed"] and snap["eligible"]
+    snap = h.step(position=0.799)
+    assert not snap["actual_open_confirmed"] and snap["eligible"]
+    for _ in range(9):
+        snap = h.step(position=0.8)
+        assert not snap["actual_open_confirmed"]
+    assert h.step(position=0.8)["actual_open_confirmed"]
+
+
+def test_duplicate_feedback_cannot_fill_ten_sample_requirement_after_point_three_seconds():
+    h = Cycle()
+    for i in range(12):
+        snap = h.step(position=0.8, stamp=1000 + (i - i % 2) / 30)
+    assert h.now > 0.3 and not snap["actual_open_confirmed"]
+    assert h.client.selector.lanes["left"]["open_window"].count == 6
+
+
+@pytest.mark.parametrize("effort", [0.651, -0.8])
+def test_high_gripper_effort_does_not_grant_empty_hand_even_when_open(effort):
+    h = Cycle()
+    snap = h.ready(effort=effort)
+    assert not snap["eligible"] and not snap["empty_hand"]
+    assert "gripper_effort_high" in snap["reason_codes"]
+    h.step(0.049, effort=effort)
+    assert h.client.machine.attempt is None
+
+
+@pytest.mark.parametrize("count", [0, True, 1.5])
+def test_open_confirmation_sample_count_is_validated(count):
+    data = mock_config().as_dict()
+    data["left"]["open_confirm_samples"] = count
+    with pytest.raises(ValueError, match="positive integer"):
+        PartsConfig.from_dict(data)
 
 
 def test_grasp_transport_low_place_release_retract_then_grasp_without_markers():
@@ -106,16 +153,13 @@ def test_grasp_transport_low_place_release_retract_then_grasp_without_markers():
     for _ in range(5):
         snap = h.step(0.02, x=0.4, position=0.2)
         assert snap["holding_locked"] and "waiting_actual_release" in snap["reason_codes"]
-    for _ in range(6):
+    for _ in range(12):
         snap = h.step(0.02, x=0.4)
     assert not snap["holding_locked"] and snap["selector_state"] == "REARM_WAIT"
     assert h.client.machine.phase["left"] == "WAIT_REARM"
     assert not h.client.machine.attempt
     h.step(0.08, x=0.4)
-    h.step(0.04, x=0.4)
-    assert h.client.machine.attempt is None  # Empty placement descent is also excluded.
-    h.step(0.08)
-    h.step(0.049)
+    h.step(0.049, x=0.4)
     assert h.client.machine.active_arm == "left"
     assert "release_confirmed" in h.kinds() and "post_grasp_loss" in h.kinds()
     assert len(h.client.machine.completed) == 1
@@ -132,7 +176,7 @@ def test_slow_hysteresis_crossing_and_jitter_only_one_attempt():
     assert h.kinds().count("entry") == 1
 
 
-def test_failed_grasp_needs_new_actual_open_and_does_not_enter_placement():
+def test_failed_grasp_rearms_after_retract_without_open_confirmation_or_region():
     h = Cycle()
     h.enter()
     h.submit(0.1)
@@ -144,16 +188,13 @@ def test_failed_grasp_needs_new_actual_open_and_does_not_enter_placement():
     assert h.client.machine.handback(tick=h.tick, now=h.now)
     assert h.client.machine.completed[-1]["grasp_reward"] == 0
     h.ready(z=0.08, x=0.4, position=0.1)
-    assert h.client.machine.phase["left"] == "WAIT_REARM"
-    h.ready(z=0.08, x=0.4)
-    h.step(0.04, x=0.4)
-    assert h.client.machine.attempt is None
-    h.step(0.08)
-    h.step(0.049)
+    assert h.client.machine.phase["left"] == "READY"
+    assert not h.client.arm_snapshots()["left"]["actual_open_confirmed"]
+    h.step(0.049, x=0.4, position=0.1)
     assert h.client.machine.active_arm == "left"
 
 
-def test_base_only_grasp_outside_region_locks_holding_without_rl_reward():
+def test_base_only_closure_before_crossing_locks_holding_without_rl_reward():
     h = Cycle()
     h.ready(x=0.4)
     h.submit(0.1)
@@ -175,7 +216,7 @@ def test_repeated_invalid_or_missing_actual_position_never_arms(kwargs):
 
 
 @pytest.mark.parametrize("kwargs", [dict(epoch=2), dict(active=False), dict(valid=False)])
-def test_session_gaps_cancel_and_cannot_reuse_old_open_proof(kwargs):
+def test_session_gaps_cancel_and_new_fresh_height_force_can_rearm_without_open(kwargs):
     h = Cycle()
     h.enter()
     h.submit(0.1)
@@ -184,10 +225,11 @@ def test_session_gaps_cancel_and_cannot_reuse_old_open_proof(kwargs):
     h.ready(z=0.08, position=0.1, epoch=kwargs.get("epoch", 1))
     assert not h.client.machine.attempt
     snap = h.client.arm_snapshots()["left"]
-    assert not snap["eligible"] and not snap["empty_hand"]
+    assert snap["eligible"] and snap["empty_hand"]
+    assert not snap["actual_open_confirmed"]
 
 
-def test_start_closed_or_low_needs_actual_open_then_retract():
+def test_start_closed_high_effort_blocks_but_low_effort_and_retract_rearm():
     h = Cycle()
     h.ready(z=0.02, position=0.1, effort=0.9)
     assert not h.client.machine.attempt
@@ -234,39 +276,20 @@ def test_old_residual_prefix_blocks_rearm_without_rewriting_it():
     assert h.client.machine.active_arm == "left"
 
 
-def test_premature_closing_disarms_and_region_exit_requests_continuous_cancel():
+def test_preclosing_does_not_disarm_and_xy_motion_does_not_cancel_attempt():
     h = Cycle()
     h.ready()
     h.submit(0.1)
     h.step(0.049)
-    assert h.client.machine.attempt is None
+    assert h.client.machine.active_arm == "left"
     h = Cycle()
     h.enter()
     h.step(0.04, x=0.4)
-    assert h.client.machine.phase["left"] == "EXIT_PENDING"
-    assert h.client.machine.attempt["pending_result"] == "canceled"
-    assert h.client.machine.attempt["pending_reason"] == "left_grasp_region"
+    assert h.client.machine.phase["left"] == "ACTIVE_DESCENT"
+    assert not h.client.machine.completed
 
 
-@pytest.mark.parametrize(
-    "polygon",
-    [
-        [[0, 0], [1, 1], [2, 2]],
-        [[0, 0], [2, 2], [0, 2], [2, 0], [3, 0]],
-        [[0, 0], [1, 0], [0, 0]],
-        [[0, 0], [1, 0], [float("nan"), 1]],
-    ],
-)
-def test_polygon_configuration_rejects_ambiguous_region(polygon):
-    with pytest.raises(ValueError, match="polygon"):
-        validate_polygon(polygon)
-
-
-def test_table_frame_region_binding_and_protocol_hash_are_locked():
-    data = mock_config("collect").as_dict()
-    data["left"]["grasp_region_frame"] = "other_base"
-    with pytest.raises(ValueError, match="frame/calibration"):
-        PartsConfig.from_dict(data)
+def test_rule_version_and_protocol_hash_are_locked():
     config = mock_config("collect")
     metadata = mock_metadata(config)
     metadata["parts"].pop("selector_config_sha")
@@ -278,15 +301,18 @@ def test_table_frame_region_binding_and_protocol_hash_are_locked():
     assert changed.selector_config_sha != config.selector_config_sha
     with pytest.raises(ValueError, match="handshake"):
         handshake(mock_metadata(config), changed)
+    metadata = mock_metadata(config)
+    metadata["parts"]["selector_schema"] = "rules_auto_v1"
+    with pytest.raises(ValueError, match="handshake"):
+        handshake(metadata, config)
 
 
 def test_rule_configuration_owns_nested_inputs_after_hashing():
     data = mock_config().as_dict()
     config = PartsConfig.from_dict(data)
     before = config.selector_config_sha
-    data["left"]["grasp_xy_polygon_m"][0][0] = -9
     data["left"]["table"]["base_to_table"][0][3] = 5
-    assert config.as_dict()["left"]["grasp_xy_polygon_m"][0][0] == -0.2
+    assert config.as_dict()["left"]["table"]["base_to_table"][0][3] == 0
     assert PartsConfig.from_dict(config.as_dict()).selector_config_sha == before
 
 
@@ -303,7 +329,7 @@ def test_repeated_partial_release_commands_do_not_restart_closure(opening):
         h.submit(opening)
         assert snap["holding_locked"]
         assert "waiting_actual_release" in snap["reason_codes"]
-    for _ in range(6):
+    for _ in range(12):
         snap = h.step(0.08, position=opening)
         h.submit(opening)
     assert not snap["holding_locked"] and snap["actual_open_confirmed"]
@@ -347,15 +373,15 @@ def test_pause_after_unconfirmed_grasp_recovers_from_new_actual_open_samples():
     assert h.client.machine.active_arm == "left"
 
 
-def test_region_uses_table_xy_not_base_xy():
+def test_xy_translation_is_recorded_but_not_an_eligibility_gate():
     data = mock_config().as_dict()
     data["left"]["table"]["base_to_table"][0][3] = 1.0
-    data["left"]["grasp_xy_polygon_m"] = [[0.8, -0.2], [1.2, -0.2], [1.2, 0.2], [0.8, 0.2]]
     h = Cycle(PartsConfig.from_dict(data))
     h.enter()
     snap = h.client.arm_snapshots()["left"]
     assert snap["position"][0] == 0 and snap["table_position_m"][0] == 1
-    assert snap["inside_grasp_region"]
+    assert h.client.machine.active_arm == "left"
+    assert "inside_grasp_region" not in snap
 
 
 def test_repeated_open_samples_after_release_never_confirm_duration():
@@ -367,24 +393,72 @@ def test_repeated_open_samples_after_release_never_confirm_duration():
     stamp = 1000 + h.now + 0.01
     for _ in range(6):
         snap = h.step(0.08, stamp=stamp)
-    assert not snap["actual_open_confirmed"] and not snap["rearm_ready"]
+    assert not snap["actual_open_confirmed"]
+    assert "feedback_invalid_or_stale" in snap["reason_codes"]
+    assert h.client.machine.completed[-1]["result"] == "canceled"
+
+
+def test_close_begins_above_entry_then_contact_below_entry_exits_to_base():
+    h = Cycle()
+    h.step(position=0.9)
+    h.submit(0.6)
+    h.step(position=0.6)
+    h.submit(0.3)
+    before_entry_close_tick = h.client.selector.lanes["left"]["closure_tick"]
+    h.step(0.049, position=0.3)
+    assert h.client.machine.active_arm == "left"
+    assert not h.client.arm_snapshots()["left"]["actual_open_confirmed"]
+    h.submit(0.3)  # No extra closure delta after the crossing.
+    for _ in range(6):
+        h.step(0.04, position=0.3, effort=-0.8)
+        h.submit(0.3)
     assert h.client.machine.phase["left"] == "EXIT_PENDING"
+    assert h.client.machine.attempt["closure_tick"] == before_entry_close_tick
+    assert h.client.machine.attempt["closure_observed_before_entry"]
+    assert h.client.machine.handback(tick=h.tick, now=h.now)
+    assert h.client.machine.completed[-1]["result"] == "success"
 
 
-def test_shadow_missing_region_reports_gaps_collect_rejects_before_control():
+def test_partial_closed_low_effort_without_any_opening_can_enter():
+    h = Cycle()
+    h.ready(position=0.4)
+    snap = h.step(0.049, position=0.4)
+    assert h.client.machine.active_arm == "left"
+    assert not snap["actual_open_confirmed"]
+
+
+def test_holding_survives_epoch_and_low_effort_until_actual_release_confirmation():
+    h = Cycle()
+    h.enter()
+    h.submit(0.1)
+    h.ready(z=0.04, position=0.2, effort=0.9)
+    h.client.machine.handback(tick=h.tick, now=h.now)
+    h.step(0.08, position=0.2, effort=0.1, epoch=2)
+    for _ in range(12):
+        snap = h.step(0.08, position=0.2, effort=0.1, epoch=2)
+    assert snap["holding_locked"] and not snap["eligible"]
+    h.step(0.049, position=0.2, effort=0.1, epoch=2)
+    assert h.client.machine.attempt is None
+    h.submit(0.9)
+    for _ in range(12):
+        snap = h.step(0.08, position=0.9, effort=0.1, epoch=2)
+    assert not snap["holding_locked"] and snap["eligible"]
+
+
+def test_shadow_missing_table_reports_gaps_collect_rejects_before_control():
     data = mock_config().as_dict()
-    data["left"]["grasp_xy_polygon_m"] = None
+    data["left"]["table"] = None
     h = Cycle(PartsConfig.from_dict(data))
     h.ready()
     snap = h.step(0.049)
     assert "selector_parameters_unset" in snap["reason_codes"]
     assert h.client.machine.attempt is None
     data["mode"] = "collect"
-    with pytest.raises(ValueError, match="grasp_xy_polygon_m"):
+    with pytest.raises(ValueError, match="table"):
         PartsConfig.from_dict(data).validate_execution()
 
 
-def test_region_exit_carries_offset_until_new_base_and_preserves_frozen_prefix():
+def test_xy_motion_does_not_change_candidate_or_rewrite_frozen_prefix():
     from yam_abc_reproduce.hil.parts.mock import mock_reply
 
     data = mock_config("eval").as_dict()
@@ -403,16 +477,6 @@ def test_region_exit_carries_offset_until_new_base_and_preserves_frozen_prefix()
     h.step(0.04, x=0.4)
     carried, source = h.client.edit(h.tick, h.state, owner, limit_target=lambda x: x)
     np.testing.assert_allclose(carried - h.state, delta)
-    assert "exit_carry_previous_residual" in source["parts"]["constraints"]
+    assert h.client.machine.phase["left"] == "ACTIVE_DESCENT"
     np.testing.assert_array_equal(timeline.select(h.tick + 4, h.state)[0], target)
-    newer = mock_reply({"context": {"observation_policy_tick": h.tick}}, None, h.client.config)
-    h.client.replies[(1, 2)] = newer
-    target, source = h.client.edit(
-        h.tick + 1,
-        h.state,
-        dict(request=dict(epoch=1, request_id=2), model_index=9),
-        limit_target=lambda x: x,
-    )
-    h.client.submitted(h.tick + 1, h.now + 1 / 30, target, source)
-    assert h.client.machine.completed[-1]["result"] == "canceled"
-    assert h.client.machine.completed[-1]["grasp_reward"] is None
+    assert not h.client.machine.completed

@@ -39,75 +39,25 @@ class Confirmation:
 
     def reset(self, stamp=None):
         self.stamp, self.started, self.last = stamp, None, None
+        self.count = 0
 
-    def update(self, feedback, now, good, duration, max_gap):
+    def update(self, feedback, now, good, duration, max_gap, *, min_samples=1):
         stamp = feedback["sdk_updated_at"]
         if self.stamp is not None and stamp <= self.stamp:
             return False
         self.stamp = stamp
         if not good or duration is None or max_gap is None:
             self.started = self.last = None
+            self.count = 0
             return False
         if self.last is None or now - self.last > max_gap:
             self.started = now
+            self.count = 0
         self.last = now
-        return now - self.started >= duration
-
-
-def _cross(a, b, c):
-    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
-
-
-def _on_segment(a, b, p):
-    return abs(_cross(a, b, p)) <= 1e-12 and all(
-        min(a[i], b[i]) - 1e-12 <= p[i] <= max(a[i], b[i]) + 1e-12 for i in (0, 1)
-    )
-
-
-def validate_polygon(points):
-    """Reject ambiguous regions before entering the control loop."""
-    if not isinstance(points, (list, tuple)) or len(points) < 3:
-        raise ValueError("PARTS grasp polygon needs at least three XY points")
-    if any(
-        not isinstance(p, (list, tuple))
-        or len(p) != 2
-        or any(type(v) not in (int, float) or not math.isfinite(v) for v in p)
-        for p in points
-    ):
-        raise ValueError("PARTS grasp polygon must contain finite XY metres")
-    if len({tuple(p) for p in points}) != len(points):
-        raise ValueError("PARTS grasp polygon has repeated vertices")
-    edges = list(zip(points, points[1:] + points[:1]))
-    area = sum(a[0] * b[1] - b[0] * a[1] for a, b in edges)
-    if abs(area) <= 1e-12:
-        raise ValueError("PARTS grasp polygon is degenerate")
-    for i, (a, b) in enumerate(edges):
-        for j, (c, d) in enumerate(edges):
-            if j <= i or j == i + 1 or (i == 0 and j == len(edges) - 1):
-                continue
-            crossing = (
-                _cross(a, b, c) * _cross(a, b, d) < 0 and _cross(c, d, a) * _cross(c, d, b) < 0
-            )
-            if crossing or any(
-                (
-                    _on_segment(a, b, c),
-                    _on_segment(a, b, d),
-                    _on_segment(c, d, a),
-                    _on_segment(c, d, b),
-                )
-            ):
-                raise ValueError("PARTS grasp polygon self-intersects")
-
-
-def in_polygon(point, polygon):
-    inside = False
-    x, y = point[:2]
-    for a, b in zip(polygon, polygon[1:] + polygon[:1]):
-        if _on_segment(a, b, (x, y)):
-            return True
-        if (a[1] > y) != (b[1] > y) and x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]:
-            inside = not inside
-    return inside
+        self.count += 1
+        # 10 samples at 30 Hz span 0.3 s inclusive. Tolerate only floating-point
+        # clock subtraction error, not a shorter confirmation window.
+        return self.count >= min_samples and now - self.started + 1e-9 >= duration
 
 
 class RulesSelector:
@@ -120,6 +70,8 @@ class RulesSelector:
                 holding=False,
                 requires_release=False,
                 closing=False,
+                closure_tick=None,
+                closure_time=None,
                 release_tick=None,
                 release_time=None,
                 anchor=None,
@@ -146,7 +98,9 @@ class RulesSelector:
                 if k not in ("feedback", "pose", "open_window", "force_window")
             }
             for name in ("open_window", "force_window"):
-                lanes[arm][name] = {k: getattr(lane[name], k) for k in ("stamp", "started", "last")}
+                lanes[arm][name] = {
+                    k: getattr(lane[name], k) for k in ("stamp", "started", "last", "count")
+                }
         return dict(
             schema=self.config.selector["schema"],
             config_sha=self.config.selector_config_sha,
@@ -169,7 +123,7 @@ class RulesSelector:
                 if key in ("feedback", "pose"):
                     continue
                 if key in ("open_window", "force_window"):
-                    for field in ("stamp", "started", "last"):
+                    for field in ("stamp", "started", "last", "count"):
                         setattr(lane[key], field, saved[key][field])
                 else:
                     lane[key] = copy.deepcopy(saved[key])
@@ -208,6 +162,8 @@ class RulesSelector:
         lane.update(
             opened=False,
             closing=False,
+            closure_tick=None,
+            closure_time=None,
             release_tick=None,
             release_time=None,
             anchor=None,
@@ -215,14 +171,14 @@ class RulesSelector:
             preceding_command=None,
             requires_release=lane["holding"],
         )
-        # Holding survives a gap. An unconfirmed attempt instead resynchronizes
-        # from new actual-open samples; old samples/commands are never reused.
+        # Holding survives a gap. Empty readiness instead resynchronizes from
+        # fresh height/effort; old samples/commands are never reused.
         self._state(arm, "UNKNOWN", tick, now)
         if self.output.get(arm, {}).get("reason_codes") != [reason]:
             self._event(arm, "selector_unsynchronized", tick, now, reason=reason)
 
     def consume(self, arm, tick, now):
-        """An attempt cannot reuse its initial open samples for the next one."""
+        """New release proof must follow this attempt, never a pre-grasp opening."""
         lane = self.lanes[arm]
         lane.update(requires_release=True, opened=False, release_tick=None, release_time=None)
         lane["open_window"].reset((lane["feedback"] or {}).get("sdk_updated_at"))
@@ -262,10 +218,10 @@ class RulesSelector:
                 if not policy_active
                 else "epoch_changed"
                 if changed
-                else "feedback_invalid_or_stale"
-                if not valid or not h.get("height_valid")
                 else "selector_parameters_unset"
                 if gaps
+                else "feedback_invalid_or_stale"
+                if not valid or not h.get("height_valid")
                 else None
             )
             if reason or resumed:
@@ -286,6 +242,7 @@ class RulesSelector:
                 open_now and can_open,
                 options.open_confirm_s,
                 self.config.max_confirmation_gap_s,
+                min_samples=options.open_confirm_samples,
             ):
                 lane["opened"] = True
                 if release_evidence:
@@ -293,6 +250,8 @@ class RulesSelector:
                         holding=False,
                         requires_release=False,
                         closing=False,
+                        closure_tick=None,
+                        closure_time=None,
                         release_tick=None,
                         release_time=None,
                         loss_reported=False,
@@ -324,33 +283,28 @@ class RulesSelector:
                 lane["loss_reported"] = False
             above = h["height_m"] > options.h_entry_m + options.entry_hysteresis_m
             active = active_arm == arm
-            rearm = lane["opened"] and not lane["requires_release"] and not lane["holding"]
+            low_effort = abs(f["effort_nm"]) <= 0.65
+            # Opening is release proof for a held object, NOT a prerequisite
+            # for approaching a new grasp: the policy may already be closing.
+            rearm = not lane["holding"] and low_effort
             blocked = arm in committed_arms
             if lane["holding"]:
                 self._state(arm, "RELEASE_WAIT" if release_evidence else "HOLDING", tick, now)
-            elif release_evidence:
-                self._state(arm, "RELEASE_WAIT", tick, now)
             elif rearm and above and not active and not blocked:
                 self._state(arm, "EMPTY_READY", tick, now)
             elif not active and lane["state"] != "EMPTY_READY":
-                self._state(arm, "REARM_WAIT" if lane["opened"] else "UNKNOWN", tick, now)
-            inside = (
-                h.get("table_frame") == options.grasp_region_frame
-                and h.get("table_calibration_id") == options.grasp_region_calibration_id
-                and h.get("table_position_m") is not None
-                and in_polygon(h["table_position_m"], options.grasp_xy_polygon_m)
-            )
+                self._state(arm, "REARM_WAIT", tick, now)
             reasons = []
             if lane["holding"]:
                 reasons.append("holding_object")
-            if release_evidence:
+            elif not low_effort:
+                reasons.append("gripper_effort_high")
+            if lane["holding"] and release_evidence:
                 reasons.append("waiting_actual_release")
-            if not lane["opened"]:
+            if lane["holding"] and not lane["opened"]:
                 reasons.append("waiting_actual_open")
-            if lane["requires_release"] and not release_evidence:
+            if lane["holding"] and not release_evidence:
                 reasons.append("waiting_new_release_command")
-            if not inside:
-                reasons.append("outside_grasp_region")
             if not above and lane["state"] != "EMPTY_READY":
                 reasons.append("waiting_retract")
             if active:
@@ -359,11 +313,9 @@ class RulesSelector:
                 reasons.append("old_residual_committed")
             eligible = (
                 lane["state"] == "EMPTY_READY"
-                and lane["opened"]
-                and open_now
-                and inside
                 and not active
                 and not blocked
+                and low_effort
                 and phases[arm] in ("READY", "WAIT_REARM")
             )
             previous = self.output.get(arm, {}).get("eligible")
@@ -372,7 +324,6 @@ class RulesSelector:
                 eligible,
                 rearm,
                 reasons,
-                inside_grasp_region=bool(inside),
                 rearm_ready=bool(rearm and above and not active and not blocked),
             )
             if previous != eligible:
@@ -391,13 +342,16 @@ class RulesSelector:
         result = dict(
             eligible=bool(eligible),
             empty_hand=bool(empty),
-            source="rules_auto_v1",
+            source=self.config.selector["schema"],
             selector_state=lane["state"],
             selector_schema=self.config.selector["schema"],
             selector_config_sha=self.config.selector_config_sha,
             reason_codes=reasons,
             holding_locked=lane["holding"],
             actual_open_confirmed=lane["opened"],
+            closing_detected=lane["closing"],
+            closure_tick=lane["closure_tick"],
+            closure_time=lane["closure_time"],
             rearm_ready=False,
         )
         result.update(extra)
@@ -421,6 +375,8 @@ class RulesSelector:
             ] - position >= self.config.close_delta:
                 lane.update(
                     closing=True,
+                    closure_tick=tick,
+                    closure_time=now,
                     requires_release=True,
                     opened=False,
                     release_tick=None,

@@ -13,6 +13,7 @@ ARMS = ("left", "right")
 INDICES = {"left": tuple(range(6)), "right": tuple(range(7, 13))}
 PROTOCOL = "yam-parts-v1"
 SCHEMA = "yam_parts_raw_v1"
+RULES_SCHEMA = "rules_auto_v2"
 
 
 @dataclass(frozen=True)
@@ -25,11 +26,9 @@ class ArmConfig:
     minimum_descent_m_s: float = 0.0
     table: dict | None = None
     B_rad: tuple | None = None
-    grasp_xy_polygon_m: list | None = None
-    grasp_region_frame: str | None = None
-    grasp_region_calibration_id: str | None = None
-    open_position_min: float | None = None
-    open_confirm_s: float | None = None
+    open_position_min: float | None = 0.8
+    open_confirm_s: float | None = 0.3
+    open_confirm_samples: int = 10
 
 
 @dataclass(frozen=True)
@@ -47,7 +46,7 @@ class PartsConfig:
     continuity_rad: float | None = None
     close_delta: float | None = None
     release_position: float | None = None
-    selector: dict = field(default_factory=lambda: {"schema": "rules_auto_v1"})
+    selector: dict = field(default_factory=lambda: {"schema": RULES_SCHEMA})
     left: ArmConfig = field(default_factory=ArmConfig)
     right: ArmConfig = field(default_factory=ArmConfig)
 
@@ -60,8 +59,8 @@ class PartsConfig:
             if arm in data:
                 data[arm] = ArmConfig(**data[arm])
         config = cls(**data)
-        if config.selector != {"schema": "rules_auto_v1"}:
-            raise ValueError("PARTS selector must be rules_auto_v1")
+        if config.selector != {"schema": RULES_SCHEMA}:
+            raise ValueError(f"PARTS selector must be {RULES_SCHEMA}")
         if config.mode not in ("off", "shadow", "collect", "eval"):
             raise ValueError("PARTS mode must be off/shadow/collect/eval")
         for key in (
@@ -124,15 +123,8 @@ class PartsConfig:
                 raise ValueError("PARTS actual open threshold must be in (0,1]")
             if options.open_confirm_s is not None and options.open_confirm_s <= 0:
                 raise ValueError("PARTS open confirmation must be positive")
-            if options.grasp_xy_polygon_m is not None:
-                from .selector import validate_polygon
-
-                validate_polygon(options.grasp_xy_polygon_m)
-                if options.table is None or (
-                    options.grasp_region_frame != options.table["frame"]
-                    or options.grasp_region_calibration_id != options.table["calibration_id"]
-                ):
-                    raise ValueError("PARTS grasp region must match table frame/calibration")
+            if type(options.open_confirm_samples) is not int or options.open_confirm_samples <= 0:
+                raise ValueError("PARTS open_confirm_samples must be a positive integer")
             if options.B_rad is not None and (
                 len(options.B_rad) != 6
                 or any(
@@ -180,9 +172,6 @@ class PartsConfig:
     def selector_gaps(self, arm):
         fields = (
             "table",
-            "grasp_xy_polygon_m",
-            "grasp_region_frame",
-            "grasp_region_calibration_id",
             "open_position_min",
             "open_confirm_s",
         )
@@ -222,11 +211,9 @@ class PartsConfig:
                 key: getattr(getattr(self, arm), key)
                 for key in (
                     "table",
-                    "grasp_xy_polygon_m",
-                    "grasp_region_frame",
-                    "grasp_region_calibration_id",
                     "open_position_min",
                     "open_confirm_s",
+                    "open_confirm_samples",
                     "h_entry_m",
                     "entry_hysteresis_m",
                     "minimum_descent_m_s",

@@ -272,12 +272,16 @@ def validate_package(path):
         publication = json.loads((path / "publication.json").read_text())
         run = json.loads((path / "run.json").read_text())
         rule_config = None
-        if run.get("selector_schema") == "rules_auto_v1":
+        from .config import RULES_SCHEMA
+
+        if run.get("selector_schema") == RULES_SCHEMA:
             from .config import PartsConfig
 
             rule_config = PartsConfig.from_dict(run["config"])
             if run.get("selector_config_sha") != rule_config.selector_config_sha:
                 problems.append("selector_configuration_hash_mismatch")
+        elif run.get("selector_schema") is not None:
+            problems.append("unsupported_selector_version_use_original_producer")
         if publication["schema"] != SCHEMA or run["schema"] != SCHEMA:
             problems.append("schema_mismatch")
         if publication.get("training_ready") is not False:

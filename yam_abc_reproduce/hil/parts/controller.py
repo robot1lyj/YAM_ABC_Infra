@@ -136,11 +136,21 @@ class PartsClient:
         arm = self.machine.active_arm
         if (
             arm is not None
-            and self.machine.phase[arm] != "EXIT_PENDING"
-            and self.selector.output[arm].get("inside_grasp_region") is False
+            and self.machine.phase[arm] == "ACTIVE_DESCENT"
+            and eligibility[arm]["holding_locked"]
         ):
-            # Cancel through continuous handback, not by zeroing frozen RTC rows.
-            self.machine.exit_pending("canceled", "left_grasp_region", tick, now)
+            # Closing may start before crossing 50 mm. The selector tracks the
+            # real command history; do not require another close command inside
+            # the attempt to recognize its subsequent confirmed contact.
+            self.machine.attempt.update(
+                closure_tick=eligibility[arm]["closure_tick"],
+                closure_time=eligibility[arm]["closure_time"],
+                closure_observed_before_entry=(
+                    eligibility[arm]["closure_tick"] < self.machine.attempt["entry_tick"]
+                ),
+                reward_proposal_tick=tick,
+            )
+            self.machine.exit_pending("success", "force_confirmed", tick, now)
 
     def build_request(
         self, token, *, observation_tick, commitment=None, scheduler=None, observation=None
@@ -362,28 +372,15 @@ class PartsClient:
                 if returning:
                     record["constraints"].append("handback_to_new_base")
                 elif value["editable_mask"][index]:
-                    if self.machine.attempt.get("pending_reason") == "left_grasp_region":
-                        previous = next(
-                            (
-                                v[1]
-                                for k, v in reversed(self._edited.items())
-                                if k[0] == self.epoch and k[1] == tick - 1
-                            ),
-                            self.last_edit or {},
-                        )
-                        carry = np.asarray(previous.get("physical_residual_rad", [0] * 14))
-                        target[list(INDICES[arm])] += carry[list(INDICES[arm])]
-                        record["constraints"].append("exit_carry_previous_residual")
-                    else:
-                        target[list(INDICES[arm])] += value["B_rad"] * value["u"][index]
-                        record["candidate_ref"] = dict(
-                            request_epoch=token.get("epoch"),
-                            request_id=token.get("request_id"),
-                            model_index=index,
-                            arm=arm,
-                            actor_snapshot_id=value["actor_snapshot_id"],
-                            behavior_snapshot_id=candidate["behavior_snapshot_id"],
-                        )
+                    target[list(INDICES[arm])] += value["B_rad"] * value["u"][index]
+                    record["candidate_ref"] = dict(
+                        request_epoch=token.get("epoch"),
+                        request_id=token.get("request_id"),
+                        model_index=index,
+                        arm=arm,
+                        actor_snapshot_id=value["actor_snapshot_id"],
+                        behavior_snapshot_id=candidate["behavior_snapshot_id"],
+                    )
                     bounded = np.asarray(limit_target(target), dtype=float)
                     if bounded.shape != (14,) or not np.isfinite(bounded).all():
                         raise ValueError("PARTS combined target invalid")

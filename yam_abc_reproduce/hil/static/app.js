@@ -837,8 +837,9 @@ function renderRL({connected, idle, paused, latched, recording, policyEditable, 
   const selectorReasons = {control_not_policy: "等待模型执行", epoch_changed: "等待新会话同步",
     feedback_invalid_or_stale: "等待新鲜反馈", selector_parameters_unset: "自动规则未配置",
     holding_object: "持物中，禁止下降介入", waiting_actual_release: "等待实际张开确认释放",
+    gripper_effort_high: "夹爪力矩较高，暂不判为空手",
     waiting_actual_open: "等待实际张开", waiting_new_release_command: "等待新的张开动作",
-    outside_grasp_region: "不在抓取区", waiting_retract: "等待回撤到入口上方",
+    waiting_retract: "等待回撤到入口上方",
     attempt_active: "抓取尝试进行中", old_residual_committed: "等待旧残差执行结束"};
   for (const [index, a] of ["left", "right"].entries()) {
     const snap = parts?.arms?.[a];

@@ -1,19 +1,28 @@
-# Workstation continuous-surface UI
+# RL 页面验收
 
-- Source: /home/wuyan-lyj/.codex/generated_images/01a09ec4-add3-7f33-b70a-dbdc34f5feac/exec-5f6174b1-a7d9-4b0f-ab9d-236f37ac5e18.png (1672×941).
-- Implementation: http://127.0.0.1:8879/; mock only, DAgger HOLD. Screenshots /tmp/yam-design-audit/04-final-workspace.png, 05-refined.png, 06-visual-final.png.
-- Viewport 1920×1080 CSS pixels, DPR1; source assessed proportionally, not as pixel-identical. Also inspected 1600×900 teleop and collection.
-- Full-view source/implementation compared together. Typography retains supplied system CJK fonts and existing icons; white/gray/blue/red tokens preserved. Two-column layout, contained camera imagery, compact task strip and collapsible settings implemented. Mock camera bars intentionally differ from real photos; live camera image fidelity not yet rechecked.
-- Iterations: fixed camera empty-state row placement; removed title tint, camera gray fill and excess heading; restored 8px camera containers and 6px image radii. Narrower collection view initially scrolled in control area; compact-height rules added, post-fix recheck still outstanding.
-- Tested: navigation, teleop excludes recording/policy UI, collection shows recording controls, DAgger shows policy settings; settings expand/collapse; browser error log empty. Runtime regression 29 passed. No physical movement or control-code changes.
-- Remaining: focused comparison of final live camera geometry and smaller-screen post-fix check. Full keyboard/accessibility and all running/fault states not certified.
+final result: passed
 
-## Final parity check — 2026-09-18
+## 范围与依据
 
-- IPC and local index.html, app.js, style.css and console.css hashes matched after static deployment. Device PID remained 66762; no control service restart or motion commands.
-- Live IPC three-camera layout inspected at 1600×900. Images are contained, rounded and correctly arranged; main document does not overflow. Advanced settings/right status area may scroll on smaller heights.
-- Live device page inspected at 1920×1080: no document overflow; Follower/Leader home and gravity controls present. Maintenance buttons follow column width (287–298 px in this viewport) with 48 px height, not oversized vertically.
-- Mock intentionally disables factory-zero maintenance, so it shows generic preparation-position controls; identical frontend does not imply identical hardware-state labels or availability.
-- Visual acceptance is scoped to these pages and states; keyboard accessibility and all fault/running states remain outside this visual check. Runtime regression: 29 passed.
+扩展既有工作台，不是替换全站模板。采用当前采集页的连续表面、细分隔线、蓝色活动标记、全局相机＋左右腕视角。设计技能用于保留这一视觉语言、截图对照及响应式复核；不生成额外品牌资产。
 
-final result: passed (scoped visual/parity check)
+本地地址：`http://127.0.0.1:8886/`。仅mock、设备未连接、RL默认off；不代表IPC部署或真实RL验收。打开RL不发送模式切换或开始命令。截图是本机验收产物，未纳入Git。
+
+- 原界面风格依据：[采集工作台](data/analysis/parts-rl-ui/source-workspace.jpg)。
+- 桌面结果：[RL页面](data/analysis/parts-rl-ui/rl-desktop.jpg)，按1600×900视口覆盖16:9；截图像素随浏览器缩放变化。
+- 窄屏补充：900×900视口覆盖，改为纵向滚动；双臂测量、控制区和数据状态均可访问。默认视口已恢复。
+- 状态：未选任务、未标定、无新鲜反馈、off均真实显示，未伪造高度/力矩或训练READY。
+
+## 五项对照
+
+| 表面 | 结果 |
+|---|---|
+| 布局 | RL与推理/HIL同级；左视觉和双臂观测、右控制和试验状态，桌面不替换原设备页 |
+| 字体 | 沿用现有中文字体；数字强化、单位与标签区分，长ID折行 |
+| 颜色与表面 | 白色连续面、细分隔线、蓝色活动态；不新增大阴影卡片 |
+| 图标与资产 | 复用现有相机/控制/SVG图标；没有外部图片或模型标识 |
+| 操作与状态 | 原暂停/软件停止保留；off、未连接及缺配置时禁止开始，S快捷键使用同一禁用门禁 |
+
+## 复核与修正
+
+首次窄屏复核发现旧固定高度布局会挤压RL信息，已将RL窄屏单独改成纵向滚动，不改变其余模块布局。修正了RL页面中不相关的“无需任务直接遥操作”标题。浏览器控制台无error/warn；JS语法检查与离线API门禁测试通过。真实相机流、接触力及现场控制仍需后续获准验收。

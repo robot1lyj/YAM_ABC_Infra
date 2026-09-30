@@ -18,7 +18,7 @@ def _serve(conn, url: str, timeout: float, rtc: bool):
     try:
         try:
             client = (RtcPolicyClient if rtc else PlainPolicyClient)(url, timeout=timeout)
-            conn.send(("ready", None, None))
+            conn.send(("ready", client.metadata, None))
         except Exception as exc:
             conn.send(("error", None, f"{type(exc).__name__}: {exc}"))
             return
@@ -33,11 +33,12 @@ def _serve(conn, url: str, timeout: float, rtc: bool):
                 if client is None:
                     client = (RtcPolicyClient if rtc else PlainPolicyClient)(url, timeout=timeout)
                 if rtc:
-                    if not isinstance(observation, tuple) or len(observation) != 3:
+                    if not isinstance(observation, tuple) or len(observation) not in (3, 4):
                         raise ValueError("RTC transport requires observation, tick, prefix")
                     result = client.infer_rtc(
                         observation[0], target_start_tick=observation[1],
                         committed_actions=observation[2],
+                        **({"parts": observation[3]} if len(observation) == 4 else {}),
                     )
                 else:
                     result = client.infer(observation)
@@ -61,6 +62,7 @@ class ProcessPolicyClient:
         self.timeout = timeout
         self.rtc = rtc
         self.last_timing = None
+        self.metadata = None
         self._context = mp.get_context("spawn")
         self._process = None
         self._conn = None
@@ -86,19 +88,21 @@ class ProcessPolicyClient:
             self.close()
             raise TimeoutError("policy process startup timeout")
         try:
-            kind, _, error = parent.recv()
+            kind, metadata, error = parent.recv()
         except EOFError:
             self.close()
             raise RuntimeError("policy process exited during startup") from None
         if kind != "ready":
             self.close()
             raise RuntimeError(error or "policy process startup failed")
+        self.metadata = metadata
 
     def infer(self, observation):
         return self._infer(observation)
 
-    def infer_rtc(self, observation, *, target_start_tick: int, committed_actions):
-        return self._infer((observation, target_start_tick, committed_actions))
+    def infer_rtc(self, observation, *, target_start_tick: int, committed_actions, parts=None):
+        return self._infer((observation, target_start_tick, committed_actions) if parts is None else
+                           (observation, target_start_tick, committed_actions, parts))
 
     def _infer(self, observation):
         if self._process is None:

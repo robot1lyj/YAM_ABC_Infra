@@ -181,7 +181,11 @@ def test_system_disk_templates_keep_web_independent_and_data_absolute():
     for role in ("yam-workstation", "yam-device", "yam-executor"):
         override = (deploy / "system-disk" / f"{role}.conf.example").read_text()
         assert "WorkingDirectory=%h/YAM-runtime" in override
-        assert "ExecStart=\nExecStart=%h/YAM-runtime/.venv/bin/" in override
+        if role == "yam-workstation":
+            assert "ExecStart=\nExecStart=/usr/bin/bash %h/YAM-runtime/scripts/start_ipc_web.sh" in override
+            assert "Environment=YAM_WORKSTATION_ROOT=%h/YAM-runtime" in override
+        else:
+            assert "ExecStart=\nExecStart=%h/YAM-runtime/.venv/bin/" in override
         assert "RequiresMountsFor=" not in override
     device = (deploy / "system-disk" / "yam-device.conf.example").read_text()
     assert "--output /data/YAM/data/episodes" in device

@@ -63,6 +63,14 @@ class PolicySettings(BaseModel):
     rtc_delay_steps: int | None = Field(default=None, strict=True, ge=1, le=10)
 
 
+class PartsMarker(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    arm: Literal["left", "right"]
+    eligible: bool = True
+    empty_hand: bool = True
+    reset: bool = False
+
+
 def create_app(runtime, *, control_access=False):
     app = FastAPI(title="悟演智能采集工作台")
     owner_args = getattr(runtime, "args", None)
@@ -144,6 +152,11 @@ def create_app(runtime, *, control_access=False):
     def recording_settings(body: RecordingSettings):
         invoke(runtime.configure_recording, **body.model_dump())
         return {"queued": "recording_settings"}
+
+    @app.post("/parts/grasp")
+    def parts_grasp(body: PartsMarker):
+        invoke(runtime.mark_parts_grasp, **body.model_dump())
+        return {"queued": "parts_marker"}
 
     @app.post("/policy/restart")
     def policy_restart():

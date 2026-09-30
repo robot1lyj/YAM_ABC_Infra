@@ -1,0 +1,31 @@
+{
+  "mode": "off",
+  "contract_sha": null,
+  "behavior_snapshot_id": null,
+  "behavior_manifest_ref": null,
+  "feature_schema_id": null,
+  "reward": null,
+  "confirm_s": null,
+  "max_feedback_age_s": null,
+  "max_pose_age_s": null,
+  "max_confirmation_gap_s": null,
+  "continuity_rad": null,
+  "close_delta": null,
+  "release_position": null,
+  "left": {
+    "h_entry_m": 0.05,
+    "h_goal_m": null,
+    "minimum_height_m": null,
+    "budget_s": null,
+    "table": null,
+    "B_rad": null
+  },
+  "right": {
+    "h_entry_m": 0.05,
+    "h_goal_m": null,
+    "minimum_height_m": null,
+    "budget_s": null,
+    "table": null,
+    "B_rad": null
+  }
+}

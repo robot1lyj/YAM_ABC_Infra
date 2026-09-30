@@ -29,6 +29,7 @@ class RtcTimeline:
         self.delay_steps = delay_steps
         self.max_delay_steps = max_delay_steps
         self._submitted = deque(maxlen=64)
+        self._submitted_owners = {}
         self._committed: dict[int, tuple[np.ndarray, str]] = {}
         self._plan: dict[int, np.ndarray] = {}
         self._owners: dict[int, dict] = {}
@@ -38,9 +39,11 @@ class RtcTimeline:
         self.has_accepted_plan = False
         self.accepted_replies = 0
         self.late_replies = 0
+        self.edit_target = None  # Optional client hook; committed rows bypass it.
 
     def clear(self):
         self._submitted.clear()
+        self._submitted_owners.clear()
         self._committed.clear()
         self._plan.clear()
         self._owners.clear()
@@ -67,7 +70,12 @@ class RtcTimeline:
             target, source = self._committed[tick]
             return target.copy(), source
         if tick in self._plan:
-            return self._plan[tick].copy(), "policy"
+            target = self._plan[tick].copy()
+            if self.edit_target is not None:
+                target, owner = self.edit_target(tick, target, self._owners.get(tick))
+                self._owners[tick] = owner
+                self.last_selection = owner
+            return target, "policy"
         self.last_selection = None
         return self._action(self._last_target if self._last_target is not None else hold_target), "hold"
 
@@ -86,6 +94,11 @@ class RtcTimeline:
             self.clear()
             raise RuntimeError(reason)
         self._submitted.append((tick, action.copy()))
+        import copy
+        self._submitted_owners[tick] = copy.deepcopy(self._owners.get(tick))
+        for old in tuple(self._submitted_owners):
+            if old < tick-63:
+                del self._submitted_owners[old]
         self._last_target = action
         self._plan.pop(tick, None)
         for old in tuple(self._owners):
@@ -133,6 +146,36 @@ class RtcTimeline:
         self.pending = commitment
         return commitment
 
+    def scheduler_snapshot(self, observation_tick):
+        """Only actual submissions/immutable queued targets are valid final targets.
+
+        Uncommitted predictions may still be edited; they are not mislabeled as
+        final queue entries. Missing rows are zero with an explicit false mask.
+        """
+        history = dict(self._submitted)
+        targets = np.zeros((50, 14), dtype=np.float64)
+        valid = np.zeros(50, dtype=bool)
+        committed = np.zeros(50, dtype=bool)
+        for index in range(50):
+            tick = observation_tick + index
+            if tick in history:
+                targets[index], valid[index] = history[tick], True
+                committed[index] = True
+            elif tick in self._committed:
+                targets[index], valid[index] = self._committed[tick][0], True
+                committed[index] = True
+        return dict(targets=targets, valid_mask=valid, committed_mask=committed,
+                    missing_reason="uncommitted_prediction_is_not_a_final_target")
+
+    def final_target_at(self, tick: int):
+        """Look up an immutable target, never an uncommitted model prediction."""
+        if tick in self._committed:
+            return self._committed[tick][0].copy()
+        for submitted_tick, target in reversed(self._submitted):
+            if submitted_tick == tick:
+                return target.copy()
+        return None
+
     def install(self, commitment: RtcCommitment, actions, *, current_tick: int,
                 limit_target, request: dict | None = None) -> bool:
         """Reject a stale reply; never slide its fixed takeover tick forward."""
@@ -177,3 +220,10 @@ class RtcTimeline:
 
     def has_target(self, tick: int) -> bool:
         return tick in self._committed or tick in self._plan
+
+    def prefix_sources(self, observation_tick: int, delay_steps: int):
+        """Explicit per-tick old ownership; do not sign prefixes with a new token."""
+        import copy
+        return [dict(target_tick=tick, selection=copy.deepcopy(
+                    self._owners.get(tick, self._submitted_owners.get(tick))))
+                for tick in range(observation_tick, observation_tick+delay_steps)]

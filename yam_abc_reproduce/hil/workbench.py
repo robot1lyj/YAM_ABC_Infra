@@ -29,6 +29,11 @@ class Workbench:
     def __init__(self, args):
         self.args = args
         self.mode = args.mode
+        self._parts_configuration = {"mode": "off"}
+        parts_path = getattr(args, "parts_config", None)
+        if parts_path:
+            from .parts.config import PartsConfig
+            self._parts_configuration = PartsConfig.from_dict(json.loads(Path(parts_path).read_text())).as_dict()
         self.preview_enabled = True
         self._encoder = None
         self._preview_at = 0.0
@@ -284,6 +289,7 @@ class Workbench:
             "task_error": self.tasks.error,
             "mock": self.args.mock,
             "mode": live.get("mode", self.mode),
+            "parts_configuration": getattr(self, "_parts_configuration", {"mode": "off"}),
             "connection_error": self.error,
             "recording_error": live.get("recording_error") or self.recording_error,
             "recording_recovery": self.recording_recovery,
@@ -369,6 +375,8 @@ class Workbench:
             else:
                 self.runtime.recorder.rotate_task(output, metadata)
             self.runtime.prompt = task["task"]
+            if getattr(self.runtime, "parts", None) is not None:
+                self.runtime.rotate_parts_session()
             self.runtime.recording_allowed = True
             self.output = output
             self._session_task = dict(task)
@@ -698,6 +706,7 @@ class Workbench:
         if getattr(self.args, "executor_socket", None):
             argv.extend(("--executor-socket", self.args.executor_socket))
         for option, value in (
+            ("--parts-config", getattr(self.args, "parts_config", None)),
             ("--policy-fusion", getattr(self.args, "policy_fusion", None)),
             ("--action-dt", getattr(self.args, "action_dt", None)),
             ("--expected-policy-latency", getattr(self.args, "expected_policy_latency", None)),
@@ -822,6 +831,19 @@ class Workbench:
             raise ValueError("请先连接设备并退出初始化向导")
         self.runtime.configure_recording(mode=mode)
         self.log(f"记录模式设置已提交：{mode}")
+
+    def mark_parts_grasp(self, **body):
+        """Forward markers only; the control owner owns attempt state and CAN."""
+        if self.runtime is None or self.state != "connected" or self.initializing:
+            raise ValueError("请先连接设备并退出初始化向导")
+        if self.runtime.status.get("mode") != "inference":
+            raise ValueError("RL 抓取标记只用于模型推理控制")
+        if self.runtime.status.get("phase") == "fault" or self.runtime.status.get("stop_latched"):
+            raise ValueError("请先处理故障或紧急暂停；不会自动恢复运动")
+        marker = getattr(self.runtime, "mark_parts_grasp", None)
+        if marker is None:
+            raise ValueError("设备服务尚未启用 RL 客户端，请核对版本与启动配置")
+        marker(**body)
 
     def configure_policy(self, *, fusion, rtc_delay_steps=None):
         if self.runtime is None or self.state != "connected" or self.initializing:

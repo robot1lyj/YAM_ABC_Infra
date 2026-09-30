@@ -78,6 +78,9 @@ class DeviceClient:
     def configure_recording(self, *, mode):
         return self._request("POST", "/recording/settings", {"mode": mode})
 
+    def mark_parts_grasp(self, **body):
+        return self._request("POST", "/parts/grasp", body)
+
     def configure_policy(self, *, fusion, rtc_delay_steps=None):
         body = {"fusion": fusion}
         if rtc_delay_steps is not None:

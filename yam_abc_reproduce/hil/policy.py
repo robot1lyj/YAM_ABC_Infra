@@ -28,12 +28,20 @@ class Reply:
     client_timing: dict | None = None
     plan: dict | None = None
     planner_error: bool = False
+    parts: dict | None = None
 
 
 @dataclass(frozen=True)
 class RtcJob:
     observation: dict[str, Any]
     commitment: RtcCommitment
+    parts: dict | None = None
+
+
+@dataclass(frozen=True)
+class PolicyJob:
+    observation: dict[str, Any]
+    parts: dict
 
 
 class PolicyWorker:
@@ -189,7 +197,11 @@ class PolicyWorker:
                             observation.observation,
                             target_start_tick=observation.commitment.observation_tick,
                             committed_actions=observation.commitment.actions,
+                            **({"parts": observation.parts} if observation.parts is not None else {}),
                         )
+                    elif isinstance(observation, PolicyJob):
+                        response = self.client.infer({"type": "infer", "obs": observation.observation,
+                                                     "parts": observation.parts})
                     else:
                         response = self.client.infer(observation)
                     actions = np.array(response["actions"], copy=True)
@@ -219,6 +231,7 @@ class PolicyWorker:
                         server_timing=server_timing,
                         client_timing=getattr(self.client, "last_timing", None),
                         plan=plan,
+                        parts=response.get("parts"),
                     )
                 except Exception as exc:
                     error = f"{type(exc).__name__}: {exc}"

@@ -19,6 +19,7 @@
 |---|---|
 | 模块分层、资源拥有者、局部失败恢复 | [架构](dagger_architecture.md) |
 | 同步50步、TDA、RTC及Thor合同 | [接口](condapi_interface.md)、[同步与性能](synchronization_design.md) |
+| RL页面、PARTS资格/残差、原始包与发布 | [RL客户端](parts_client.md) |
 | 用户已接受的约束 | [决策](decisions.md) |
 | 什么测过、什么未部署 | [验收状态](acceptance.md)；跨回合续作才读[检查点](cache/checkpoint.md) |
 | 怎么检索/维护项目记忆 | [记忆规则](memory.md)、[任务路由](cache/context_index.md) |

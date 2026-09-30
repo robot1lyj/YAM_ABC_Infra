@@ -106,6 +106,8 @@ def recover_recording(runtime, change):
         if candidate.error or not candidate._thread.is_alive():
             raise RuntimeError(candidate.error or "新录制线程已退出")
         exchange.install(runtime)
+        if getattr(runtime, "parts", None) is not None:
+            runtime.rotate_parts_session()
         change.committed = True
         return output
     finally:

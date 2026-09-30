@@ -165,6 +165,11 @@
               <p>Thor 本地策略 · 自主执行</p>
               <span class="mode-state">选择模式 →</span>
             </button>
+            <button class="mode-card" id="rl-entry" data-view="rl" aria-controls="rl-observation-panel" aria-pressed="false">
+              <div><svg><use href="#i-pulse" /></svg></div>
+              <h3>RL</h3>
+              <span class="mode-state">查看试验 →</span>
+            </button>
             <button class="mode-card" data-mode="teleop">
               <div>
                 <svg><use href="#i-arm" /></svg
@@ -233,6 +238,31 @@
                     ><i class="led" id="sync-dot"></i
                     ><span id="sync">尚无同步观测</span></span
                   ><span>预览 5 Hz · 原始采集独立运行</span>
+                </div>
+              </section>
+              <section class="panel rl-observation-panel" id="rl-observation-panel" hidden>
+                <div class="panel-heading"><h2>抓取观测</h2><span class="pill" id="rl-active-arm">无活动臂</span></div>
+                <div class="rl-arm-grid">
+                  <section class="rl-arm" aria-label="左臂 RL 观测">
+                    <div class="rl-arm-heading"><h3>左 Follower</h3><span class="pill" id="rl-left-phase">未启用</span></div>
+                    <dl class="rl-measurements">
+                      <div><dt>离桌面高度</dt><dd id="rl-left-height">未标定</dd></div>
+                      <div><dt>目标高度</dt><dd id="rl-left-goal">未配置</dd></div>
+                      <div><dt>夹爪 |力矩|</dt><dd id="rl-left-effort">—</dd></div>
+                      <div><dt>关节残差 · 最大值</dt><dd id="rl-left-residual">—</dd></div>
+                    </dl>
+                    <button class="button" id="rl-left-grasp" type="button">标记左臂抓取接近</button>
+                  </section>
+                  <section class="rl-arm" aria-label="右臂 RL 观测">
+                    <div class="rl-arm-heading"><h3>右 Follower</h3><span class="pill" id="rl-right-phase">未启用</span></div>
+                    <dl class="rl-measurements">
+                      <div><dt>离桌面高度</dt><dd id="rl-right-height">未标定</dd></div>
+                      <div><dt>目标高度</dt><dd id="rl-right-goal">未配置</dd></div>
+                      <div><dt>夹爪 |力矩|</dt><dd id="rl-right-effort">—</dd></div>
+                      <div><dt>关节残差 · 最大值</dt><dd id="rl-right-residual">—</dd></div>
+                    </dl>
+                    <button class="button" id="rl-right-grasp" type="button">标记右臂抓取接近</button>
+                  </section>
                 </div>
               </section>
               <section class="panel session-panel" id="session-summary">
@@ -374,6 +404,36 @@
                 <p class="muted" id="policy-source-current"></p>
                 <button class="button subtle policy-restart" id="policy-restart" type="button">重载推理通信</button>
                 <button class="button subtle policy-restart" id="planner-restart" type="button">重载动作规划</button>
+                </details>
+              </section>
+              <section class="panel rl-run-panel" id="rl-run-panel" hidden>
+                <div class="panel-heading"><h2>RL 试验</h2><span class="pill" id="rl-mode">关闭</span></div>
+                <div class="rl-mode-strip" aria-label="RL 执行模式">
+                  <span data-rl-mode="off">关闭</span><span data-rl-mode="shadow">影子</span>
+                  <span data-rl-mode="collect">残差采集</span><span data-rl-mode="eval">评估</span>
+                </div>
+                <p id="rl-readiness" class="rl-readiness" role="status">未启用 RL；基础推理不受影响。</p>
+                <div class="rl-run-actions">
+                  <button class="button" id="rl-prepare" type="button">使用推理控制</button>
+                  <button class="button" id="rl-clear-markers" type="button">清除接近标记</button>
+                </div>
+                <dl class="rl-run-details">
+                  <div><dt>控制模式</dt><dd id="rl-control-mode">—</dd></div>
+                  <div><dt>服务协议</dt><dd id="rl-capability">未验证</dd></div>
+                  <div><dt>数据记录</dt><dd id="rl-recording">未开始</dd></div>
+                  <div><dt>本地完整 / 训练就绪</dt><dd>待离线核验 / 待服务端审核</dd></div>
+                </dl>
+                <details class="policy-disclosure rl-configuration">
+                  <summary>运行配置</summary>
+                  <p class="muted">配置按试验固定；影子模式不改动作，采集与评估需完成协议和参数核对。</p>
+                  <dl class="rl-run-details">
+                    <div><dt>入口高度</dt><dd id="rl-entry-height">左 / 右 50 mm</dd></div>
+                    <div><dt>抓取判定</dt><dd>|力矩| &gt; 0.65 Nm · 连续确认</dd></div>
+                    <div><dt>确认时间</dt><dd id="rl-confirm-time">未配置</dd></div>
+                    <div><dt>运行编号</dt><dd id="rl-run-id">—</dd></div>
+                  </dl>
+                  <p class="muted" id="rl-parameter-gaps"></p>
+                  <p class="muted">启动配置：<code>--parts-config configs/parts_client.json</code></p>
                 </details>
               </section>
               <section class="panel health-panel">

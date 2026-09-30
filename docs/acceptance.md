@@ -10,6 +10,8 @@
 
 ## 已实现与部署差异
 
+PARTS RL客户端与同级RL页面仅完成本地离线验收，默认off；原始协议、模式边界、数据完整性和启动命令归 [RL客户端](parts_client.md)。本轮全套测试607 passed、4 skipped、17 subtests；最终相关回归114 passed，包含未来RTC交还按相邻最终目标检查、拒绝真实跳变的回归。另有3秒mock Runtime验证：8次RTC回复接入、0迟到、0deadline miss、零物理残差；不是IPC实时性或真机结果。页面验收见 [设计QA](../design-qa.md)。未部署IPC，未对接实际actor/learner，不能据此开始正式RL采集。
+
 | 能力 | 当前代码 | 现场状态 |
 |---|---|---|
 | 四模式、绝对遥操作、HIL手柄锁定/页面交还 | 已实现 | 有历史现场使用；本轮不复测 |

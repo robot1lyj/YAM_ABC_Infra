@@ -17,6 +17,7 @@ def build_rtc_request(
     target_start_tick: int,
     committed_actions,
     max_delay_steps: int,
+    parts: dict | None = None,
 ) -> dict:
     """Build the strict condapi trained-RTC envelope without guessing a tick.
 
@@ -49,7 +50,7 @@ def build_rtc_request(
     delay = len(prefix)
     if delay > max_delay_steps:
         raise ValueError("RTC committed prefix exceeds trained delay range")
-    return {
+    payload = {
         "type": "infer",
         "obs": observation,
         "rtc": {
@@ -60,6 +61,9 @@ def build_rtc_request(
             "committed_actions": prefix.copy(),
         },
     }
+    if parts is not None:
+        payload["parts"] = parts
+    return payload
 
 
 class RtcPolicyClient(PlainPolicyClient):
@@ -82,12 +86,13 @@ class RtcPolicyClient(PlainPolicyClient):
             raise ValueError("Thor endpoint does not advertise trained RTC H50/14D")
         self.max_delay_steps = meta["rtc_max_delay_steps"]
 
-    def infer_rtc(self, observation: dict, *, target_start_tick: int, committed_actions):
+    def infer_rtc(self, observation: dict, *, target_start_tick: int, committed_actions, parts=None):
         payload = build_rtc_request(
             observation,
             target_start_tick=target_start_tick,
             committed_actions=committed_actions,
             max_delay_steps=self.max_delay_steps,
+            parts=parts,
         )
         result = super().infer(payload)
         timing = result.get("server_timing") if isinstance(result, dict) else None

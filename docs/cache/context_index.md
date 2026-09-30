@@ -9,6 +9,7 @@
 | 四模式使用、配置、操作 | [运行手册](../hil_quickstart.md) | 对照实际配置和CLI帮助 |
 | D405配对、多臂同步、性能 | [同步设计](../synchronization_design.md) | 先看实测，再决定升级 |
 | Thor/condapi模型接口 | [模型契约](../condapi_interface.md) | 再读condapi对应章节，不全量搬库 |
+| RL客户端、残差资格、raw包与outbox | [PARTS合同](../parts_client.md) | 默认off；现场与服务端验收另查 |
 | 设备与采集平台、双按钮、片段管理 | [采集手册](../collect.md) | 操作与事件仲裁变更时 |
 | 数据集导入、清洗、分类、合并界面 | [数据集工作台](../dataset_workbench.md) | 索引、检查和离线任务变更时 |
 | 专家导出、格式转换 | [转换手册](../convert.md) | 核对具体episode和转换产物 |

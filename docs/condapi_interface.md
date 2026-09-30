@@ -2,6 +2,8 @@
 
 本页负责 YAM 控制侧契约；模型训练、检查点转换及 Thor 服务由 condapi 管理。现场服务版本和性能须按[验收](acceptance.md)单独核对；历史快照和测量留在 [历史接口记录](archive/condapi_interface_20260922.md)。
 
+可选RL扩展不改变普通OpenPI合同；`parts` metadata/请求/回复、RTC残差边界及原始包归 [PARTS客户端](parts_client.md)。默认关闭，服务端协议尚待对接，不把本地mock当Thor验收。
+
 ## v1 接口验收合同
 
 | 内容 | 当前合同 |

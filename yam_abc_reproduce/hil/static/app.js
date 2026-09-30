@@ -32,6 +32,9 @@ function text(id, value) {
 function operatorHint(message) {
   const raw = String(message || "");
   const rules = [
+    [/PARTS.*(?:queue|recording|write failure)/i, "RL 原始记录失败，策略已暂停。请检查存储与记录服务，保留失败数据；修复后建立新的 RL 数据会话，不需要重连机械臂。"],
+    [/PARTS.*(?:unsupported|handshake|context|contract|snapshot|candidate|feature|late reply)/i, "RL 服务协议或回复未通过核对。请保持暂停，检查服务合同、候选形状、快照和返回时效；不要通过重连机械臂解决协议问题。"],
+    [/PARTS.*(?:continuity|height boundary|combined target|inactive arm)/i, "RL 合成目标不符合执行边界，策略已暂停。请检查残差范围、桌面标定和连续性配置，保留请求记录；不要连续启动重试。"],
     [/Ownership retained|SDK startup failed with uncertain cleanup/i, "机械臂SDK初始化失败，尚不能确认后台控制线程已清理。为避免两个进程同时控制，CAN所有权仍保留；请支撑机械臂、保留日志后受控重启设备持有进程，不要反复连接或Reset CAN。"],
     [/CAN .* is owned by/i, "CAN正被另一设备会话占用。请确认是哪一个控制进程，支撑机械臂后正常关闭原会话，再连接；不要直接重置正在使用的总线。"],
     [/fail to communicate with the motor/i, "电机通信失败。请检查提示中的CAN通道、控制器供电和USB-CAN状态；先暂停并支撑机械臂，不要连续重试。若同时提示SDK清理不确定，需要受控重启设备持有进程。"],
@@ -132,6 +135,7 @@ function render() {
       mode === "collect",
     canMaintain = connected && !latched && paused && !recording,
     idle = maint === "idle";
+  const rlView = page === "rl", parts = state.parts;
   text("environment", state.mock ? "模拟工作站" : "真实设备");
   $("environment").className = "pill" + (state.mock ? "" : " ok");
   const cNames = {
@@ -179,7 +183,7 @@ function render() {
       ? "断开机械臂"
       : "连接机械臂";
   document.querySelectorAll("[data-mode]").forEach((b) => {
-    b.classList.toggle("active", b.dataset.mode === mode);
+    b.classList.toggle("active", !rlView && b.dataset.mode === mode);
     b.querySelector(".mode-state").textContent =
       b.dataset.mode === mode ? "● 当前模式" : "选择模式 →";
     b.disabled =
@@ -197,7 +201,12 @@ function render() {
         ? "请先新建或选择采集任务"
         : "";
   });
-  $("workspace-page").classList.toggle("teleop-view", teleopView);
+  $("rl-entry").classList.toggle("active", rlView);
+  $("rl-entry").setAttribute("aria-pressed", String(rlView));
+  $("workspace-page").classList.toggle("rl-view", rlView);
+  $("workspace-page").classList.toggle("teleop-view", teleopView && !rlView);
+  $("rl-observation-panel").hidden = !rlView;
+  $("rl-run-panel").hidden = !rlView;
   $("recording-controls").hidden = teleopView || mode !== "collect";
   const recoveringRecording = state.recording_recovery?.state === "recovering";
   $("recording-restart").hidden = !state.recording_error && !recoveringRecording;
@@ -246,12 +255,12 @@ function render() {
   if (!$("policy-source-url").value) $("policy-source-url").value = state.policy_url || "";
   text("policy-source-current", `当前来源：${state.policy_url || "未配置"}`);
   $("planner-restart").disabled = !policyEditable || !!state.mock;
-  $("session-summary").hidden = teleopView;
-  $("recent-episodes").hidden = teleopView;
-  text("control-title", teleopView ? "遥操作控制" : "采集控制");
+  $("session-summary").hidden = teleopView || rlView;
+  $("recent-episodes").hidden = teleopView || rlView;
+  text("control-title", rlView ? "RL 控制" : teleopView ? "遥操作控制" : "采集控制");
   text(
     "heading",
-    page === "workspace"
+    rlView ? "RL 试验" : page === "workspace"
       ? teleopView
         ? "遥操作"
         : "采集工作台"
@@ -299,9 +308,16 @@ function render() {
   );
   const intervening = mode === "hil" && (state.intervention_pending || ["takeover", "human"].includes(state.phase));
   $("start").disabled = !(canRun && paused && idle) || intervening;
+  if (rlView) {
+    text("start", "开始 RL 试验");
+    $("start").disabled ||= mode !== "inference" || !parts || !!parts.recording_error;
+    $("start").title = !parts ? "RL 未启用；请先核对启动配置" : mode !== "inference"
+      ? "请先暂停并点击使用推理控制" : "手动开始；不会因打开 RL 页面自动运动";
+  }
   $("start").title = ["inference", "hil"].includes(mode) && !state.policy_ready
     ? "推理通信尚未就绪；可在保持状态重载推理通信" : "";
   if (intervening) $("start").title = "介入期间只能暂停或明确交还模型";
+  renderRL({connected, idle, paused, latched, recording, policyEditable, mode, parts});
   $("header-stop").disabled =
     online && state.connection === "disconnected";
   $("header-reset").hidden = !latched;
@@ -789,6 +805,52 @@ function healthRow(label, value, ok) {
   row.append(a, b);
   $("health").append(row);
 }
+function renderRL({connected, idle, paused, latched, recording, policyEditable, mode, parts}) {
+  const labels = {off: "关闭", shadow: "影子 · 零残差", collect: "残差采集", eval: "评估"};
+  const stages = {READY: "等待接近", ACTIVE_DESCENT: "下降中", ACTIVE_CLOSURE: "闭合确认",
+    EXIT_PENDING: "等待交还", WAIT_REARM: "等待重新接近"};
+  const cfg = parts?.config || state.parts_configuration || {};
+  const runMode = parts?.mode || cfg.mode || "off";
+  const number = (v, scale, unit, missing = "—") =>
+    Number.isFinite(v) ? `${(v * scale).toFixed(1)} ${unit}` : missing;
+  text("rl-mode", labels[runMode] || "未识别");
+  document.querySelectorAll("[data-rl-mode]").forEach(el => {
+    el.classList.toggle("active", el.dataset.rlMode === runMode);
+    el.setAttribute("aria-current", el.dataset.rlMode === runMode ? "true" : "false");
+  });
+  text("rl-control-mode", `${names[mode] || "未连接"} · ${phases[state.phase] || "未就绪"}`);
+  text("rl-active-arm", parts?.active_arm === "left" ? "左臂活动" : parts?.active_arm === "right" ? "右臂活动" : "无活动臂");
+  text("rl-capability", parts?.capability === "supported" ? "已核对" : parts?.capability === "unsupported" ? "未支持 / 未核对" : "未验证");
+  text("rl-recording", parts?.recording_error ? "记录失败" : state.recording_saving ? "整理中" : recording ? "正在记录" : "未开始");
+  text("rl-run-id", parts?.run_id || "—");
+  text("rl-confirm-time", number(cfg.confirm_s, 1000, "ms", "未配置"));
+  text("rl-entry-height", ["left", "right"].map(a => `${a === "left" ? "左" : "右"} ${number(cfg[a]?.h_entry_m ?? .05, 1000, "mm")}`).join(" / "));
+  text("rl-parameter-gaps", (parts?.parameter_gaps || []).length ? `待配置：${parts.parameter_gaps.join("、")}` : "");
+  text("rl-readiness", parts?.recording_error ? operatorHint(parts.recording_error) : !parts
+    ? "RL 未启用。可查看页面；启动配置不会由此页面自动开启。"
+    : runMode === "shadow" ? "影子模式：只记录候选和观测，机械臂仍执行基础模型动作。"
+    : parts.capability !== "supported" ? "等待 RL 服务协议核对；不会执行未经核对的残差。"
+    : "运行配置已固定，开始前确认现场与录制状态。");
+  $("rl-prepare").disabled = !policyEditable || mode === "inference" || !state.selected_task || state.intervention_pending;
+  $("rl-prepare").title = "只切换控制模式，不自动开始运动，不断开机械臂";
+  const markerAllowed = connected && idle && !latched && mode === "inference" && !!parts && !parts.recording_error;
+  for (const [index, a] of ["left", "right"].entries()) {
+    const snap = parts?.arms?.[a];
+    const feedback = snap?.force_feedback;
+    const values = (parts?.physical_residual_rad || []).slice(index * 7, index * 7 + 6);
+    const magnitude = values.length === 6 && values.every(Number.isFinite) ? Math.max(...values.map(Math.abs)) : null;
+    text(`rl-${a}-phase`, stages[snap?.phase] || "未启用");
+    text(`rl-${a}-height`, snap?.height_valid ? number(snap.height_m, 1000, "mm") : "未标定 / 无效");
+    text(`rl-${a}-goal`, number(snap?.h_goal_m ?? cfg[a]?.h_goal_m, 1000, "mm", "未配置"));
+    text(`rl-${a}-effort`, connected && snap?.force_valid && Number.isFinite(feedback?.effort_nm)
+      ? `${Math.abs(feedback.effort_nm).toFixed(3)} Nm` : "待新鲜反馈");
+    text(`rl-${a}-residual`, connected ? number(magnitude, 1000, "mrad") : "—");
+    $(`rl-${a}-grasp`).disabled = !markerAllowed;
+    text(`rl-${a}-grasp`, snap?.eligible ? `${a === "left" ? "左" : "右"}臂已标记 · 取消` : `标记${a === "left" ? "左" : "右"}臂抓取接近`);
+  }
+  $("rl-clear-markers").disabled = !markerAllowed || !paused || recording;
+  $("rl-clear-markers").title = "保持且结束录制后，清除双臂标记和当前尝试；不运动";
+}
 async function poll() {
   if (busy) return;
   busy = true;
@@ -817,16 +879,17 @@ function switchPage(next) {
   document
     .querySelectorAll("[data-page]")
     .forEach((b) => b.classList.toggle("active", b.dataset.page === next));
-  $("workspace-page").hidden = next !== "workspace";
+  $("workspace-page").hidden = !["workspace", "rl"].includes(next);
   $("devices-page").hidden = next !== "devices";
-  text("page-name", next === "workspace" ? "采集工作台" : "设备与调试");
-  text("heading", next === "workspace" ? "采集工作台" : "设备与调试");
+  text("page-name", next === "rl" ? "RL 试验" : next === "workspace" ? "采集工作台" : "设备与调试");
+  text("heading", next === "rl" ? "RL 试验" : next === "workspace" ? "采集工作台" : "设备与调试");
   text(
     "subtitle",
     next === "workspace"
       ? "无需任务即可遥操作；选择采集任务后才开放数据录制。"
       : "查看四臂状态，示教准备位，完成采集前的设备调试。",
   );
+  render();
 }
 for (let j = 0; j < 6; j++) {
   const el = document.createElement("div");
@@ -840,6 +903,7 @@ document
 document
   .querySelectorAll("[data-mode]")
   .forEach((b) => (b.onclick = () => {
+    switchPage("workspace");
     if (state.intervention_pending) {
       confirmAction("结束介入并切换模式？", "当前录制将结束，两边保持当前位置；切换后不会自动运动。", () =>
         action("/event/end_intervention:" + b.dataset.mode));
@@ -847,6 +911,16 @@ document
       action("/event/mode:" + b.dataset.mode);
     }
   }));
+$("rl-entry").onclick = () => switchPage("rl");
+$("rl-prepare").onclick = () => action("/event/mode:inference");
+for (const side of ["left", "right"]) {
+  $(`rl-${side}-grasp`).onclick = () => action("/parts/grasp", {
+    arm: side, eligible: !state.parts?.arms?.[side]?.eligible, empty_hand: true,
+  });
+}
+$("rl-clear-markers").onclick = () => action("/parts/grasp", {
+  arm: "left", eligible: false, empty_hand: false, reset: true,
+});
 document
   .querySelectorAll("[data-event]")
   .forEach((b) => (b.onclick = () => action("/event/" + b.dataset.event)));
@@ -1034,7 +1108,8 @@ document.addEventListener("keydown", (e) => {
   }[e.key.toLowerCase()];
   if (event) {
     e.preventDefault();
-    if (event === "discard") $("discard").click();
+    if (event === "start") $("start").click();
+    else if (event === "discard") $("discard").click();
     else action("/event/" + event);
   }
 });
@@ -1048,7 +1123,7 @@ for (const img of document.querySelectorAll(".camera img")) {
 }
 setInterval(() => {
   if (
-    page !== "workspace" ||
+    !["workspace", "rl"].includes(page) ||
     !camerasConnected() ||
     state.preview_enabled === false ||
     document.hidden
@@ -1081,10 +1156,10 @@ function renderTask(locked) {
   text("task-library-count", `${(state.tasks || []).length} 个任务`);
   text("task-badge", task ? "当前任务" : "未选任务");
   text("task-category", "任务 / DATASET TASK");
-  text("task-name", task?.name || "无需任务，直接遥操作");
+  text("task-name", task?.name || (page === "rl" ? "请选择 RL 数据任务" : "无需任务，直接遥操作"));
   text(
     "task-instruction",
-    task?.instruction || "连接机械臂即可双臂遥操作；需要录制数据时再选择采集任务。",
+    task?.instruction || (page === "rl" ? "" : "连接机械臂即可双臂遥操作；需要录制数据时再选择采集任务。"),
   );
   text(
     "task-identity",
@@ -1129,7 +1204,7 @@ function renderTask(locked) {
       : !task
       ? state.taskless_teleop
         ? "暂停遥操作后选任务；不需断开机械臂"
-        : "可直接连接机械臂遥操作 · 录制前请选择任务"
+        : page === "rl" ? "选择数据任务后准备 RL 试验" : "可直接连接机械臂遥操作 · 录制前请选择任务"
       : !task.task
         ? "请在任务详情中编辑并补填英文 task"
         : !camerasConnected()

@@ -25,6 +25,7 @@ class ArmConfig:
     entry_hysteresis_m: float = 0.0
     minimum_descent_m_s: float = 0.0
     table: dict | None = None
+    height_reference: str = "table"  # Legacy runs keep their original frame.
     B_rad: tuple | None = None
     open_position_min: float | None = 0.8
     open_confirm_s: float | None = 0.3
@@ -40,6 +41,7 @@ class PartsConfig:
     feature_schema_id: str | None = None
     reward: dict | None = None
     confirm_s: float | None = None
+    force_confirm_samples: int = 1  # Legacy duration-only confirmation.
     max_feedback_age_s: float | None = None
     max_pose_age_s: float | None = None
     max_confirmation_gap_s: float | None = None
@@ -63,6 +65,8 @@ class PartsConfig:
             raise ValueError(f"PARTS selector must be {RULES_SCHEMA}")
         if config.mode not in ("off", "shadow", "collect", "eval"):
             raise ValueError("PARTS mode must be off/shadow/collect/eval")
+        if type(config.force_confirm_samples) is not int or config.force_confirm_samples < 1:
+            raise ValueError("PARTS force_confirm_samples must be a positive integer")
         for key in (
             "confirm_s",
             "max_feedback_age_s",
@@ -111,6 +115,10 @@ class PartsConfig:
                     raise ValueError(f"PARTS {arm}.{key} must be finite")
             if options.h_entry_m is None:
                 raise ValueError("PARTS entry height must be specified")
+            if options.height_reference not in ("table", "base_z"):
+                raise ValueError("PARTS height_reference must be table or base_z")
+            if options.height_reference == "base_z" and options.table is not None:
+                raise ValueError("PARTS base_z must not carry a table calibration")
             if options.table is not None:
                 from .height import validate_table
 
@@ -160,6 +168,8 @@ class PartsConfig:
         ]
         for arm in ARMS:
             for key in ("h_goal_m", "minimum_height_m", "budget_s", "table", "B_rad"):
+                if key == "table" and getattr(self, arm).height_reference == "base_z":
+                    continue
                 if getattr(getattr(self, arm), key) is None:
                     missing.append(f"{arm}.{key}")
             missing.extend(
@@ -175,7 +185,12 @@ class PartsConfig:
             "open_position_min",
             "open_confirm_s",
         )
-        return [key for key in fields if getattr(getattr(self, arm), key) is None] + [
+        options = getattr(self, arm)
+        return [
+            key for key in fields
+            if not (key == "table" and options.height_reference == "base_z")
+            and getattr(options, key) is None
+        ] + [
             key
             for key in (
                 "close_delta",
@@ -219,6 +234,11 @@ class PartsConfig:
                     "minimum_descent_m_s",
                 )
             }
+            # Keep hashes of historical table/duration-only runs reproducible.
+            if getattr(self, arm).height_reference != "table":
+                body[arm]["height_reference"] = getattr(self, arm).height_reference
+        if self.force_confirm_samples != 1:
+            body["force_confirm_samples"] = self.force_confirm_samples
         return hashlib.sha256(
             json.dumps(body, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
         ).hexdigest()

@@ -824,7 +824,7 @@ function renderRL({connected, idle, paused, latched, recording, policyEditable, 
   text("rl-capability", parts?.capability === "supported" ? "已核对" : parts?.capability === "unsupported" ? "未支持 / 未核对" : "未验证");
   text("rl-recording", parts?.recording_error ? "记录失败" : state.recording_saving ? "整理中" : recording ? "正在记录" : "未开始");
   text("rl-run-id", parts?.run_id || "—");
-  text("rl-confirm-time", number(cfg.confirm_s, 1000, "ms", "未配置"));
+  text("rl-confirm-time", `${number(cfg.confirm_s, 1000, "ms", "未配置")} · 至少 ${cfg.force_confirm_samples ?? 1} 次新鲜反馈`);
   text("rl-entry-height", ["left", "right"].map(a => `${a === "left" ? "左" : "右"} ${number(cfg[a]?.h_entry_m ?? .05, 1000, "mm")}`).join(" / "));
   text("rl-parameter-gaps", (parts?.parameter_gaps || []).length ? `待配置：${parts.parameter_gaps.join("、")}` : "");
   text("rl-readiness", parts?.recording_error ? operatorHint(parts.recording_error) : !parts
@@ -845,6 +845,8 @@ function renderRL({connected, idle, paused, latched, recording, policyEditable, 
     attempt_active: "抓取尝试进行中", old_residual_committed: "等待旧残差执行结束"};
   for (const [index, a] of ["left", "right"].entries()) {
     const snap = parts?.arms?.[a];
+    text(`rl-${a}-height-label`, (snap?.height_reference || cfg[a]?.height_reference) === "base_z"
+      ? "基座 Z" : "离桌面高度");
     const feedback = snap?.force_feedback;
     const values = (parts?.physical_residual_rad || []).slice(index * 7, index * 7 + 6);
     const magnitude = values.length === 6 && values.every(Number.isFinite) ? Math.max(...values.map(Math.abs)) : null;

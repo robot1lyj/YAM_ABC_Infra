@@ -85,7 +85,8 @@ class PartsClient:
         if self.emit(kind, value) is False:
             self.error = "PARTS recording queue overflow/write failure"
 
-    def observe(self, *, tick, now, epoch, state, ages, feedback, policy_active, recording=True):
+    def observe(self, *, tick, now, epoch, state, ages, feedback, policy_active,
+                recording=True, sampled_at=None):
         self.tick, self.now = tick, now
         self.machine.event_refs = []
         if self.epoch is not None and epoch != self.epoch:
@@ -94,7 +95,8 @@ class PartsClient:
             self._edited.clear()
             self._handbacks.clear()
         self.epoch = epoch
-        height = self.heights.sample(state, sampled_at=now, feedback_age_s=ages, now=now)
+        height = self.heights.sample(state, sampled_at=now if sampled_at is None else sampled_at,
+                                     feedback_age_s=ages, now=now)
         force = {arm: feedback[i] for i, arm in enumerate(ARMS)}
         committed = [] if self.committed_arms is None else sorted(self.committed_arms())
         self.selector_context = dict(
@@ -179,10 +181,12 @@ class PartsClient:
             sent_at=self.now,
             observation_state=None if observation is None else observation.get("observation.state"),
             observation_tick=observation_tick,
+            observation_record_tick=self.tick,
+            observation_reference_time=token.observed_at,
             committed_prefix=None if commitment is None else commitment.actions.copy(),
             committed_sources=(scheduler or {}).get("committed_sources", []),
             video_refs=None,
-            video_reference_reason="resolved_from_recorded_observation_id_on_finalize",
+            video_reference_reason="resolved_from_exact_record_tick_and_input_state_on_finalize",
         )
         self.requests[(token.epoch, token.request_id)] = copy.deepcopy(item)
         while len(self.requests) > 64:
@@ -293,6 +297,7 @@ class PartsClient:
                 force_feedback=self.machine.feedback.get(arm),
                 elapsed_s=max(0, self.now - self.machine.attempt["entry_time"]) if active else 0,
                 confirmation_s=confirmation,
+                confirmation_samples=self.machine.confirm_count if active else 0,
                 force_valid=bool(force_valid),
                 effort_nm=self.machine.feedback[arm]["effort_nm"] if force_valid else None,
             )
@@ -421,6 +426,8 @@ class PartsClient:
         return target, source
 
     def submitted(self, tick, now, target, selection, *, error=None):
+        if self.selector_context is not None:
+            self.selector_context["submitted_at"] = now
         source = (selection or {}).get("parts")
         residual = np.zeros(14) if source is None else np.asarray(target) - source["base_target"]
         if source is not None:

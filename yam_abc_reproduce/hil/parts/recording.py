@@ -152,6 +152,37 @@ def jsonl(path):
         return [json.loads(line) for line in stream if line.strip()]
 
 
+def resolve_request_observation(request, observations):
+    """Resolve input RGB/state together, including legacy repeated image IDs.
+
+    New captures name the exact recording tick (not the RTC target-start tick).
+    Legacy captures use their saved request state to disambiguate repeated IDs.
+    A mismatch stays unresolved instead of silently choosing the first frame.
+    """
+    context = request["context"]
+    candidates = observations.get((context["epoch"], context["observation_id"]), [])
+    record_tick = request.get("observation_record_tick")
+    if record_tick is not None:
+        candidates = [c for c in candidates if c["reference"]["tick"] == record_tick]
+    state = request.get("observation_state")
+    if state is not None:
+        state = np.asarray(state, dtype=float)
+        if state.shape != (14,) or not np.isfinite(state).all():
+            return None
+        candidates = [
+            c for c in candidates
+            if c["state"] is not None
+            and np.asarray(c["state"]).shape == (14,)
+            and np.allclose(c["state"], state, atol=1e-8, rtol=0)
+        ]
+    elif len(candidates) != 1:
+        return None  # No saved state: ambiguous legacy inputs cannot be inferred.
+    if not candidates:
+        return None
+    sent_at = request.get("sent_at", candidates[0]["reference"]["time"])
+    return min(candidates, key=lambda c: abs(c["reference"]["time"] - sent_at))["reference"]
+
+
 def finalize(path, *, episodes=(), producer_sha, gaps=()):
     """Called by an offline/background owner only, after all writers are closed."""
     path = Path(path)
@@ -185,15 +216,25 @@ def finalize(path, *, episodes=(), producer_sha, gaps=()):
                 sync=row.get("sync"),
             )
             if row.get("observation_valid") and row.get("obs_id") is not None:
-                observations.setdefault((row.get("epoch"), row["obs_id"]), reference)
+                observations.setdefault((row.get("epoch"), row["obs_id"]), []).append(
+                    dict(reference=reference, state=row.get("observation_state"))
+                )
             attempt_id = (row.get("parts") or {}).get("attempt_id")
             if attempt_id:
                 members.append(attempt_id)
                 attempt_frames.setdefault(attempt_id, []).append(reference)
         for request in requests:
-            key = (request["context"]["epoch"], request["context"]["observation_id"])
-            if key in observations and request.get("video_refs") is None:
-                request["video_refs"] = observations[key]
+            if request.get("video_refs") is None:
+                reference = resolve_request_observation(request, observations)
+                if reference is not None:
+                    request["video_refs"] = reference
+                    if request.get("observation_record_tick") is not None:
+                        reason = "record_tick_and_state_verified"
+                    elif request.get("observation_state") is not None:
+                        reason = "legacy_input_state_verified"
+                    else:
+                        reason = "legacy_observation_id_only"
+                    request["video_reference_reason"] = reason
         for attempt in attempts:
             refs = attempt_frames.get(attempt["attempt_id"])
             if refs:
@@ -375,12 +416,23 @@ def validate_package(path):
         import av
 
         actual_episodes = set()
+        observations = {}
         for manifest_path in sorted((path / "episodes").glob("*/manifest.json")):
             manifest = json.loads(manifest_path.read_text())
             actual_episodes.add(manifest["episode_id"])
             rows = list(read_rows(manifest_path.parent))
             if len(rows) != manifest["steps"]:
                 problems.append("episode_row_count_mismatch")
+            for row in rows:
+                if row.get("observation_valid") and row.get("obs_id") is not None:
+                    observations.setdefault((row.get("epoch"), row["obs_id"]), []).append(
+                        dict(state=row.get("observation_state"), reference=dict(
+                            episode_id=manifest["episode_id"],
+                            tick=row["tick"], time=row["time"],
+                            segment=Path(row["_segment"]).name,
+                            frame_indices=row["video_indices"],
+                        ))
+                    )
             if rule_config is not None:
                 from .replay import verify_selector
 
@@ -399,6 +451,14 @@ def validate_package(path):
                         problems.append("episode_video_count_mismatch")
         if actual_episodes != set(publication["episodes"]):
             problems.append("episode_members_mismatch")
+        for request in indexes:
+            expected = resolve_request_observation(request, observations)
+            reference = request.get("video_refs")
+            if expected is None or not reference or any(
+                reference.get(k) != expected[k]
+                for k in ("episode_id", "tick", "segment", "frame_indices")
+            ):
+                problems.append("request_observation_reference_mismatch")
     except (OSError, ValueError, KeyError, TypeError) as exc:
         problems.append(f"unreadable_package:{exc}")
     return problems

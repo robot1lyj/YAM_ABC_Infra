@@ -109,6 +109,77 @@ def test_observation_interpolates_state_and_reports_arrival_skew():
     assert obs.snapshot(1.6, "test") is None
 
 
+def test_observation_identity_includes_state_anchor_and_prompt_not_only_rgb():
+    im = np.zeros((8, 8, 3), np.uint8)
+
+    def frame(t, sequence):
+        return SimpleNamespace(images={"rgb": im}, meta={"host_received_at": t, "sequence": sequence})
+
+    histories = {
+        "top": [frame(1.012, 1), frame(1.02, 2)],
+        "left": [frame(1.01, 1)],
+        "right": [frame(1.011, 1)],
+    }
+    cams = [SimpleNamespace(role=r, history=lambda r=r: histories[r]) for r in histories]
+    obs = Observations(cams)
+    obs.add_state(0.9, np.zeros(14))
+    obs.add_state(1.1, np.ones(14))
+    first = obs.snapshot(1.1, "test")
+    histories["left"].append(frame(1.03, 2))
+    second = obs.snapshot(1.1, "test")
+    assert first[4]["cameras"] == second[4]["cameras"]  # Same three RGB frames.
+    assert first[1] != second[1]
+    assert not np.array_equal(first[2]["observation.state"], second[2]["observation.state"])
+    assert second[0] == first[0] + 1
+    assert obs.snapshot(1.1, "test")[0] == second[0]
+    assert obs.snapshot(1.1, "changed prompt")[0] == second[0] + 1
+
+
+def test_parts_evaluates_feedback_after_acquisition_without_changing_policy_clock(tmp_path, monkeypatch):
+    from yam_abc_reproduce.hil.parts.height import Heights
+    from yam_abc_reproduce.hil.parts.mock import MockKinematics, mock_config
+
+    monkeypatch.setattr("yam_abc_reproduce.hil.parts.controller.Heights",
+                        lambda config, kinematics=None: Heights(config, MockKinematics()))
+    io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
+    original_read = io.read
+
+    def delayed_read():
+        result = original_read()
+        time.sleep(0.001)
+        acquired_at = time.monotonic()
+        io.gripper_feedback = [dict(position=0.9, effort_nm=-0.8, sampled_at=acquired_at,
+            sdk_updated_at=acquired_at + 1000, feedback_age_s=0.005, valid=True) for _ in range(2)]
+        return result
+
+    monkeypatch.setattr(io, "read", delayed_read)
+    rec = Recorder(tmp_path / "feedback")
+    cameras = [CameraWorker(MockCamera(r, r, width=32, height=32)) for r in ("top", "left", "right")]
+    runtime = Runtime(io, cameras, None, rec, mode="inference",
+        settings={"policy_fusion": "raw", "parts": mock_config().as_dict()})
+    try:
+        for camera in cameras:
+            camera.start()
+        status = runtime.run(duration=0.2)
+        rec.close()
+        assert not status.get("error")
+        rows = list(read_rows(rec.path))
+        assert rows
+        for row in rows:
+            for arm in ("left", "right"):
+                sample = row["parts"]["arms"][arm]
+                assert row["time"] < sample["force_feedback"]["sampled_at"]
+                assert sample["force_valid"] and sample["effort_nm"] == -0.8
+                assert row["parts"]["selector_context"]["control_time"] >= sample["force_feedback"]["sampled_at"]
+    finally:
+        for camera in cameras:
+            camera.stop()
+        runtime.parts_journal.close()
+        if rec._thread.is_alive():
+            rec.close("aborted")
+        io.close()
+
+
 def test_recorder_streams_three_videos_and_matching_json_rows(tmp_path):
     import av
 

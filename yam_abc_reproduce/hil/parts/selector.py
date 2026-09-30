@@ -270,6 +270,7 @@ class RulesSelector:
                     abs(f["effort_nm"]) > 0.65,
                     self.config.confirm_s,
                     self.config.max_confirmation_gap_s,
+                    min_samples=self.config.force_confirm_samples,
                 ):
                     if not lane["holding"]:
                         lane["holding"] = True

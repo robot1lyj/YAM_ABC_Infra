@@ -22,7 +22,12 @@ from yam_abc_reproduce.hil.parts.mock import (
 )
 from yam_abc_reproduce.hil.parts.outbox import DirectoryTransport, Outbox
 from yam_abc_reproduce.hil.parts.protocol import handshake, validate_reply
-from yam_abc_reproduce.hil.parts.recording import PartsJournal, jsonl, validate_package
+from yam_abc_reproduce.hil.parts.recording import (
+    PartsJournal,
+    jsonl,
+    resolve_request_observation,
+    validate_package,
+)
 from yam_abc_reproduce.hil.parts.reward import components
 from yam_abc_reproduce.hil.policy import PolicyJob, PolicyWorker, Reply, RtcJob
 from yam_abc_reproduce.hil.rtc_timeline import RtcTimeline
@@ -96,6 +101,27 @@ def test_height_uses_calibration_not_base_z_and_unknown_goal_null():
     assert result["left"]["error_m"] is None
     assert result["right"]["height_m"] is None
     assert not h.sample(q, sampled_at=1, feedback_age_s=[0, 0], now=2)["left"]["height_valid"]
+
+
+def test_base_z_requires_no_table_and_legacy_selector_hash_is_preserved():
+    legacy = PartsConfig.from_dict({"mode": "shadow", "max_feedback_age_s": 0.25,
+                                  "max_pose_age_s": 0.25})
+    assert legacy.selector_config_sha == "98eae04d91b1f8c4a496d95f50973bc769fd02c13a568d2cfe82b82126f0fd4b"
+    data = legacy.as_dict()
+    for arm in ("left", "right"):
+        data[arm]["height_reference"] = "base_z"
+    config = PartsConfig.from_dict(data)
+    sample = Heights(config, MockKinematics()).sample(
+        np.full(14, 0.05), sampled_at=1, feedback_age_s=[0, 0], now=1)
+    for arm in ("left", "right"):
+        assert sample[arm]["height_valid"] and sample[arm]["height_m"] == 0.05
+        assert sample[arm]["height_frame"] == arm + "_base"
+        assert "table" not in config.selector_gaps(arm)
+        assert arm + ".table" not in config.gaps()
+    assert config.selector_config_sha != legacy.selector_config_sha
+    data["left"]["table"] = mock_config().left.table
+    with pytest.raises(ValueError, match="base_z"):
+        PartsConfig.from_dict(data)
 
 
 def test_50mm_crossing_competition_empty_hand_and_start_below():
@@ -492,6 +518,70 @@ def test_scheduler_snapshot_only_final_targets_and_unanswered_request(tmp_path):
     client.accept_reply(Reply(token, np.zeros((50, 14))), metadata={})
     assert len([v for k, v in logs if k == "request"]) == 1
     assert logs[-1][1]["kind"] == "late_or_duplicate_reply"
+
+
+def test_request_freezes_input_state_and_keeps_record_tick_distinct_from_policy_tick():
+    client = PartsClient(mock_config(), run_id="r", session_id="s", emit=lambda *_: None,
+                         kinematics=MockKinematics())
+    client.tick = 11
+    state = np.zeros(14)
+    token = Request(1, 1, 2, 1, 0.97)
+    client.build_request(token, observation_tick=10, observation={"observation.state": state})
+    state[0] = 1
+    saved = client.requests[(1, 1)]
+    assert saved["observation_tick"] == 10 and saved["observation_record_tick"] == 11
+    assert saved["observation_reference_time"] == 0.97
+    assert saved["observation_state"][0] == 0
+
+
+def test_request_input_resolution_disambiguates_legacy_repeated_image_ids():
+    a, b = np.zeros(14), np.full(14, 0.01)
+    refs = { (1, 2): [
+        dict(state=a, reference=dict(tick=10, time=1.0)),
+        dict(state=b, reference=dict(tick=11, time=1.03)),
+    ]}
+    request = dict(context=dict(epoch=1, observation_id=2), observation_state=b, sent_at=1.03)
+    assert resolve_request_observation(request, refs)["tick"] == 11
+    request["observation_record_tick"] = 10
+    assert resolve_request_observation(request, refs) is None  # Never guess another tick.
+    request["observation_state"] = a
+    assert resolve_request_observation(request, refs)["tick"] == 10
+    request.pop("observation_record_tick")
+    request["observation_state"] = None
+    assert resolve_request_observation(request, refs) is None
+    request["context"]["epoch"] = 2
+    assert resolve_request_observation(request, refs) is None
+
+
+@pytest.mark.parametrize("count", [0, -1, True, 1.5])
+def test_force_confirmation_rejects_invalid_sample_counts(count):
+    with pytest.raises(ValueError, match="force_confirm_samples"):
+        PartsConfig.from_dict({"force_confirm_samples": count})
+
+
+def test_package_checks_input_reference_even_when_file_hashes_match(tmp_path):
+    from yam_abc_reproduce.hil.storage import digest
+
+    root = tmp_path / "reference-validation"
+    publication = produce(root, producer_sha="fixture")
+    requests = jsonl(root / "requests.jsonl")
+    requests[0]["video_refs"]["tick"] += 1
+    file = root / "requests.jsonl"
+    file.write_text("".join(json.dumps(row) + "\n" for row in requests))
+    publication["files"]["requests.jsonl"] = dict(bytes=file.stat().st_size, sha256=digest(file))
+    (root / "publication.json").write_text(json.dumps(publication))
+    assert "request_observation_reference_mismatch" in validate_package(root)
+
+
+def test_template_uses_user_confirmed_base_z_and_force_window():
+    from pathlib import Path
+
+    config = PartsConfig.from_dict(json.loads(
+        (Path(__file__).parents[1] / "configs/parts_client.json").read_text()))
+    assert config.force_confirm_samples == 10 and config.confirm_s == 0.3
+    assert config.left.height_reference == config.right.height_reference == "base_z"
+    assert config.left.h_entry_m == config.right.h_entry_m == 0.05
+    assert config.mode == "off"  # A template never auto-enables physical residuals.
 
 
 def test_data_run_replacement_swaps_on_hold_without_io_and_rejects_late_install(tmp_path):

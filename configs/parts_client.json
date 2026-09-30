@@ -6,7 +6,8 @@
   "behavior_manifest_ref": null,
   "feature_schema_id": null,
   "reward": null,
-  "confirm_s": null,
+  "confirm_s": 0.3,
+  "force_confirm_samples": 10,
   "max_feedback_age_s": null,
   "max_pose_age_s": null,
   "max_confirmation_gap_s": null,
@@ -15,6 +16,7 @@
   "release_position": null,
   "left": {
     "h_entry_m": 0.05,
+    "height_reference": "base_z",
     "h_goal_m": null,
     "minimum_height_m": null,
     "budget_s": null,
@@ -26,6 +28,7 @@
   },
   "right": {
     "h_entry_m": 0.05,
+    "height_reference": "base_z",
     "h_goal_m": null,
     "minimum_height_m": null,
     "budget_s": null,

@@ -7,7 +7,7 @@ from collections import deque
 
 from .config import ARMS
 from .reward import components
-from .selector import fresh_feedback
+from .selector import Confirmation, fresh_feedback
 
 
 class Attempts:
@@ -24,9 +24,7 @@ class Attempts:
         self.completed = deque(maxlen=64)  # Complete history belongs to the journal.
         self.priority = "left"
         self.sequence = 0
-        self.last_feedback = {}
-        self.confirm_started = None
-        self.confirm_last = None
+        self.force_window = Confirmation()
         self.previous_command = None
         self.heights = {}
         self.feedback = {}
@@ -59,6 +57,18 @@ class Attempts:
 
     def fresh_force(self, arm, now):
         return fresh_feedback(self.feedback.get(arm), now, self.config.max_feedback_age_s)
+
+    @property
+    def confirm_started(self):
+        return self.force_window.started
+
+    @property
+    def confirm_last(self):
+        return self.force_window.last
+
+    @property
+    def confirm_count(self):
+        return self.force_window.count
 
     def _terminate(self, result, reason, tick, now, *, handback_tick=None):
         if self.attempt is None:
@@ -105,7 +115,7 @@ class Attempts:
         self.completed.append(record)
         self.phase[record["arm"]] = "WAIT_REARM"
         self.attempt = None
-        self.confirm_started = self.confirm_last = None
+        self.force_window.reset()
 
     def cancel(self, reason, tick, now):
         self._terminate("canceled", reason, tick, now)
@@ -165,26 +175,14 @@ class Attempts:
                 self.attempt["goal_reached"] = self.event("height_goal_reached", tick, now)
             if self.phase[arm] == "ACTIVE_CLOSURE":
                 f = feedback[arm]
-                last = self.last_feedback.get(arm)
-                advancing = last is None or f["sdk_updated_at"] > last
-                self.last_feedback[arm] = f["sdk_updated_at"]
-                # Repeated snapshots cannot extend the confirmation window.
-                good = advancing and abs(f["effort_nm"]) > 0.65
-                if not good:
-                    self.confirm_started = self.confirm_last = None
-                elif (
-                    self.config.confirm_s is not None
-                    and self.config.max_confirmation_gap_s is not None
+                # Attempt and holding rules share one confirmation algorithm.
+                if self.force_window.update(
+                    f, now, abs(f["effort_nm"]) > 0.65,
+                    self.config.confirm_s, self.config.max_confirmation_gap_s,
+                    min_samples=self.config.force_confirm_samples,
                 ):
-                    if (
-                        self.confirm_last is None
-                        or now - self.confirm_last > self.config.max_confirmation_gap_s
-                    ):
-                        self.confirm_started = now
-                    self.confirm_last = now
-                    if now - self.confirm_started >= self.config.confirm_s:
-                        self.attempt["reward_proposal_tick"] = tick
-                        self.exit_pending("success", "force_confirmed", tick, now)
+                    self.attempt["reward_proposal_tick"] = tick
+                    self.exit_pending("success", "force_confirmed", tick, now)
             if self.phase[arm] == "ACTIVE_DESCENT" and self._reward_tick != (epoch, tick):
                 self.reward = components(self.config, error_m=h.get("error_m"))
                 self._reward_tick = (epoch, tick)
@@ -274,7 +272,7 @@ class Attempts:
             )
             self.reopen_anchor = None
             self.phase[arm] = "ACTIVE_DESCENT"
-            self.confirm_started = self.confirm_last = None
+            self.force_window.reset()
             self.event("entry", tick, now, competing_arms=candidates, selected_arm=arm)
 
     def exit_pending(self, result, reason, tick, now):
@@ -300,7 +298,7 @@ class Attempts:
                 self.phase[arm] = "ACTIVE_CLOSURE"
                 self.attempt["closure_tick"] = tick
                 self.attempt["closure_time"] = now
-                self.last_feedback[arm] = (self.feedback.get(arm) or {}).get("sdk_updated_at")
+                self.force_window.reset((self.feedback.get(arm) or {}).get("sdk_updated_at"))
                 self.reopen_anchor = target[index]
                 self.event("closure_started", tick, now)
             if self.phase[arm] == "ACTIVE_CLOSURE":
@@ -331,7 +329,7 @@ class Attempts:
             not self.fresh_force(arm, now) or abs(self.feedback[arm]["effort_nm"]) <= 0.65
         ):
             self.phase[arm] = "ACTIVE_CLOSURE"
-            self.confirm_started = self.confirm_last = None
+            self.force_window.reset()
             self.event("success_condition_lost", tick, now)
             return False
         self.event("handback_effective", tick, now)

@@ -790,8 +790,12 @@ class Runtime:
                         self.parts.committed_arms = a.rtc_timeline.pending_residual_arms
                     else:
                         self.parts.committed_arms = None
-                    self.parts.observe(tick=tick, now=now, epoch=a.epoch, state=q,
-                        ages=[ages[0], ages[2]], feedback=getattr(self.io, "gripper_feedback", [None, None]),
+                    # Policy ticks keep their original clock. Feedback rules run
+                    # AFTER acquisition, never against an earlier loop-start time.
+                    self.parts.observe(tick=tick, now=time.monotonic(), sampled_at=read_done,
+                        epoch=a.epoch, state=q,
+                        ages=[ages[0] + read_done - now, ages[2] + read_done - now],
+                        feedback=getattr(self.io, "gripper_feedback", [None, None]),
                         recording=bool(getattr(self.recorder, "recording", False)),
                         policy_active=a.mode == Mode.INFERENCE and a.phase in (Phase.POLICY, Phase.RESUME))
                     if self.parts_journal.error or self.parts.error:
@@ -878,7 +882,7 @@ class Runtime:
                 if maintenance_action is None and jog_action is None:
                     self.session.submitted(decision)
                 if self.parts is not None:
-                    self.parts.submitted(tick, now, submitted, decision.policy_selection)
+                    self.parts.submitted(tick, time.monotonic(), submitted, decision.policy_selection)
                 if a.rtc_timeline is not None:
                     if (
                         obs is not None and fresh and self.worker is not None

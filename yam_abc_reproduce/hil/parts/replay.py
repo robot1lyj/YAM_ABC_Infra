@@ -55,7 +55,8 @@ def verify_selector(rows, config):
                 if mismatches:
                     raise ValueError(f"{arm}:" + ",".join(mismatches))
             selector.submitted(
-                tick=row["tick"], now=context["control_time"], target=row["submitted_action"]
+                tick=row["tick"], now=context.get("submitted_at", context["control_time"]),
+                target=row["submitted_action"]
             )
             previous_tick = row["tick"]
             checked += 1

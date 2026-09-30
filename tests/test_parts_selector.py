@@ -118,6 +118,42 @@ def test_duplicate_feedback_cannot_fill_ten_sample_requirement_after_point_three
     assert h.client.selector.lanes["left"]["open_window"].count == 6
 
 
+def test_force_confirmation_requires_ten_advancing_samples_and_point_three_seconds():
+    data = mock_config().as_dict()
+    data.update(confirm_s=0.3, force_confirm_samples=10)
+    h = Cycle(PartsConfig.from_dict(data))
+    h.enter()
+    h.submit(0.1)
+    for _ in range(9):
+        snap = h.step(0.04, effort=-0.8)
+        assert not snap["holding_locked"]
+        assert h.client.machine.phase["left"] == "ACTIVE_CLOSURE"
+    snap = h.step(0.04, effort=-0.8)
+    assert snap["holding_locked"]
+    assert h.client.machine.phase["left"] == "EXIT_PENDING"
+    assert h.client.machine.confirm_count == 10
+
+
+def test_force_confirmation_resets_on_threshold_or_duplicate_feedback():
+    data = mock_config().as_dict()
+    data.update(confirm_s=0.3, force_confirm_samples=10)
+    h = Cycle(PartsConfig.from_dict(data))
+    h.enter()
+    h.submit(0.1)
+    for _ in range(8):
+        h.step(0.04, effort=0.8)
+    h.step(0.04, effort=0.65)
+    assert h.client.machine.confirm_count == 0
+    for _ in range(9):
+        assert not h.step(0.04, effort=0.8)["holding_locked"]
+    assert h.step(0.04, effort=0.8)["holding_locked"]
+    h = Cycle(PartsConfig.from_dict(data))
+    h.enter()
+    h.submit(0.1)
+    for i in range(12):
+        assert not h.step(0.04, effort=0.8, stamp=1000 + (h.tick + 1 - i % 2) / 30)["holding_locked"]
+
+
 @pytest.mark.parametrize("effort", [0.651, -0.8])
 def test_high_gripper_effort_does_not_grant_empty_hand_even_when_open(effort):
     h = Cycle()

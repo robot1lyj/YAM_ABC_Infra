@@ -17,7 +17,7 @@ class Observations:
         self.max_age, self.max_skew, self.warn_skew = max_age, max_skew, warn_skew
         self.states = deque(maxlen=128)
         self.sequence = 0
-        self._last_frames = None
+        self._last_observation = None
 
     def add_state(self, now, q):
         self.states.append((now, q.copy()))
@@ -46,9 +46,12 @@ class Observations:
         alpha = 0 if t1 == t0 else (anchor - t0) / (t1 - t0)
         q = q0 * (1 - alpha) + q1 * alpha
         frame_ids = tuple(f.meta["sequence"] for f in frames.values())
-        if frame_ids != self._last_frames:
+        # Pairing can move the state anchor without changing the selected RGB
+        # frames. An observation ID identifies the full input, not just images.
+        identity = (frame_ids, anchor, prompt)
+        if identity != self._last_observation:
             self.sequence += 1
-            self._last_frames = frame_ids
+            self._last_observation = identity
         images = {r: f.images["rgb"] for r, f in frames.items()}
         obs = {"observation.state": q, "prompt": prompt}
         obs.update({f"observation.images.{r}_rgb": im for r, im in images.items()})

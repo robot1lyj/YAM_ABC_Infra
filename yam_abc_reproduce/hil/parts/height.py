@@ -1,4 +1,4 @@
-"""Official grasp-site FK and explicit per-arm base-to-table calibration."""
+"""Official grasp-site FK with explicit base-Z or calibrated-table semantics."""
 
 import numpy as np
 
@@ -62,11 +62,13 @@ class Heights:
             )
             height = None
             position = None
-            if valid and arm in self.tables:
+            options = getattr(self.config, arm)
+            if valid and options.height_reference == "base_z":
+                height = float(pose[2, 3])
+            elif valid and arm in self.tables:
                 transform, normal, origin = self.tables[arm]
                 position = (transform @ pose)[:3, 3]
                 height = float(np.dot(normal, position - origin))
-            options = getattr(self.config, arm)
             result[arm] = dict(
                 position=pose[:3, 3].tolist(),
                 orientation=pose[:3, :3].tolist(),
@@ -77,6 +79,9 @@ class Heights:
                 feedback_age_s=age,
                 height_m=height,
                 height_valid=height is not None,
+                height_reference=options.height_reference,
+                height_frame=f"{arm}_base" if options.height_reference == "base_z"
+                else options.table["frame"] if arm in self.tables else None,
                 table_position_m=None if position is None else position.tolist(),
                 table_frame=None if arm not in self.tables else options.table["frame"],
                 table_calibration_id=None

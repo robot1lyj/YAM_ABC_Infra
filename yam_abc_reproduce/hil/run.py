@@ -176,7 +176,6 @@ class Runtime:
         self.recording_allowed = True
         self.parts = None
         self.parts_journal = None
-        self.parts_commands = queue.Queue(maxsize=8)
         parts_config = settings.get("parts")
         if parts_config and parts_config.get("mode", "off") != "off":
             self._build_parts(parts_config)
@@ -206,6 +205,7 @@ class Runtime:
             action_dt=self.session.arbiter.action_dt, layout_group_id=None,
             split_role="mock" if self.io.mock else "eval" if config.mode == "eval" else None,
             contract_sha=config.contract_sha, config=config.as_dict(), parameter_gaps=config.gaps(),
+            selector_schema=config.selector["schema"], selector_config_sha=config.selector_config_sha,
             reward_fixed=config.reward is not None, behavior_manifest_ref=config.behavior_manifest_ref,
             fk_model="i2rt/YAM/linear_4310", pose_ref="grasp_site", pose_frame="per_arm_base"))
         try:
@@ -224,17 +224,7 @@ class Runtime:
             RunReplacement(self.parts, client, journal).install(self)
 
     def mark_parts_grasp(self, *, arm, eligible=True, empty_hand=True, reset=False):
-        if self.parts is None:
-            raise ValueError("PARTS未启用，请先在HOLD且未录制时配置shadow")
-        if arm not in ("left", "right"):
-            raise ValueError("PARTS arm must be left/right")
-        if self.task_switching:
-            raise ValueError("数据会话切换中，请等待结束后再标记 RL 接近")
-        if self.status.get("mode") != "inference" or self.status.get("phase") == "fault" or self.maintenance.latched:
-            raise ValueError("RL 标记需要无故障的推理控制会话")
-        if reset and (self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False)):
-            raise ValueError("请先暂停并结束录制，再清除 RL 尝试")
-        self.parts_commands.put_nowait(dict(arm=arm, eligible=eligible, empty_hand=empty_hand, reset=reset))
+        raise ValueError("RL 已使用自动抓取规则，不接受人工标记覆盖资格；请核对实际反馈与区域配置")
 
     def _plan_context(self):
         arbiter = self.session.arbiter
@@ -795,20 +785,20 @@ class Runtime:
                 if not self._prepare_policy_recording(event, q):
                     event = None
                 if self.parts is not None:
-                    while not self.parts_commands.empty():
-                        marker = self.parts_commands.get_nowait()
-                        if marker.pop("reset"):
-                            self.parts.machine.reset(tick, now)
-                        self.parts.machine.mark(**marker)
+                    if a.rtc_timeline is not None:
+                        self.parts.preceding_target = a.rtc_timeline.final_target_at
+                        self.parts.committed_arms = a.rtc_timeline.pending_residual_arms
+                    else:
+                        self.parts.committed_arms = None
                     self.parts.observe(tick=tick, now=now, epoch=a.epoch, state=q,
                         ages=[ages[0], ages[2]], feedback=getattr(self.io, "gripper_feedback", [None, None]),
+                        recording=bool(getattr(self.recorder, "recording", False)),
                         policy_active=a.mode == Mode.INFERENCE and a.phase in (Phase.POLICY, Phase.RESUME))
                     if self.parts_journal.error or self.parts.error:
                         self.parts.machine.cancel("recording_failure", tick, now)
                         event = "hold"
                         self.recording_error = self.parts_journal.error or self.parts.error
                     if a.rtc_timeline is not None:
-                        self.parts.preceding_target = a.rtc_timeline.final_target_at
                         a.rtc_timeline.edit_target = lambda target_tick, target, owner: self.parts.edit(
                             target_tick, target, owner, limit_target=self.io.limit_policy_target)
                 decision = self.session.tick(

@@ -271,6 +271,13 @@ def validate_package(path):
     try:
         publication = json.loads((path / "publication.json").read_text())
         run = json.loads((path / "run.json").read_text())
+        rule_config = None
+        if run.get("selector_schema") == "rules_auto_v1":
+            from .config import PartsConfig
+
+            rule_config = PartsConfig.from_dict(run["config"])
+            if run.get("selector_config_sha") != rule_config.selector_config_sha:
+                problems.append("selector_configuration_hash_mismatch")
         if publication["schema"] != SCHEMA or run["schema"] != SCHEMA:
             problems.append("schema_mismatch")
         if publication.get("training_ready") is not False:
@@ -370,6 +377,12 @@ def validate_package(path):
             rows = list(read_rows(manifest_path.parent))
             if len(rows) != manifest["steps"]:
                 problems.append("episode_row_count_mismatch")
+            if rule_config is not None:
+                from .replay import verify_selector
+
+                replay = verify_selector(rows, rule_config)
+                if not replay["valid"]:
+                    problems.append("selector_replay_mismatch:" + manifest["episode_id"])
             for segment in manifest["segments"]:
                 folder = (manifest_path.parent / segment["path"]).resolve()
                 if not folder.is_relative_to(path.resolve()) or segment.get("state") != "committed":

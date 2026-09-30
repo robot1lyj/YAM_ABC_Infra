@@ -155,8 +155,7 @@ def create_app(runtime, *, control_access=False):
 
     @app.post("/parts/grasp")
     def parts_grasp(body: PartsMarker):
-        invoke(runtime.mark_parts_grasp, **body.model_dump())
-        return {"queued": "parts_marker"}
+        raise HTTPException(status_code=409, detail="RL 已使用自动抓取规则，不接受人工标记覆盖资格")
 
     @app.post("/policy/restart")
     def policy_restart():

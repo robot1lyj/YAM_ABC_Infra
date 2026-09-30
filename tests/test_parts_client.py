@@ -49,7 +49,9 @@ def machine():
     logs = []
     state = Attempts(mock_config(), lambda k, v: logs.append((k, v)))
     for a in ("left", "right"):
-        state.mark(a, eligible=True, empty_hand=True)
+        # Isolated attempt tests inject selector evidence; integrated tests below
+        # exercise actual opening/region/history without any marker API.
+        state.eligibility[a] = dict(eligible=True, empty_hand=True, rearm_ready=True)
     return state, logs
 
 
@@ -85,6 +87,7 @@ def test_height_uses_calibration_not_base_z_and_unknown_goal_null():
     data = mock_config().as_dict()
     data["left"]["table"]["point"][2] = 0.1
     data["right"]["table"] = None
+    data["right"]["grasp_xy_polygon_m"] = None
     data["left"]["h_goal_m"] = None
     h = Heights(PartsConfig.from_dict(data), MockKinematics())
     q = np.zeros(14)
@@ -107,8 +110,8 @@ def test_50mm_crossing_competition_empty_hand_and_start_below():
     assert missed.attempt is None and missed.phase["left"] == "WAIT_REARM"
     assert any(v["kind"] == "entry_missed" for _, v in logs)
     blocked, _ = machine()
-    blocked.mark("left", eligible=True, empty_hand=False)
-    blocked.mark("right", eligible=False, empty_hand=True)
+    blocked.eligibility["left"] = dict(eligible=True, empty_hand=False)
+    blocked.eligibility["right"] = dict(eligible=False, empty_hand=True)
     observe(blocked, 0, 0.06)
     observe(blocked, 0.04, 0.05)
     assert blocked.attempt is None
@@ -349,6 +352,12 @@ def test_raw_package_retries_idempotent_and_detects_modified_source(tmp_path):
     assert publication["client_complete"] and publication["mock"]
     assert not validate_package(root)
     items = jsonl(root / "attempts.jsonl")
+    from yam_abc_reproduce.hil.parts.replay import verify_selector
+    from yam_abc_reproduce.hil.storage import read_rows
+
+    replay = verify_selector(read_rows(root / "episodes" / "episode_000001"), mock_config())
+    assert replay["valid"], replay
+    assert replay["checked_ticks"] == 210
     assert any(a["result"] == "success" for a in items)
     assert any(a["result"] == "failure" for a in items)
     assert any(a["result"] == "canceled" for a in items)
@@ -531,8 +540,10 @@ def test_rl_page_entry_read_only_and_marker_api_validated():
     assert not calls
     headers = {"x-yam-control": "1"}
     assert web.post("/parts/grasp", json={"arm": "unknown"}, headers=headers).status_code == 422
-    assert web.post("/parts/grasp", json={"arm": "left"}, headers=headers).status_code == 200
-    assert calls == [dict(arm="left", eligible=True, empty_hand=True, reset=False)]
+    assert web.post("/parts/grasp", json={"arm": "left"}, headers=headers).status_code == 409
+    assert not calls
+    assert 'id="rl-left-grasp"' not in html and 'id="rl-clear-markers"' not in html
+    assert 'id="rl-left-reason"' in html and 'id="rl-left-position"' in html
 
 
 def test_cli_validates_rl_configuration_before_constructing_devices(tmp_path, monkeypatch, capsys):

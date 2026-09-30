@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import math
 import uuid
 from collections import deque
 
 from .config import ARMS
 from .reward import components
+from .selector import fresh_feedback
 
 
 class Attempts:
@@ -15,8 +15,9 @@ class Attempts:
         self.config, self.emit = config, emit
         self.phase = dict.fromkeys(ARMS, "READY")
         self.eligibility = {
-            a: dict(eligible=False, empty_hand=False, source="explicit_marker") for a in ARMS
+            a: dict(eligible=False, empty_hand=False, source="rules_auto_v1") for a in ARMS
         }
+        self.entry_armed = dict.fromkeys(ARMS, False)
         self.previous = {}
         self.attempt = None
         self.completed = deque(maxlen=64)  # Complete history belongs to the journal.
@@ -34,13 +35,6 @@ class Attempts:
         self._reward_tick = None
         self.closure_anchor = self.reopen_anchor = None
 
-    def mark(self, arm, *, eligible, empty_hand):
-        if arm not in ARMS:
-            raise ValueError("PARTS arm must be left/right")
-        self.eligibility[arm] = dict(
-            eligible=bool(eligible), empty_hand=bool(empty_hand), source="explicit_marker"
-        )
-
     def event(self, kind, tick, now, **extra):
         self.sequence += 1
         value = dict(
@@ -52,8 +46,8 @@ class Attempts:
             arm=self.active_arm,
             attempt_id=None if self.attempt is None else self.attempt["attempt_id"],
             preceding_command=self.previous_command,
-            **extra,
         )
+        value.update(extra)
         self.emit("event", value)
         self.event_refs.append(value["event_id"])
         return value["event_id"]
@@ -63,18 +57,7 @@ class Attempts:
         return None if self.attempt is None else self.attempt["arm"]
 
     def fresh_force(self, arm, now):
-        f = self.feedback.get(arm)
-        if not f or not f.get("valid") or self.config.max_feedback_age_s is None:
-            return False
-        numbers = [
-            f.get(k) for k in ("effort_nm", "sdk_updated_at", "sampled_at", "feedback_age_s")
-        ]
-        if any(v is None or not math.isfinite(v) for v in numbers):
-            return False
-        return (
-            0 <= now - f["sampled_at"] <= self.config.max_feedback_age_s
-            and 0 <= f["feedback_age_s"] + now - f["sampled_at"] <= self.config.max_feedback_age_s
-        )
+        return fresh_feedback(self.feedback.get(arm), now, self.config.max_feedback_age_s)
 
     def _terminate(self, result, reason, tick, now, *, handback_tick=None):
         if self.attempt is None:
@@ -126,16 +109,18 @@ class Attempts:
     def cancel(self, reason, tick, now):
         self._terminate("canceled", reason, tick, now)
         self.previous.clear()
+        self.entry_armed = dict.fromkeys(ARMS, False)
 
     def reset(self, tick, now):
         self.cancel("reset", tick, now)
         self.phase = dict.fromkeys(ARMS, "READY")
         for arm in ARMS:
-            self.mark(arm, eligible=False, empty_hand=False)
+            self.eligibility[arm] = dict(eligible=False, empty_hand=False, source="rules_auto_v1")
         self.event("reset", tick, now)
 
-    def observe(self, *, tick, now, epoch, heights, feedback, policy_active):
-        self.event_refs = []
+    def observe(self, *, tick, now, epoch, heights, feedback, policy_active, preserve_events=False):
+        if not preserve_events:
+            self.event_refs = []
         self.reward = components(self.config, error_m=None)
         self.heights, self.feedback = heights, feedback
         if self.epoch is not None and epoch != self.epoch:
@@ -147,6 +132,9 @@ class Attempts:
         if self.attempt is not None:
             arm = self.active_arm
             h, options = heights[arm], getattr(self.config, arm)
+            if "feedback_invalid_or_stale" in self.eligibility[arm].get("reason_codes", []):
+                self.cancel("gripper_feedback_invalid_or_stale", tick, now)
+                return
             if not h.get("height_valid"):
                 self.cancel("height_feedback_invalid", tick, now)
                 return
@@ -206,24 +194,58 @@ class Attempts:
             current = h.get("height_m") if h.get("height_valid") else None
             previous = self.previous.get(arm)
             self.previous[arm] = None if current is None else (current, now)
+            eligible = self.eligibility[arm]
+            if (
+                previous is None
+                and current is not None
+                and current <= options.h_entry_m
+                and self.phase[arm] == "READY"
+            ):
+                self.event("entry_missed", tick, now, missed_arm=arm)
+                self.phase[arm] = "WAIT_REARM"
+            if (
+                previous is None
+                or now <= previous[1]
+                or (
+                    self.config.max_pose_age_s is not None
+                    and now - previous[1] > self.config.max_pose_age_s
+                )
+            ):
+                self.entry_armed[arm] = False
+            if (
+                self.phase[arm] == "WAIT_REARM"
+                and eligible.get("rearm_ready")
+                and current is not None
+                and current > options.h_entry_m + options.entry_hysteresis_m
+            ):
+                self.phase[arm] = "READY"
+                previous = None
+                self.event("rearmed", tick, now, rearmed_arm=arm)
+            if not eligible.get("eligible") or not eligible.get("empty_hand") or current is None:
+                self.entry_armed[arm] = False
+                continue
             if self.phase[arm] != "READY" or current is None:
                 continue
+            if current > options.h_entry_m + options.entry_hysteresis_m:
+                self.entry_armed[arm] = True
             if previous is None:
                 if current <= options.h_entry_m:
                     self.event("entry_missed", tick, now, missed_arm=arm)
                     self.phase[arm] = "WAIT_REARM"
                 continue
-            eligible = self.eligibility[arm]
             interval = now - previous[1]
             if (
                 interval > 0
-                and previous[0] > options.h_entry_m + options.entry_hysteresis_m
+                and (self.config.max_pose_age_s is None or interval <= self.config.max_pose_age_s)
+                and self.entry_armed[arm]
+                and previous[0] > options.h_entry_m
                 and current <= options.h_entry_m
                 and (previous[0] - current) / interval > options.minimum_descent_m_s
                 and eligible["eligible"]
                 and eligible["empty_hand"]
             ):
                 candidates.append(arm)
+                self.entry_armed[arm] = False  # Consume even a losing arm's crossing.
         if candidates and self.attempt is None:
             arm = self.priority if self.priority in candidates else candidates[0]
             self.priority = "right" if arm == "left" else "left"
@@ -243,7 +265,7 @@ class Attempts:
                 height_reward_sum=0.0, height_reward_valid=True, adopted_sources_truncated=0
             )
             self.closure_anchor = (
-                None
+                (self.feedback.get(arm) or {}).get("position")
                 if self.previous_command is None
                 else self.previous_command["target"][6 if arm == "left" else 13]
             )
@@ -296,18 +318,6 @@ class Attempts:
                         self.attempt["adopted_sources"].pop(0)
                         self.attempt["adopted_sources_truncated"] += 1
         self.previous_command = dict(tick=tick, time=now, target=list(target), selection=selection)
-        if self.attempt is None and self.config.release_position is not None:
-            for arm in ARMS:
-                h = self.heights.get(arm, {})
-                if (
-                    self.phase[arm] == "WAIT_REARM"
-                    and h.get("height_valid")
-                    and h["height_m"] > getattr(self.config, arm).h_entry_m
-                    and target[6 if arm == "left" else 13] >= self.config.release_position
-                ):
-                    self.phase[arm] = "READY"
-                    self.previous.pop(arm, None)
-                    self.event("rearmed", tick, now, rearmed_arm=arm)
 
     def handback(self, *, tick, now):
         arm = self.active_arm

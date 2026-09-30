@@ -1,5 +1,6 @@
 {
   "mode": "off",
+  "selector": {"schema": "rules_auto_v1"},
   "contract_sha": null,
   "behavior_snapshot_id": null,
   "behavior_manifest_ref": null,
@@ -18,6 +19,11 @@
     "minimum_height_m": null,
     "budget_s": null,
     "table": null,
+    "grasp_xy_polygon_m": null,
+    "grasp_region_frame": null,
+    "grasp_region_calibration_id": null,
+    "open_position_min": null,
+    "open_confirm_s": null,
     "B_rad": null
   },
   "right": {
@@ -26,6 +32,11 @@
     "minimum_height_m": null,
     "budget_s": null,
     "table": null,
+    "grasp_xy_polygon_m": null,
+    "grasp_region_frame": null,
+    "grasp_region_calibration_id": null,
+    "open_position_min": null,
+    "open_confirm_s": null,
     "B_rad": null
   }
 }

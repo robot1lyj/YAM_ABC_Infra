@@ -833,23 +833,31 @@ function renderRL({connected, idle, paused, latched, recording, policyEditable, 
     : "运行配置已固定，开始前确认现场与录制状态。");
   $("rl-prepare").disabled = !policyEditable || mode === "inference" || !state.selected_task || state.intervention_pending;
   $("rl-prepare").title = "只切换控制模式，不自动开始运动，不断开机械臂";
-  const markerAllowed = connected && idle && !latched && mode === "inference" && !!parts && !parts.recording_error;
+  const selectorStages = {UNKNOWN: "等待同步", EMPTY_READY: "可抓取", HOLDING: "持物中", RELEASE_WAIT: "等待释放", REARM_WAIT: "等待回撤"};
+  const selectorReasons = {control_not_policy: "等待模型执行", epoch_changed: "等待新会话同步",
+    feedback_invalid_or_stale: "等待新鲜反馈", selector_parameters_unset: "自动规则未配置",
+    holding_object: "持物中，禁止下降介入", waiting_actual_release: "等待实际张开确认释放",
+    waiting_actual_open: "等待实际张开", waiting_new_release_command: "等待新的张开动作",
+    outside_grasp_region: "不在抓取区", waiting_retract: "等待回撤到入口上方",
+    attempt_active: "抓取尝试进行中", old_residual_committed: "等待旧残差执行结束"};
   for (const [index, a] of ["left", "right"].entries()) {
     const snap = parts?.arms?.[a];
     const feedback = snap?.force_feedback;
     const values = (parts?.physical_residual_rad || []).slice(index * 7, index * 7 + 6);
     const magnitude = values.length === 6 && values.every(Number.isFinite) ? Math.max(...values.map(Math.abs)) : null;
-    text(`rl-${a}-phase`, stages[snap?.phase] || "未启用");
+    text(`rl-${a}-phase`, ["ACTIVE_DESCENT", "ACTIVE_CLOSURE", "EXIT_PENDING"].includes(snap?.phase)
+      ? stages[snap.phase] : selectorStages[snap?.selector_state] || "未启用");
     text(`rl-${a}-height`, snap?.height_valid ? number(snap.height_m, 1000, "mm") : "未标定 / 无效");
     text(`rl-${a}-goal`, number(snap?.h_goal_m ?? cfg[a]?.h_goal_m, 1000, "mm", "未配置"));
     text(`rl-${a}-effort`, connected && snap?.force_valid && Number.isFinite(feedback?.effort_nm)
       ? `${Math.abs(feedback.effort_nm).toFixed(3)} Nm` : "待新鲜反馈");
     text(`rl-${a}-residual`, connected ? number(magnitude, 1000, "mrad") : "—");
-    $(`rl-${a}-grasp`).disabled = !markerAllowed;
-    text(`rl-${a}-grasp`, snap?.eligible ? `${a === "left" ? "左" : "右"}臂已标记 · 取消` : `标记${a === "left" ? "左" : "右"}臂抓取接近`);
+    text(`rl-${a}-position`, connected && snap?.force_valid && Number.isFinite(feedback?.position)
+      ? `${(feedback.position * 100).toFixed(1)}%` : "待新鲜反馈");
+    text(`rl-${a}-reason`, (snap?.reason_codes || []).length
+      ? snap.reason_codes.map(r => selectorReasons[r] || "自动规则未就绪").join(" · ")
+      : snap?.eligible ? (snap.entry_armed ? "入口已武装 · 等待下降跨越" : "自动准备抓取") : "等待自动同步");
   }
-  $("rl-clear-markers").disabled = !markerAllowed || !paused || recording;
-  $("rl-clear-markers").title = "保持且结束录制后，清除双臂标记和当前尝试；不运动";
 }
 async function poll() {
   if (busy) return;
@@ -913,14 +921,6 @@ document
   }));
 $("rl-entry").onclick = () => switchPage("rl");
 $("rl-prepare").onclick = () => action("/event/mode:inference");
-for (const side of ["left", "right"]) {
-  $(`rl-${side}-grasp`).onclick = () => action("/parts/grasp", {
-    arm: side, eligible: !state.parts?.arms?.[side]?.eligible, empty_hand: true,
-  });
-}
-$("rl-clear-markers").onclick = () => action("/parts/grasp", {
-  arm: "left", eligible: false, empty_hand: false, reset: true,
-});
 document
   .querySelectorAll("[data-event]")
   .forEach((b) => (b.onclick = () => action("/event/" + b.dataset.event)));

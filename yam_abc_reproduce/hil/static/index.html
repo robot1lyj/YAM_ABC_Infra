@@ -249,9 +249,10 @@
                       <div><dt>离桌面高度</dt><dd id="rl-left-height">未标定</dd></div>
                       <div><dt>目标高度</dt><dd id="rl-left-goal">未配置</dd></div>
                       <div><dt>夹爪 |力矩|</dt><dd id="rl-left-effort">—</dd></div>
+                      <div><dt>夹爪实际开度</dt><dd id="rl-left-position">—</dd></div>
                       <div><dt>关节残差 · 最大值</dt><dd id="rl-left-residual">—</dd></div>
                     </dl>
-                    <button class="button" id="rl-left-grasp" type="button">标记左臂抓取接近</button>
+                    <p class="muted" id="rl-left-reason" role="status">等待自动同步</p>
                   </section>
                   <section class="rl-arm" aria-label="右臂 RL 观测">
                     <div class="rl-arm-heading"><h3>右 Follower</h3><span class="pill" id="rl-right-phase">未启用</span></div>
@@ -259,9 +260,10 @@
                       <div><dt>离桌面高度</dt><dd id="rl-right-height">未标定</dd></div>
                       <div><dt>目标高度</dt><dd id="rl-right-goal">未配置</dd></div>
                       <div><dt>夹爪 |力矩|</dt><dd id="rl-right-effort">—</dd></div>
+                      <div><dt>夹爪实际开度</dt><dd id="rl-right-position">—</dd></div>
                       <div><dt>关节残差 · 最大值</dt><dd id="rl-right-residual">—</dd></div>
                     </dl>
-                    <button class="button" id="rl-right-grasp" type="button">标记右臂抓取接近</button>
+                    <p class="muted" id="rl-right-reason" role="status">等待自动同步</p>
                   </section>
                 </div>
               </section>
@@ -415,7 +417,6 @@
                 <p id="rl-readiness" class="rl-readiness" role="status">未启用 RL；基础推理不受影响。</p>
                 <div class="rl-run-actions">
                   <button class="button" id="rl-prepare" type="button">使用推理控制</button>
-                  <button class="button" id="rl-clear-markers" type="button">清除接近标记</button>
                 </div>
                 <dl class="rl-run-details">
                   <div><dt>控制模式</dt><dd id="rl-control-mode">—</dd></div>

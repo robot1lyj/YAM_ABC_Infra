@@ -41,6 +41,8 @@ def handshake(metadata, config):
         or declaration.get("contract_sha") != config.contract_sha
         or declaration.get("feature_schema_id") != config.feature_schema_id
         or declaration.get("behavior_manifest_ref") != config.behavior_manifest_ref
+        or declaration.get("selector_schema") != config.selector["schema"]
+        or declaration.get("selector_config_sha") != config.selector_config_sha
     ):
         raise ValueError("PARTS handshake contract mismatch")
     for arm in ARMS:

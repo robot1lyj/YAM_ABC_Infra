@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import math
 from dataclasses import asdict, dataclass, field
+from functools import cached_property
 
 ARMS = ("left", "right")
 INDICES = {"left": tuple(range(6)), "right": tuple(range(7, 13))}
@@ -21,6 +25,11 @@ class ArmConfig:
     minimum_descent_m_s: float = 0.0
     table: dict | None = None
     B_rad: tuple | None = None
+    grasp_xy_polygon_m: list | None = None
+    grasp_region_frame: str | None = None
+    grasp_region_calibration_id: str | None = None
+    open_position_min: float | None = None
+    open_confirm_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -38,16 +47,21 @@ class PartsConfig:
     continuity_rad: float | None = None
     close_delta: float | None = None
     release_position: float | None = None
+    selector: dict = field(default_factory=lambda: {"schema": "rules_auto_v1"})
     left: ArmConfig = field(default_factory=ArmConfig)
     right: ArmConfig = field(default_factory=ArmConfig)
 
     @classmethod
     def from_dict(cls, value=None):
-        data = dict(value or {})
+        # Own nested calibration/rule data; callers cannot mutate a run's
+        # parameters after its configuration hash has been computed.
+        data = copy.deepcopy(value or {})
         for arm in ARMS:
             if arm in data:
                 data[arm] = ArmConfig(**data[arm])
         config = cls(**data)
+        if config.selector != {"schema": "rules_auto_v1"}:
+            raise ValueError("PARTS selector must be rules_auto_v1")
         if config.mode not in ("off", "shadow", "collect", "eval"):
             raise ValueError("PARTS mode must be off/shadow/collect/eval")
         for key in (
@@ -88,6 +102,8 @@ class PartsConfig:
                 "budget_s",
                 "entry_hysteresis_m",
                 "minimum_descent_m_s",
+                "open_position_min",
+                "open_confirm_s",
             ):
                 number = getattr(options, key)
                 if number is not None and (
@@ -104,6 +120,19 @@ class PartsConfig:
                 raise ValueError("PARTS entry rules must be nonnegative")
             if options.budget_s is not None and options.budget_s <= 0:
                 raise ValueError("PARTS budget_s must be positive")
+            if options.open_position_min is not None and not 0 < options.open_position_min <= 1:
+                raise ValueError("PARTS actual open threshold must be in (0,1]")
+            if options.open_confirm_s is not None and options.open_confirm_s <= 0:
+                raise ValueError("PARTS open confirmation must be positive")
+            if options.grasp_xy_polygon_m is not None:
+                from .selector import validate_polygon
+
+                validate_polygon(options.grasp_xy_polygon_m)
+                if options.table is None or (
+                    options.grasp_region_frame != options.table["frame"]
+                    or options.grasp_region_calibration_id != options.table["calibration_id"]
+                ):
+                    raise ValueError("PARTS grasp region must match table frame/calibration")
             if options.B_rad is not None and (
                 len(options.B_rad) != 6
                 or any(
@@ -141,7 +170,71 @@ class PartsConfig:
             for key in ("h_goal_m", "minimum_height_m", "budget_s", "table", "B_rad"):
                 if getattr(getattr(self, arm), key) is None:
                     missing.append(f"{arm}.{key}")
+            missing.extend(
+                f"{arm}.{key}"
+                for key in self.selector_gaps(arm)
+                if not hasattr(self, key) and f"{arm}.{key}" not in missing
+            )
         return missing
+
+    def selector_gaps(self, arm):
+        fields = (
+            "table",
+            "grasp_xy_polygon_m",
+            "grasp_region_frame",
+            "grasp_region_calibration_id",
+            "open_position_min",
+            "open_confirm_s",
+        )
+        return [key for key in fields if getattr(getattr(self, arm), key) is None] + [
+            key
+            for key in (
+                "close_delta",
+                "release_position",
+                "confirm_s",
+                "max_pose_age_s",
+                "max_feedback_age_s",
+                "max_confirmation_gap_s",
+            )
+            if getattr(self, key) is None
+        ]
+
+    @cached_property
+    def selector_config_sha(self):
+        """Hash actual rule parameters, independent of actor/model identity."""
+        body = dict(
+            self.selector,
+            force_threshold_nm=0.65,
+            **{
+                key: getattr(self, key)
+                for key in (
+                    "confirm_s",
+                    "max_pose_age_s",
+                    "max_feedback_age_s",
+                    "max_confirmation_gap_s",
+                    "close_delta",
+                    "release_position",
+                )
+            },
+        )
+        for arm in ARMS:
+            body[arm] = {
+                key: getattr(getattr(self, arm), key)
+                for key in (
+                    "table",
+                    "grasp_xy_polygon_m",
+                    "grasp_region_frame",
+                    "grasp_region_calibration_id",
+                    "open_position_min",
+                    "open_confirm_s",
+                    "h_entry_m",
+                    "entry_hysteresis_m",
+                    "minimum_descent_m_s",
+                )
+            }
+        return hashlib.sha256(
+            json.dumps(body, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        ).hexdigest()
 
     def validate_execution(self):
         if self.mode in ("collect", "eval") and self.gaps():

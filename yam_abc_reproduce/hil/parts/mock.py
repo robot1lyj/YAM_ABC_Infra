@@ -23,6 +23,8 @@ class MockKinematics:
         for arm, start in (("left", 0), ("right", 7)):
             pose = np.eye(4)
             pose[2, 3] = q[start]
+            pose[0, 3] = q[start + 1]
+            pose[1, 3] = q[start + 2]
             poses[arm] = pose
         return SimpleNamespace(**poses)
 
@@ -42,11 +44,16 @@ def mock_config(mode="shadow"):
         budget_s=4,
         table=table,
         B_rad=[0.01] * 6,
+        grasp_xy_polygon_m=[[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]],
+        grasp_region_frame="mock_table",
+        grasp_region_calibration_id="fixture_only",
+        open_position_min=0.8,
+        open_confirm_s=0.1,
     )
     return PartsConfig.from_dict(
         dict(
             mode=mode,
-            contract_sha="mock-contract-v1",
+            contract_sha="mock-contract-auto-v1",
             behavior_snapshot_id="mock-behavior-v1",
             behavior_manifest_ref="mock://behavior-v1",
             feature_schema_id="mock-feature-v1",
@@ -81,6 +88,8 @@ def mock_metadata(config):
             action_dt=1 / 30,
             feature_schema_id=config.feature_schema_id,
             behavior_manifest_ref=config.behavior_manifest_ref,
+            selector_schema=config.selector["schema"],
+            selector_config_sha=config.selector_config_sha,
             per_arm={
                 a: dict(indices=list(INDICES[a]), B_rad=list(getattr(config, a).B_rad))
                 for a in ARMS
@@ -133,6 +142,8 @@ def produce(path, *, producer_sha, mode="shadow"):
         split_role="mock",
         contract_sha=config.contract_sha,
         config=config.as_dict(),
+        selector_schema=config.selector["schema"],
+        selector_config_sha=config.selector_config_sha,
         behavior_manifest_ref=config.behavior_manifest_ref,
         feature_schema_id=config.feature_schema_id,
         reward_fixed=True,
@@ -159,6 +170,7 @@ def produce(path, *, producer_sha, mode="shadow"):
     metadata = mock_metadata(config)
     timeline = RtcTimeline(delay_steps=9)
     client.preceding_target = timeline.final_target_at
+    client.committed_arms = timeline.pending_residual_arms
     timeline.edit_target = lambda tick, base, owner: client.edit(
         tick, base, owner, limit_target=lambda x: x
     )
@@ -167,8 +179,6 @@ def produce(path, *, producer_sha, mode="shadow"):
     target[[6, 13]] = 0.9
     pending = None
     request_id = 0
-    client.machine.mark("left", eligible=True, empty_hand=True)
-    client.machine.mark("right", eligible=True, empty_hand=True)
     for tick in range(210):
         now = tick / 30
         state = target.copy()
@@ -176,7 +186,9 @@ def produce(path, *, producer_sha, mode="shadow"):
             dict(
                 position=state[j],
                 velocity=0,
-                effort_nm=(0.8 if tick >= 35 else 0.1) if arm == "left" else 0.2,
+                effort_nm=(0.8 if tick % 70 >= 35 and state[6] < 0.8 else 0.1)
+                if arm == "left"
+                else 0.2,
                 sdk_updated_at=1000 + now,
                 sampled_at=now,
                 feedback_age_s=0.005,
@@ -242,9 +254,17 @@ def produce(path, *, producer_sha, mode="shadow"):
                 # Repeat approach/open cycles. No robot hardware is constructed.
                 phase = absolute_tick % 70
                 actions[i, [0, 7]] = (
-                    max(0.02, 0.09 - phase * 0.003) if phase < 32 else 0.02 if phase < 52 else 0.09
+                    max(0.02, 0.09 - phase * 0.003)
+                    if phase < 32
+                    else 0.02
+                    if phase < 40 or 48 <= phase < 60
+                    else 0.09
                 )
-                actions[i, [6, 13]] = 0.1 if 28 <= phase < 52 else 0.9
+                actions[i, [1, 8]] = (
+                    max(0, min(0.4, (phase - 39) * 0.05, (67 - phase) * 0.05)) if phase >= 40 else 0
+                )
+                actions[i, 6] = 0.1 if 28 <= phase < 52 else 0.9
+                actions[i, 13] = 0.1 if 28 <= phase < 38 else 0.9
             actions[:9] = commitment.actions
             pending = (tick + 2, token, commitment, actions, payload)
         images = {

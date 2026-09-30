@@ -176,6 +176,17 @@ class RtcTimeline:
                 return target.copy()
         return None
 
+    def pending_residual_arms(self):
+        """Only immutable future residuals block a new grasp attempt."""
+        arms = set()
+        for tick in self._committed:
+            parts = (self._owners.get(tick) or {}).get("parts") or {}
+            residual = parts.get("physical_residual_rad", [0] * 14)
+            for arm, indices in (("left", range(6)), ("right", range(7, 13))):
+                if any(abs(residual[i]) > 0 for i in indices):
+                    arms.add(arm)
+        return arms
+
     def install(self, commitment: RtcCommitment, actions, *, current_tick: int,
                 limit_target, request: dict | None = None) -> bool:
         """Reject a stale reply; never slide its fixed takeover tick forward."""

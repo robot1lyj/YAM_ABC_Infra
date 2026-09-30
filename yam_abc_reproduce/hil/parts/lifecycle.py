@@ -32,10 +32,6 @@ class RunReplacement:
                 self.previous.cancel_pending("data_session_changed")
                 runtime.parts, runtime.parts_journal = self.client, self.journal
                 runtime.session.parts = self.client
-                commands = getattr(runtime, "parts_commands", None)
-                if commands is not None:
-                    while not commands.empty():
-                        commands.get_nowait()
                 runtime.recorder.metadata["parts"] = dict(
                     schema="yam_parts_raw_v1",
                     run_id=self.client.run_id,

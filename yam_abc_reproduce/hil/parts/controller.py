@@ -16,6 +16,7 @@ from .config import ARMS, INDICES, SCHEMA
 from .height import Heights
 from .machine import Attempts
 from .protocol import handshake, validate_reply
+from .selector import RulesSelector
 
 
 class PartsClient:
@@ -25,6 +26,7 @@ class PartsClient:
         self.emit = emit
         self.heights = Heights(config, kinematics)
         self.machine = Attempts(config, self._emit)
+        self.selector = RulesSelector(config, self._selector_event)
         self.requests = {}
         self.replies = {}
         self.declaration = None
@@ -37,6 +39,9 @@ class PartsClient:
         self._recorded_requests = set()
         self._actor_snapshots = None
         self.preceding_target = None
+        self.committed_arms = None
+        self.selector_context = None
+        self._recording = False
 
     def cancel_pending(self, reason):
         """Retain unanswered requests, without inventing a reply or feature."""
@@ -54,6 +59,11 @@ class PartsClient:
                     ),
                 )
                 self._recorded_requests.add(key)
+
+    def _selector_event(self, kind, value):
+        # One event identity/sequence authority for both rules and attempts.
+        extra = {k: v for k, v in value.items() if k not in ("kind", "tick", "time")}
+        self.machine.event(value["kind"], value["tick"], value["time"], **extra)
 
     def _emit(self, kind, value):
         value = {"schema": SCHEMA, "run_id": self.run_id, "session_id": self.session_id, **value}
@@ -75,8 +85,9 @@ class PartsClient:
         if self.emit(kind, value) is False:
             self.error = "PARTS recording queue overflow/write failure"
 
-    def observe(self, *, tick, now, epoch, state, ages, feedback, policy_active):
+    def observe(self, *, tick, now, epoch, state, ages, feedback, policy_active, recording=True):
         self.tick, self.now = tick, now
+        self.machine.event_refs = []
         if self.epoch is not None and epoch != self.epoch:
             self.cancel_pending("epoch_changed")
             self.replies.clear()
@@ -85,6 +96,31 @@ class PartsClient:
         self.epoch = epoch
         height = self.heights.sample(state, sampled_at=now, feedback_age_s=ages, now=now)
         force = {arm: feedback[i] for i, arm in enumerate(ARMS)}
+        committed = [] if self.committed_arms is None else sorted(self.committed_arms())
+        self.selector_context = dict(
+            epoch=epoch,
+            control_time=now,
+            policy_active=policy_active,
+            phases=dict(self.machine.phase),
+            active_arm=self.machine.active_arm,
+            committed_arms=committed,
+            consumed_arm=None,
+            initial_state=self.selector.checkpoint() if recording and not self._recording else None,
+        )
+        self._recording = recording
+        eligibility = self.selector.observe(
+            tick=tick,
+            now=now,
+            epoch=epoch,
+            heights=height,
+            feedback=force,
+            policy_active=policy_active,
+            phases=self.machine.phase,
+            active_arm=self.machine.active_arm,
+            committed_arms=committed,
+        )
+        self.machine.eligibility = eligibility
+        preceding_attempt = self.machine.attempt
         self.machine.observe(
             tick=tick,
             now=now,
@@ -92,7 +128,19 @@ class PartsClient:
             heights=height,
             feedback=force,
             policy_active=policy_active,
+            preserve_events=True,
         )
+        if self.machine.attempt is not None and self.machine.attempt is not preceding_attempt:
+            self.selector.consume(self.machine.active_arm, tick, now)
+            self.selector_context["consumed_arm"] = self.machine.active_arm
+        arm = self.machine.active_arm
+        if (
+            arm is not None
+            and self.machine.phase[arm] != "EXIT_PENDING"
+            and self.selector.output[arm].get("inside_grasp_region") is False
+        ):
+            # Cancel through continuous handback, not by zeroing frozen RTC rows.
+            self.machine.exit_pending("canceled", "left_grasp_region", tick, now)
 
     def build_request(
         self, token, *, observation_tick, commitment=None, scheduler=None, observation=None
@@ -231,6 +279,7 @@ class PartsClient:
                 else self.machine.attempt["attempt_id"],
                 phase=self.machine.phase[arm],
                 **self.machine.eligibility[arm],
+                entry_armed=self.machine.entry_armed[arm],
                 force_feedback=self.machine.feedback.get(arm),
                 elapsed_s=max(0, self.now - self.machine.attempt["entry_time"]) if active else 0,
                 confirmation_s=confirmation,
@@ -313,15 +362,28 @@ class PartsClient:
                 if returning:
                     record["constraints"].append("handback_to_new_base")
                 elif value["editable_mask"][index]:
-                    target[list(INDICES[arm])] += value["B_rad"] * value["u"][index]
-                    record["candidate_ref"] = dict(
-                        request_epoch=token.get("epoch"),
-                        request_id=token.get("request_id"),
-                        model_index=index,
-                        arm=arm,
-                        actor_snapshot_id=value["actor_snapshot_id"],
-                        behavior_snapshot_id=candidate["behavior_snapshot_id"],
-                    )
+                    if self.machine.attempt.get("pending_reason") == "left_grasp_region":
+                        previous = next(
+                            (
+                                v[1]
+                                for k, v in reversed(self._edited.items())
+                                if k[0] == self.epoch and k[1] == tick - 1
+                            ),
+                            self.last_edit or {},
+                        )
+                        carry = np.asarray(previous.get("physical_residual_rad", [0] * 14))
+                        target[list(INDICES[arm])] += carry[list(INDICES[arm])]
+                        record["constraints"].append("exit_carry_previous_residual")
+                    else:
+                        target[list(INDICES[arm])] += value["B_rad"] * value["u"][index]
+                        record["candidate_ref"] = dict(
+                            request_epoch=token.get("epoch"),
+                            request_id=token.get("request_id"),
+                            model_index=index,
+                            arm=arm,
+                            actor_snapshot_id=value["actor_snapshot_id"],
+                            behavior_snapshot_id=candidate["behavior_snapshot_id"],
+                        )
                     bounded = np.asarray(limit_target(target), dtype=float)
                     if bounded.shape != (14,) or not np.isfinite(bounded).all():
                         raise ValueError("PARTS combined target invalid")
@@ -381,6 +443,7 @@ class PartsClient:
             selection={k: v for k, v in (selection or {}).items() if k != "parts"},
             residual=residual,
         )
+        self.selector.submitted(tick=tick, now=now, target=target)
 
     def record(self):
         arm = self.machine.active_arm
@@ -405,6 +468,9 @@ class PartsClient:
             parameter_gaps=self.config.gaps(),
         )
         result["config"] = self.config.as_dict()
+        result["selector_schema"] = self.config.selector["schema"]
+        result["selector_config_sha"] = self.config.selector_config_sha
+        result["selector_context"] = copy.deepcopy(self.selector_context)
         if self.last_edit:
             for key in (
                 "selection",

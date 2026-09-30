@@ -14,6 +14,8 @@ def main():
     mock.add_argument("--mode", choices=("shadow", "collect", "eval"), default="shadow")
     check = sub.add_parser("validate")
     check.add_argument("run")
+    replay = sub.add_parser("verify-selector")
+    replay.add_argument("run")
     finish = sub.add_parser("finalize")
     finish.add_argument("run")
     finish.add_argument("--episode", action="append", required=True)
@@ -33,6 +35,21 @@ def main():
     elif args.command == "validate":
         errors = validate_package(args.run)
         result = dict(errors=errors, valid=not errors)
+    elif args.command == "verify-selector":
+        from pathlib import Path
+
+        from ..storage import read_rows
+        from .config import PartsConfig
+        from .replay import verify_selector
+
+        path = Path(args.run)
+        config = PartsConfig.from_dict(json.loads((path / "run.json").read_text())["config"])
+        rows = (
+            row
+            for episode in sorted((path / "episodes").glob("*/manifest.json"))
+            for row in read_rows(episode.parent)
+        )
+        result = verify_selector(rows, config)
     elif args.command == "finalize":
         result = finalize(args.run, episodes=args.episode, producer_sha=sha)
     else:
@@ -49,7 +66,7 @@ def main():
             outbox.drain_once()
         result = dict(publication_id=pid, outbox=args.outbox)
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    if args.command == "validate" and not result["valid"]:
+    if args.command in ("validate", "verify-selector") and not result["valid"]:
         raise SystemExit(1)
 
 

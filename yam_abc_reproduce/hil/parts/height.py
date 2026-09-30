@@ -61,6 +61,7 @@ class Heights:
                 and age + max(0, now - sampled_at) <= self.config.max_pose_age_s
             )
             height = None
+            position = None
             if valid and arm in self.tables:
                 transform, normal, origin = self.tables[arm]
                 position = (transform @ pose)[:3, 3]
@@ -76,6 +77,11 @@ class Heights:
                 feedback_age_s=age,
                 height_m=height,
                 height_valid=height is not None,
+                table_position_m=None if position is None else position.tolist(),
+                table_frame=None if arm not in self.tables else options.table["frame"],
+                table_calibration_id=None
+                if arm not in self.tables
+                else options.table["calibration_id"],
                 h_entry_m=options.h_entry_m,
                 h_goal_m=options.h_goal_m,
                 error_m=None

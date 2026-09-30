@@ -309,7 +309,8 @@ function render() {
   const intervening = mode === "hil" && (state.intervention_pending || ["takeover", "human"].includes(state.phase));
   $("start").disabled = !(canRun && paused && idle) || intervening;
   if (rlView) {
-    text("start", "开始 RL 试验");
+    const shadow = (parts?.mode || state.parts_configuration?.mode) === "shadow";
+    text("start", shadow ? "开始基础策略采集" : "开始 RL 试验");
     $("start").disabled ||= mode !== "inference" || !parts || !!parts.recording_error;
     $("start").title = !parts ? "RL 未启用；请先核对启动配置" : mode !== "inference"
       ? "请先暂停并点击使用推理控制" : "手动开始；不会因打开 RL 页面自动运动";
@@ -827,7 +828,8 @@ function renderRL({connected, idle, paused, latched, recording, policyEditable, 
   text("rl-entry-height", ["left", "right"].map(a => `${a === "left" ? "左" : "右"} ${number(cfg[a]?.h_entry_m ?? .05, 1000, "mm")}`).join(" / "));
   text("rl-parameter-gaps", (parts?.parameter_gaps || []).length ? `待配置：${parts.parameter_gaps.join("、")}` : "");
   text("rl-readiness", parts?.recording_error ? operatorHint(parts.recording_error) : !parts
-    ? "RL 未启用。可查看页面；启动配置不会由此页面自动开启。"
+    ? runMode === "shadow" ? "影子记录已配置，连接设备后生效；不施加 RL 残差。"
+      : "RL 未启用。可查看页面；启动配置不会由此页面自动开启。"
     : runMode === "shadow" ? "影子模式：只记录候选和观测，机械臂仍执行基础模型动作。"
     : parts.capability !== "supported" ? "等待 RL 服务协议核对；不会执行未经核对的残差。"
     : "运行配置已固定，开始前确认现场与录制状态。");

@@ -1,6 +1,14 @@
 # PARTS RL 客户端
 
-本页是 YAM 侧 RL 运行、协议与原始记录的唯一 owner。实现是可选扩展，默认 `off`；本轮只做模拟与离线验收，未部署 IPC、未运行真实残差动作、未验收 Thor 的 actor/learner。普通推理和 HIL 的现有合同不变。
+本页是 YAM 侧 RL 运行、协议与原始记录的唯一 owner。实现是可选扩展，仓库模板默认 `off`；2026-09-30 已在 IPC 部署基础策略的 `shadow` 影子记录入口，未运行真实残差动作、未验收 Thor 的 actor/learner。普通推理和 HIL 的现有合同不变。
+
+## 当前实验：先采基础策略数据，再训练
+
+当前不要求已有 RL 输出。IPC 使用 `data/workstation/parts-shadow.json`：原有 RTC 基础模型执行，记录模型动作、实际下发、SDK反馈、夹爪位置/力矩、FK和输入来源；物理残差保持零。打开 RL 页面不改变控制权，连接、选择推理与开始均由用户明确操作。训练后再对接 actor，使用 `collect/eval` 验证残差，不能把这里的 `collect` 残差模式误当作训练前基础数据采集。
+
+现场高度标定、闭合/接触确认及研究参数尚未完成；原始反馈可以先采，自动高度阶段显示未标定/未配置，不补造抓取标签、奖励、候选或features。反馈新鲜度暂沿用站点已有的0.25秒上限，不改SDK超时。后续按实际数据和标定补齐自动规则，原始包须离线核验并由服务端确认可训练资格。
+
+设备运行相关源码来自 `714e9c4` 快照，保留现场站点、相机配置与 i2rt 补丁；IPC Git基线仍为 `76b6834` 加增量部署，不能单用现场HEAD作为新代码的生产版本。部署备份 `/data/YAM/data/deployment_backups/parts-v2.ihruXL/` 保留更新前文件和此次源码快照；离线整理时应一并记录这份部署来源。
 
 ## 页面与职责
 
@@ -128,7 +136,7 @@ uv run --no-sync yam-workstation --mock --mode inference --web-port 8886 \
   --parts-config configs/parts_client.json
 ```
 
-真实RL启动沿用设备服务入口并传 `--parts-config <已确认配置.json>`；启用新设备代码依现有部署边界处理，不在页面浏览时更新设备或释放力矩。模拟配方仅在mock模块内，不能复制当现场标定。
+真实RL启动沿用设备服务入口并传 `--parts-config <已确认配置.json>`；本次 IPC 用户unit的 `30-parts-shadow.conf` 传入 `/data/YAM/data/workstation/parts-shadow.json`。启用新设备代码依现有部署边界处理，不在页面浏览时更新设备或释放力矩。模拟配方仅在mock模块内，不能复制当现场标定。
 
 ```bash
 # 各output必须是尚不存在的新目录。全程不连接SDK/Thor。

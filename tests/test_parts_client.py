@@ -543,6 +543,9 @@ def test_rl_page_entry_read_only_and_marker_api_validated():
     assert not calls
     assert 'id="rl-left-grasp"' not in html and 'id="rl-clear-markers"' not in html
     assert 'id="rl-left-reason"' in html and 'id="rl-left-position"' in html
+    script = web.get("/assets/app.js").text
+    assert "影子记录已配置，连接设备后生效" in script
+    assert "开始基础策略采集" in script
 
 
 def test_cli_validates_rl_configuration_before_constructing_devices(tmp_path, monkeypatch, capsys):

@@ -1,6 +1,7 @@
 """Task counts/delete are storage operations, never robot-control operations."""
 
 import json
+import shutil
 import subprocess
 import threading
 import time
@@ -264,6 +265,9 @@ def test_delete_rejects_active_states(tmp_path, changes):
 
 
 def test_browser_delete_uses_confirmation_and_original_target():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node required for UI event regression; run on development host")
     source = Path("yam_abc_reproduce/hil/static/app.js").read_text()
     funcs = source[source.index("function canDeleteEpisode"):source.index("function camerasConnected")]
     handler = source[source.index('$("delete-last-episode").onclick'):source.index('$("expand-vision").onclick')]
@@ -292,4 +296,4 @@ def test_browser_delete_uses_confirmation_and_original_target():
       state.phase='hold';assert(canDeleteEpisode());online=false;assert(!canDeleteEpisode());
     })().catch(e=>{console.error(e);process.exit(1)});
     """
-    subprocess.run(["node", "-e", code], check=True, capture_output=True, text=True)
+    subprocess.run([node, "-e", code], check=True, capture_output=True, text=True)

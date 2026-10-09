@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "memory_gate.py"
 SPEC = importlib.util.spec_from_file_location("engineering_gate", SCRIPT)
@@ -103,13 +104,13 @@ class EngineeringMemoryTest(unittest.TestCase):
         record = self.capability()
         source = self.save_record(record)
         gate.validate_record(self.root, record)
-        item = gate.select(self.root, source, self.scope)
+        item = gate.select(self.root, source, self.scope, integrity="strict")
         self.assertIn("not_execution_authorization", item["admission"])
         self.assertIn("runtime_conditions_require_recheck", item["admission"])
         self.assertFalse((self.root / "EXECUTED").exists())
         self.write("scripts/probe.py", "# Changed behavior\n")
         with self.assertRaises(gate.GateError):
-            gate.select(self.root, source, self.scope)
+            gate.select(self.root, source, self.scope, integrity="strict")
 
     def test_capability_requires_artifact_identity_and_complete_usage(self):
         for mutation in ("untracked_entrypoint", "missing_config", "no_acceptance", "no_limits", "wrong_kind"):
@@ -125,7 +126,7 @@ class EngineeringMemoryTest(unittest.TestCase):
             else:
                 record["kind"] = "fact"
             with self.subTest(mutation=mutation), self.assertRaises(gate.GateError):
-                gate.validate_record(self.root, record)
+                gate.validate_record(self.root, record, integrity="strict")
 
     def test_verified_attempt_is_not_a_repair_recommendation(self):
         record = self.attempt()
@@ -174,7 +175,7 @@ class EngineeringMemoryTest(unittest.TestCase):
             invalid = copy.deepcopy(record)
             invalid["retrieval"]["related"][0]["source"] = source
             with self.assertRaises(gate.GateError):
-                gate.validate_record(self.root, invalid)
+                gate.validate_record(self.root, invalid, integrity="strict")
 
     def test_search_filters_scope_status_and_evidence_before_returning_hits(self):
         good = self.record("good")
@@ -187,7 +188,7 @@ class EngineeringMemoryTest(unittest.TestCase):
             ("unrelated", {"claim": "dataset download"}),
         ):
             self.save_record(self.record(name) | changes)
-        result = json.loads(gate.search(self.root, "case", "latency", self.scope))
+        result = json.loads(gate.search(self.root, "case", "latency", self.scope, integrity="strict"))
         self.assertEqual([item["source"] for item in result["items"]], ["docs/cache/records/good.json"])
         self.assertEqual(result["excluded"]["scope_mismatch"], 1)
         self.assertEqual(result["excluded"]["not_current"], 1)
@@ -291,6 +292,97 @@ class EngineeringMemoryTest(unittest.TestCase):
         self.assertEqual(records["batch-attempt"]["attempt"]["verdict"], "inconclusive")
         self.assertEqual(records["frequency-check"]["assumptions"][0]["result"], "mismatch")
         self.assertFalse((self.root / "EXECUTED").exists())
+
+
+    def test_basic_retrieval_accepts_unfingerprinted_sources_without_hashing(self):
+        record = self.capability()
+        record.pop("depends_on")
+        record["evidence"] = [{"path": "report.json"}]
+        source = self.save_record(record)
+        with mock.patch.object(gate, "digest", side_effect=AssertionError("artifact hashing is not basic retrieval")):
+            self.assertEqual(gate.validate_record(self.root, record), [])
+            found = json.loads(gate.search(self.root, "case", "latency", self.scope))
+            full = json.loads(gate.pack(self.root, "case", [source], [], self.scope))
+        self.assertEqual(len(found["items"]), 1)
+        self.assertIn("fingerprints_not_checked", full["items"][0]["admission"])
+        with self.assertRaises(gate.GateError):
+            gate.select(self.root, source, self.scope, integrity="strict")
+        self.assertFalse((self.root / "EXECUTED").exists())
+
+    def test_basic_missing_references_warn_without_promoting_record(self):
+        record = self.capability()
+        record["retrieval"] = {
+            "terms": ["latency"], "related": [{"relation": "check", "source": "missing.md#Check"}]
+        }
+        source = self.save_record(record)
+        for relative in ("docs/current.md", "report.json", "config.json", "scripts/probe.py"):
+            (self.root / relative).unlink()
+        item = gate.select(self.root, source, self.scope)
+        self.assertIn("recheck_required", item["admission"])
+        self.assertIn("source_unavailable: report.json", item["admission"])
+        self.assertIn("source_unavailable: scripts/probe.py", item["admission"])
+        self.assertIn("source_unavailable: missing.md", item["admission"])
+        found = json.loads(gate.search(self.root, "case", "latency", self.scope))
+        self.assertEqual(len(found["items"]), 1)
+        self.assertEqual(json.loads((self.root / source).read_text()), record)
+        with self.assertRaises(gate.GateError):
+            gate.select(self.root, source, self.scope, integrity="strict")
+        candidate = dict(record, status="candidate")
+        self.save_record(candidate)
+        self.assertEqual(json.loads(gate.search(self.root, "case", "latency", self.scope))["items"], [])
+
+    def test_changed_fingerprints_only_block_explicit_strict_reads(self):
+        record = self.record()
+        source = self.save_record(record)
+        self.write("config.json", '{"expected_hz":50}')
+        self.write("report.json", '{"observed_hz":600}')
+        basic = gate.select(self.root, source, self.scope)
+        self.assertIn("fingerprints_not_checked", basic["admission"])
+        self.assertNotIn("fingerprints_checked;", basic["admission"])
+        before = self.state()
+        with self.assertRaises(gate.GateError):
+            gate.pack(self.root, "case", [source], [], self.scope, integrity="strict")
+        self.assertEqual(self.state(), before)
+        strict = json.loads(gate.search(self.root, "case", "latency", self.scope, integrity="strict"))
+        self.assertEqual(strict["items"], [])
+        self.assertEqual(strict["excluded"]["invalid"], 1)
+
+    def test_strict_after_basic_checks_and_emits_independently(self):
+        source = self.save_record(self.record())
+        gate.pack(self.root, "case", [source], [], self.scope)
+        full = json.loads(gate.pack(self.root, "case", [source], [], self.scope, integrity="strict"))
+        self.assertIn("fingerprints_checked", full["items"][0]["admission"])
+        self.write("config.json", '{}')
+        with self.assertRaises(gate.GateError):
+            gate.pack(self.root, "case", [source], [], self.scope, integrity="strict")
+
+    def test_both_modes_reject_escaped_evidence_and_dependency_paths(self):
+        for integrity in ("basic", "strict"):
+            for changes in ({"evidence": [{"path": "../outside.json"}]}, {"depends_on": {"../outside.json": "0" * 64}}):
+                with self.subTest(integrity=integrity, changes=changes), self.assertRaises(gate.GateError):
+                    gate.validate_record(self.root, self.record() | changes, integrity=integrity)
+
+    def test_cli_basic_reports_policy_and_strict_failure_emits_no_source(self):
+        record = self.record()
+        record.pop("depends_on")
+        record["evidence"] = [{"path": "report.json"}]
+        source = self.save_record(record)
+        base = [sys.executable, str(SCRIPT), "validate-record", "--root", str(self.root), "--record", source]
+        basic = subprocess.run(base, capture_output=True)
+        self.assertEqual(basic.returncode, 0, basic.stderr.decode())
+        result = json.loads(basic.stdout)
+        self.assertTrue(result["schema_valid"])
+        self.assertFalse(result["fingerprints_checked"])
+        self.assertFalse(result["schema_and_local_evidence_valid"])
+        strict = subprocess.run(base + ["--integrity", "strict"], capture_output=True)
+        self.assertEqual(strict.returncode, 2)
+        self.assertEqual(strict.stdout, b"")
+        pack = [sys.executable, str(SCRIPT), "pack", "--root", str(self.root), "--session", "case",
+                "--required", source, "--scope", "project=demo", "--scope", "platform=edge"]
+        self.assertEqual(subprocess.run(pack, capture_output=True).returncode, 0)
+        strict_pack = subprocess.run(pack + ["--integrity", "strict"], capture_output=True)
+        self.assertEqual(strict_pack.returncode, 2)
+        self.assertEqual(strict_pack.stdout, b"")
 
 
 if __name__ == "__main__":

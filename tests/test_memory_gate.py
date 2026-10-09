@@ -182,7 +182,7 @@ class MemoryGateTest(unittest.TestCase):
             gate.pack(self.root, "case", [spec], [], {}, reload=True)
         self.write("norm.json", '{"scale":2}')
         with self.assertRaises(gate.GateError):
-            gate.pack(self.root, "case", [spec], [], record["scope"], reload=True)
+            gate.pack(self.root, "case", [spec], [], record["scope"], reload=True, integrity="strict")
         self.assertEqual(self.state(), before)
 
     def test_preloads_are_optional_deduplicated_and_not_context_measurement(self):
@@ -259,13 +259,13 @@ class MemoryGateTest(unittest.TestCase):
         record = self.record()
         spec = "docs/cache/records/case.json"
         self.write(spec, json.dumps(record))
-        gate.select(self.root, spec, record["scope"])
+        gate.select(self.root, spec, record["scope"], integrity="strict")
         for scope in ({}, {"project": "condapi", "platform": "server", "contract": "yam14-h50"}):
             with self.assertRaises(gate.GateError):
                 gate.select(self.root, spec, scope)
         self.write("norm.json", '{"scale":2}')
         with self.assertRaises(gate.GateError):
-            gate.select(self.root, spec, record["scope"])
+            gate.select(self.root, spec, record["scope"], integrity="strict")
 
     def test_expiry_missing_evidence_and_live_observations(self):
         record = self.record()
@@ -278,7 +278,7 @@ class MemoryGateTest(unittest.TestCase):
             {"depends_on": {}},
         ):
             with self.subTest(changes=changes), self.assertRaises(gate.GateError):
-                gate.validate_record(self.root, record | changes)
+                gate.validate_record(self.root, record | changes, integrity="strict")
         self.write("docs/cache/records/live.json", json.dumps(record | {"recheck": "always"}))
         with self.assertRaises(gate.GateError):
             gate.select(self.root, "docs/cache/records/live.json", record["scope"])
@@ -291,7 +291,7 @@ class MemoryGateTest(unittest.TestCase):
         bad = copy.deepcopy(record)
         bad["evidence"][0]["sha256"] = "0" * 64
         with self.assertRaises(gate.GateError):
-            gate.validate_record(self.root, bad)
+            gate.validate_record(self.root, bad, integrity="strict")
 
     def test_host_token_budget_includes_reserve(self):
         request = {"messages": [{"role": "user", "content": "hi"}], "tools": [{"name": "test"}]}
@@ -365,7 +365,7 @@ class MemoryGateTest(unittest.TestCase):
         with self.assertRaises(gate.GateError):
             gate.pack(self.root, "case", [spec], [])
         output = gate.pack(self.root, "case", [spec], [], record["scope"])
-        self.assertIn("evidence_and_scope_checked", json.loads(output)["items"][0]["admission"])
+        self.assertIn("scope_checked", json.loads(output)["items"][0]["admission"])
 
     def test_review_keeps_expired_evidence_for_audit_only(self):
         record = self.record() | {"valid_until": "2025-01-01T00:00:00Z"}

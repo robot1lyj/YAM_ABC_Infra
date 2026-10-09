@@ -96,7 +96,15 @@ uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 浏览器访问 http://127.0.0.1:8766 。真机前按 [工作站核验](workstation.md)填写
 [专用配置](../configs/station_hil.yaml)。带 `--web-port` 时先打开未连接的工作台，点击“连接设备”才构造设备，构造期间可能施力矩和校准夹爪；不带界面的CLI会在启动时连接。
 
-RK3588正式实例包含常驻`yam-device.service`（独占四臂、相机、推理与安全仲裁）及可独立重启的`yam-workstation.service` Web/API，私有接口为`%t/yam-device.sock`。IPC SSH用户名为`linux`，不是开发机用户名`wuyan-lyj`；密码不入库。**Wi-Fi 地址由 DHCP 分配，不把某次地址当固定入口。**2026-10-09经Thor直连复核：`wlan0=10.18.10.13/23`，面板 `http://10.18.10.13:8766/`。旧`.46`失效，运行Web仍监听旧地址；仅重启Web后新地址HTTP恢复，device PID未改变。每次网络切换或重启后先重新确认；开发机可通过已配置Thor跳板访问`linux@192.168.250.2`查询IPC实际地址。`10.18.31.234:8767`是独立x86数据集服务器，不是设备IPC。Web通过[start_ipc_web.sh](../scripts/start_ipc_web.sh)在启动时读取`wlan0`IPv4；运行中地址变化需单独刷新Web绑定，不能为了改页面地址重启设备。
+### IPC连接与地址
+
+IPC SSH用户名为`linux`，不是开发机用户名`wuyan-lyj`；密码不入库。**Wi-Fi地址由DHCP分配，连接前确认，不把日期快照当固定入口。**2026-10-09经Thor直连复核：`wlan0=10.18.10.13/23`，面板 `http://10.18.10.13:8766/`。该地址不是永久保证；开发机可通过已配置Thor跳板访问`linux@192.168.250.2`查询IPC实际地址，核对已有SSH主机密钥，不绕过验证。
+
+`10.18.31.234:8767`是独立x86数据集服务器，不是设备IPC。Web的[start_ipc_web.sh](../scripts/start_ipc_web.sh)在启动时读取wlan0 IPv4；运行中换址需只刷新Web绑定，不重启设备。10月9日曾因换址而残留旧绑定，仅重启Web后HTTP恢复，device PID未变；不据此认定SDK反馈故障已修复。
+
+### IPC进程与录制
+
+RK3588正式实例包含常驻`yam-device.service`（独占四臂、相机、推理与安全仲裁）及可独立重启的`yam-workstation.service` Web/API，私有接口为`%t/yam-device.sock`。
 
 新版设备会话在连接时另启动录制owner子进程：控制进程只向有界RAM队列提交引用，低优先级传输线程序列化三路RGB，录制进程负责NVMe暂存、HDF5与编码子进程；录制故障返回控制进程HOLD。该子进程目前随设备会话创建/结束，**不是**可单独systemd重启或在活动集内无损热升级的服务。重启Web不会关闭SDK或释放机械臂，但新Web附着时先发送HOLD；重启或停止`yam-device`仍会释放硬件，必须执行真机安全流程。设备服务预设Thor `ws://192.168.250.1:8000`，启动本身保持未连接。分进程已部署IPC并完成四臂断开下90秒三相机录制/读回；运动和长时验收仍待完成，见[验收](archive/acceptance_20260922.md#2026-09-16录制owner-ipc三相机短测)。
 

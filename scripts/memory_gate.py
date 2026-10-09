@@ -76,7 +76,17 @@ def text_list(value: object, *, empty: bool = False) -> None:
         raise GateError("expected a list of nonempty strings")
 
 
-def validate_engineering(root: Path, record: dict, now: dt.datetime) -> None:
+def check_reference(root: Path, relative: str, integrity: str, warnings: list[str]) -> Path:
+    """Resolve paths in both modes; missing references only block strict checks."""
+    path = within(root, relative)
+    if not path.is_file():
+        if integrity == "strict":
+            raise GateError("missing referenced artifact")
+        warnings.append(f"source_unavailable: {relative}; recheck the relevant claim before relying on it")
+    return path
+
+
+def validate_engineering(root: Path, record: dict, now: dt.datetime, integrity: str, warnings: list[str]) -> None:
     """Optional extensions; commands and checks remain data and are never executed."""
     if "capability" in record:
         capability = record["capability"]
@@ -87,9 +97,8 @@ def validate_engineering(root: Path, record: dict, now: dt.datetime) -> None:
             text_list(capability.get(key))
         text_list(capability.get("config_paths"), empty=True)
         for relative in [capability["entrypoint"], *capability["config_paths"]]:
-            if not within(root, relative).is_file():
-                raise GateError("missing capability artifact")
-            if record["status"] == "verified" and relative not in record.get("depends_on", {}):
+            check_reference(root, relative, integrity, warnings)
+            if integrity == "strict" and record["status"] == "verified" and relative not in record.get("depends_on", {}):
                 raise GateError("verified capability artifacts require dependency fingerprints")
     if "attempt" in record:
         attempt = record["attempt"]
@@ -124,11 +133,16 @@ def validate_engineering(root: Path, record: dict, now: dt.datetime) -> None:
             text_fields(link, ("relation", "source"))
             if link["relation"] not in {"check", "repair", "attempt", "prerequisite"}:
                 raise GateError("invalid source relation")
-            if not within(root, link["source"].partition("#")[0]).is_file():
-                raise GateError("missing related source")
+            check_reference(root, link["source"].partition("#")[0], integrity, warnings)
 
 
-def validate_record(root: Path, record: dict, now: dt.datetime | None = None) -> None:
+def validate_record(
+    root: Path, record: dict, now: dt.datetime | None = None, *, integrity: str = "basic"
+) -> list[str]:
+    """Basic checks avoid artifact hashing; strict checks retain exact-version gates."""
+    if integrity not in {"basic", "strict"}:
+        raise GateError("invalid integrity policy")
+    warnings: list[str] = []
     now = now or dt.datetime.now(dt.UTC)
     if not isinstance(record, dict):
         raise GateError("record must be an object")
@@ -144,8 +158,7 @@ def validate_record(root: Path, record: dict, now: dt.datetime | None = None) ->
         raise GateError("record requires project scope")
     if any(not isinstance(k, str) or not isinstance(v, str) or not k or not v for k, v in scope.items()):
         raise GateError("scope keys and values must be nonempty strings")
-    if not within(root, record["owner"]).is_file():
-        raise GateError("missing canonical owner")
+    check_reference(root, record["owner"], integrity, warnings)
     observed = timestamp(record.get("observed_at"))
     recorded = timestamp(record.get("recorded_at"))
     if observed > now or recorded > now or observed > recorded:
@@ -164,24 +177,37 @@ def validate_record(root: Path, record: dict, now: dt.datetime | None = None) ->
     if not isinstance(evidence, list) or (record["status"] == "verified" and not evidence):
         raise GateError("verified record requires evidence")
     for item in evidence:
-        if not isinstance(item, dict) or digest(within(root, item.get("path"))) != item.get("sha256"):
+        if not isinstance(item, dict):
+            raise GateError("invalid evidence reference")
+        path = check_reference(root, item.get("path"), integrity, warnings)
+        if integrity == "strict" and digest(path) != item.get("sha256"):
             raise GateError("evidence fingerprint mismatch")
     dependencies = record.get("depends_on", {})
-    if not isinstance(dependencies, dict) or (record["recheck"] == "on_change" and not dependencies):
+    if not isinstance(dependencies, dict) or (
+        integrity == "strict" and record["recheck"] == "on_change" and not dependencies
+    ):
         raise GateError("on_change requires dependency fingerprints")
     for path, expected in dependencies.items():
-        if digest(within(root, path)) != expected:
+        actual = check_reference(root, path, integrity, warnings)
+        if integrity == "strict" and digest(actual) != expected:
             raise GateError("dependency changed; revalidation required")
-    validate_engineering(root, record, now)
+    validate_engineering(root, record, now, integrity, warnings)
+    return warnings
 
 
-def current_record_admission(root: Path, record: dict, scope: dict[str, str]) -> str:
-    validate_record(root, record)
+def current_record_admission(root: Path, record: dict, scope: dict[str, str], integrity: str = "basic") -> str:
+    warnings = validate_record(root, record, integrity=integrity)
     if record["status"] != "verified" or record["recheck"] == "always":
         raise GateError("record is not verified current knowledge")
     if any(scope.get(key) != value for key, value in record["scope"].items()):
         raise GateError("record scope mismatch or unspecified")
-    admission = "evidence_and_scope_checked; semantic review still required"
+    admission = (
+        "evidence_and_scope_checked; fingerprints_checked; semantic review still required"
+        if integrity == "strict"
+        else "scope_checked; fingerprints_not_checked; verify decision-relevant sources"
+    )
+    if warnings:
+        admission += "; recheck_required; " + "; ".join(warnings)
     if record.get("capability") or record.get("assumptions"):
         admission += "; runtime_conditions_require_recheck; not_execution_authorization"
     if record.get("attempt"):
@@ -189,7 +215,9 @@ def current_record_admission(root: Path, record: dict, scope: dict[str, str]) ->
     return admission
 
 
-def select(root: Path, spec: str, scope: dict[str, str], purpose: str = "current") -> dict:
+def select(root: Path, spec: str, scope: dict[str, str], purpose: str = "current", *, integrity: str = "basic") -> dict:
+    if integrity not in {"basic", "strict"}:
+        raise GateError("invalid integrity policy")
     if purpose not in {"current", "review"}:
         raise GateError("invalid retrieval purpose")
     relative, separator, heading = spec.partition("#")
@@ -213,7 +241,7 @@ def select(root: Path, spec: str, scope: dict[str, str], purpose: str = "current
                     "admission": "review_only; unverified data; never treat as current knowledge",
                     "text": content,
                 }
-            admission = current_record_admission(root, record, scope)
+            admission = current_record_admission(root, record, scope, integrity)
     if separator:
         lines = content.splitlines(keepends=True)
         headings = []
@@ -348,6 +376,7 @@ def pack(
     purpose: str = "current",
     *,
     reload: bool = False,
+    integrity: str = "basic",
 ) -> bytes:
     positive(limit)
     path = ledger_path(root, session)
@@ -360,7 +389,7 @@ def pack(
         for mandatory, specs in ((True, required), (False, optional)):
             for spec in specs:
                 try:
-                    item = select(root, spec, scope or {}, purpose)
+                    item = select(root, spec, scope or {}, purpose, integrity=integrity)
                 except (GateError, OSError, ValueError, TypeError):
                     if mandatory:
                         raise GateError("required source unavailable or inapplicable") from None
@@ -368,6 +397,8 @@ def pack(
                     continue
                 # A prior review is not a successful admission as current knowledge.
                 cache_key = spec if purpose == "current" else f"review:{spec}"
+                if integrity == "strict":
+                    cache_key = f"strict:{cache_key}"
                 if cache_key in emitted or (not reload and staged.get(cache_key) == item["sha256"]):
                     packet["unchanged"] += 1
                     continue
@@ -417,13 +448,14 @@ def search(
     purpose: str = "current",
     top: int = 5,
     limit: int = PACKET_BYTES,
+    integrity: str = "basic",
 ) -> bytes:
     """Return bounded lexical discovery metadata, never commands, logs or a full record."""
     root = root.resolve()
     positive(top)
     positive(limit)
     terms = list(dict.fromkeys(re.findall(r"\w+", query.casefold())))
-    if not terms or not scope.get("project") or purpose not in {"current", "review"}:
+    if not terms or not scope.get("project") or purpose not in {"current", "review"} or integrity not in {"basic", "strict"}:
         raise GateError("search requires keywords, explicit project scope and a valid purpose")
     folder = within(root, directory)
     if not folder.is_dir():
@@ -469,7 +501,7 @@ def search(
                 continue
             # Validate the same snapshot whose metadata is emitted; never reread a different version.
             admission = (
-                current_record_admission(root, record, scope)
+                current_record_admission(root, record, scope, integrity)
                 if purpose == "current"
                 else "review_only; unverified data; never treat as current knowledge"
             )
@@ -519,6 +551,11 @@ def main() -> int:
     for name in ("init", "pack", "search", "audit", "resize", "validate-record"):
         command = commands.add_parser(name)
         command.add_argument("--root", type=Path, required=True)
+        if name in {"pack", "search", "validate-record"}:
+            command.add_argument(
+                "--integrity", choices=("basic", "strict"), default="basic",
+                help="Basic source checks (default), or explicit artifact fingerprint verification",
+            )
         if name != "validate-record":
             command.add_argument("--session", required=True)
         if name == "init":
@@ -574,6 +611,7 @@ def main() -> int:
                         args.max_bytes,
                         args.purpose,
                         reload=args.reload,
+                        integrity=args.integrity,
                     )
                 else:
                     output = search(
@@ -585,6 +623,7 @@ def main() -> int:
                         purpose=args.purpose,
                         top=args.top,
                         limit=args.max_bytes,
+                        integrity=args.integrity,
                     )
                 sys.stdout.buffer.write(output)
                 return 0
@@ -595,8 +634,15 @@ def main() -> int:
                     state = load_state(ledger_path(root, args.session), root)
                 result = usage(state)
             else:
-                validate_record(root, json.loads(read_text(within(root, args.record))))
-                result = {"schema_and_local_evidence_valid": True, "semantic_truth_checked": False}
+                warnings = validate_record(
+                    root, json.loads(read_text(within(root, args.record))), integrity=args.integrity
+                )
+                result = {
+                    "schema_valid": True, "integrity": args.integrity,
+                    "schema_and_local_evidence_valid": args.integrity == "strict",
+                    "fingerprints_checked": args.integrity == "strict",
+                    "warnings": warnings, "semantic_truth_checked": False,
+                }
         sys.stdout.buffer.write(encode(result))
         return 0
     except (GateError, OSError, ValueError, TypeError, KeyError):

@@ -69,18 +69,27 @@ def hot_budget(root):
             errors.append(f"热记忆超限：{name} {sizes[name]} > {limit} bytes")
     default = sum(size for name, size in sizes.items() if not name.endswith("checkpoint.md"))
     resumed = sum(sizes.values())
-    for name, value, limit in (("default", default, 8192), ("resumed", resumed, 9216)):
+    for name, value, limit in (("overview", default, 8192), ("resumed", resumed, 9216)):
         if value > limit:
             errors.append(f"热记忆合计超限：{name} {value} > {limit} bytes")
     kernel = root / "docs/cache/kernel.md"
     if kernel.is_file() and len(re.findall(r"^- ", markdown_text(kernel), re.M)) > 8:
         errors.append("kernel主题超过8条")
-    return {"files": sizes, "default_bytes": default, "resumed_bytes": resumed}, errors
+    # Optional routes are not an always-injected context: report each path separately.
+    return {
+        "files": sizes,
+        "rules_bytes": sizes.get("AGENTS.md", 0),
+        "routed_bytes": sizes.get("AGENTS.md", 0) + sizes.get("docs/cache/context_index.md", 0),
+        "overview_bytes": default,
+        "resumed_bytes": resumed,
+    }, errors
 
 
-def check(root):
+def check(root, *, integrity="basic"):
     root = Path(root).resolve()
-    errors, review = [], []
+    if integrity not in {"basic", "strict"}:
+        raise ValueError("invalid integrity policy")
+    errors, review, source_warnings = [], [], []
     index = root / "docs/cache/context_index.md"
     owners = set(local_links(index)) if index.is_file() else set()
     documents = owners | {index, root / "README.md", root / "AGENTS.md"}
@@ -113,14 +122,18 @@ def check(root):
             if (root / record.get("owner", "")).resolve() not in owners:
                 errors.append(f"记录 owner 未在路由中：{path.name}")
             try:
-                validate_record(root, record)
+                warnings = validate_record(root, record, integrity=integrity)
             except (ValueError, TypeError, OSError) as exc:
                 if record.get("status") == "verified":
                     errors.append(f"已验证记录失效：{path.name}: {exc}")
                 else:
                     review.append(f"仅历史审阅：{path.name}: {exc}")
                 continue
-            if record.get("status") == "verified" and record.get("recheck") != "always":
+            if warnings:
+                if record.get("status") == "verified":
+                    source_warnings.extend(f"{path.name}: {warning}" for warning in warnings)
+                review.append(f"来源需复查：{path.name}")
+            elif record.get("status") == "verified" and record.get("recheck") != "always":
                 current += 1
             else:
                 review.append(f"需现场复查或仅供审阅：{path.name}")
@@ -130,6 +143,9 @@ def check(root):
         "errors": errors,
         "review_only": review,
         "validated_records": current,
+        "integrity": integrity,
+        "fingerprints_checked": integrity == "strict",
+        "source_warnings": source_warnings,
         "documents": len(documents),
         "hot_budget": budget,
     }
@@ -148,8 +164,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--details", action="store_true", help="列出全部历史审阅记录")
+    parser.add_argument(
+        "--integrity", choices=("basic", "strict"), default="basic",
+        help="默认轻量来源检查；精确产物审计时显式选择strict指纹校验",
+    )
     args = parser.parse_args()
-    result = check(args.root)
+    result = check(args.root, integrity=args.integrity)
     print(json.dumps(report(result, details=args.details), ensure_ascii=False, indent=2))
     raise SystemExit(bool(result["errors"]))
 

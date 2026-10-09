@@ -120,6 +120,9 @@ class DeviceClient:
     def select_task(self, task_id):
         return self._request("POST", f"/tasks/{quote(task_id, safe='')}/select")
 
+    def delete_last_episode(self, **body):
+        return self._request("POST", "/recording/delete-last", body)
+
     def connect_cameras(self):
         return self._request("POST", "/cameras/connect")
 

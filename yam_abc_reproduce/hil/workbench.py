@@ -22,6 +22,7 @@ from ..storage_health import recording_storage_health
 from .camera_slots import CameraSlot
 from .core import Mode
 from .data_session import paused_data_session, recover_recording
+from .task_dataset import TaskDatasetCache, inventory, trash_episode
 from .tasks import Tasks
 
 
@@ -63,6 +64,7 @@ class Workbench:
         self._log = deque(maxlen=40)
         self.tasks = Tasks(getattr(args, "task_root", "data/tasks"))
         self.selected_task = None
+        self._task_dataset = TaskDatasetCache(self._task_recording_root)
         self.camera_slots = [CameraSlot(role) for role in ("top", "left", "right")]
         self.camera_state = "disconnected"
         self.camera_error = None
@@ -286,6 +288,8 @@ class Workbench:
             "video_backend": self.video_backend,
             "tasks": [dict(t) for t in self.tasks.items],
             "selected_task": None if self.selected_task is None else dict(self.selected_task),
+            "task_dataset": self._task_dataset.snapshot(
+                self.selected_task["id"] if self.selected_task else None),
             "task_error": self.tasks.error,
             "mock": self.args.mock,
             "mode": live.get("mode", self.mode),
@@ -473,6 +477,46 @@ class Workbench:
             self.selected_task = selected
             self.log("已选择任务：" + self.selected_task["name"])
             return dict(self.selected_task)
+
+    def _task_recording_root(self, task_id):
+        from ..config import build_station_config
+
+        base = getattr(self.args, "output", None) or build_station_config(self._station_path()).save_root
+        return Path(base) / self.tasks.get(task_id)["id"]
+
+    def delete_last_episode(self, *, task_id, expected_key):
+        """Data-only transaction. HOLD/barrier admission prevents a start race."""
+        with self._editing():
+            if not self.selected_task or task_id != self.selected_task["id"]:
+                raise ValueError("当前任务已变化，本次未删除；请重新确认")
+            runtime = self.runtime
+            if self.state in ("connecting", "disconnecting") or self.initializing:
+                raise ValueError("设备会话正在切换，请稍后删除")
+            root = self._task_recording_root(task_id)
+            if runtime is not None:
+                live = runtime.status
+                if (self.state != "connected" or live.get("phase") != "hold"
+                        or live.get("maintenance") != "idle" or live.get("intervention_pending")
+                        or runtime.recorder.recording or runtime.recorder.saving
+                        or runtime.recording_error or runtime.task_switching):
+                    raise ValueError("请先暂停、结束介入与维护，并等待录制保存完成，再删除上一集")
+                with paused_data_session(runtime) as change:
+                    result = runtime.recorder.delete_saved_episode(root, task_id, expected_key)
+                    change.committed = True
+                episodes = list(runtime.recorder.episodes)
+                self._snapshot = {**self._snapshot, "episodes": episodes[-8:],
+                    "episode_count": sum(e["outcome"] not in ("aborted", "discarded") for e in episodes)}
+            else:
+                if self.thread and self.thread.is_alive():
+                    raise ValueError("设备会话尚未退出，请稍后删除")
+                result = trash_episode(root, task_id, expected_key)
+                if self.output and self.output == root / expected_key.split("/")[0]:
+                    episodes = result["episodes"]
+                    self._snapshot = {**self._snapshot, "episodes": episodes[-8:],
+                        "episode_count": sum(e["outcome"] not in ("aborted", "discarded") for e in episodes)}
+            self._task_dataset.publish(inventory(root, task_id))
+            self.log("已删除上一集（可恢复）：" + expected_key)
+            return {"deleted": result["deleted"], "trash": result["trash"]}
 
     def connect_cameras(self):
         with self._editing():

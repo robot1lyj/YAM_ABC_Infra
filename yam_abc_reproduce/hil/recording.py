@@ -279,20 +279,28 @@ class RecordingSession:
 
     def rotate_task(self, path, metadata):
         """Rotate data ownership on the writer, never on the control loop."""
+        self._writer_request("rotate", Path(path), metadata)
+
+    def delete_saved_episode(self, task_root, task_id, expected_key):
+        """Only the writer may remove a live session's completion checkpoint."""
+        return self._writer_request("delete", Path(task_root), task_id, expected_key)["deleted"]
+
+    def _writer_request(self, kind, *args):
         if self.recording or self.saving or self.error or self._stop.is_set():
             raise ValueError("请先结束录制并等待保存完成")
         result = {"done": threading.Event()}
-        if not self._put(("rotate", Path(path), metadata, result)):
+        if not self._put((kind, *args, result)):
             raise RuntimeError(self.error or "recording unavailable")
         deadline = time.monotonic() + getattr(self, "command_timeout_s", 2.5)
         while not result["done"].wait(0.1):
             if time.monotonic() >= deadline:
-                self.error = "recording rotation acknowledgement timed out; outcome uncertain"
+                self.error = f"recording {kind} acknowledgement timed out; outcome uncertain"
                 raise RuntimeError(self.error)
             if not self._thread.is_alive():
                 raise RuntimeError(self.error or "recording writer stopped")
         if result.get("error"):
             raise RuntimeError(result["error"])
+        return result
 
     def bind_task(self, path, metadata):
         """Promote an unrecorded standalone session without rebuilding the arms."""
@@ -405,6 +413,23 @@ class RecordingSession:
                         self.episodes = []
                         self._completed_steps = count = self.queue_peak = 0
                         self.outcome = "unknown"
+                    except Exception as exc:
+                        result["error"] = str(exc)
+                    finally:
+                        result["done"].set()
+                elif item[0] == "delete":
+                    root, task_id, expected_key, result = item[1:]
+                    try:
+                        if active is not None:
+                            raise ValueError("请先结束录制并等待保存完成")
+                        from .task_dataset import trash_episode
+
+                        deleted = trash_episode(root, task_id, expected_key)
+                        if self.path == root / expected_key.split("/")[0]:
+                            self.episodes = deleted.pop("episodes")
+                            self._completed_steps -= deleted["deleted"]["steps"]
+                        # Keep count monotonic: deletion must never reuse an ID.
+                        result["deleted"] = deleted
                     except Exception as exc:
                         result["error"] = str(exc)
                     finally:

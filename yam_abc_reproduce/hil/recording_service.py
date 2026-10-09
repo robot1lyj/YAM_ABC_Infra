@@ -40,6 +40,7 @@ def _serve_recording(connection, ready, progress, options):
         while True:
             kind, args = connection.recv()
             error = None
+            deleted = None
             try:
                 if kind == "row":
                     if not recorder.submit(*args):
@@ -58,6 +59,8 @@ def _serve_recording(connection, ready, progress, options):
                     recorder.bind_task(*args)
                 elif kind == "rotate":
                     recorder.rotate_task(*args)
+                elif kind == "delete":
+                    deleted = recorder.delete_saved_episode(*args)
                 elif kind == "status":
                     pass
                 elif kind == "close":
@@ -70,8 +73,9 @@ def _serve_recording(connection, ready, progress, options):
             progress.value = recorder.save_progress_at()
             connection.send(
                 {
-                    "error": recorder.error if kind == "rotate" else error or recorder.error,
-                    "command_error": error if kind == "rotate" else None,
+                    "error": recorder.error if kind in ("rotate", "delete") else error or recorder.error,
+                    "command_error": error if kind in ("rotate", "delete") else None,
+                    "deleted": deleted,
                     "recording": recorder.recording,
                     "saving": recorder.saving,
                     "written": recorder.written,
@@ -328,6 +332,9 @@ class RemoteRecordingSession:
     def rotate_task(self, path, metadata):
         self._request("rotate", str(path), metadata)
         self.metadata = metadata
+
+    def delete_saved_episode(self, task_root, task_id, expected_key):
+        return self._request("delete", str(task_root), task_id, expected_key)["deleted"]
 
     def close(self, outcome="unknown"):
         if self._closed:

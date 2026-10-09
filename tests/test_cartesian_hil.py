@@ -22,40 +22,62 @@ def test_keyboard_ui_input_scope_and_focus_pause():
     source = Path(__file__).parents[1] / "yam_abc_reproduce/hil/static/app.js"
     script = r"""
 const assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
-const calls = [], nodes = new Map(), handlers = {}, windowHandlers = {};
-let dialog = false;
+const calls = [], nodes = new Map(), handlers = {}, windowHandlers = {}, timers = new Map();
+let dialog = false, now = 0, timerSerial = 0;
+const buttons = [{tagName:'BUTTON',dataset:{cartArm:'left',cartAxis:'z',cartSign:'-1'},
+  focus(){handlers.focusin?.({})}, setPointerCapture(){} }];
 function get(id) {
-  if (!nodes.has(id)) nodes.set(id, {value:'2',hidden:false,
+  if (!nodes.has(id)) nodes.set(id, {value:'2',hidden:false,dataset:{},
     click(){calls.push({path:'click:' + id})}});
   return nodes.get(id);
 }
 const context = {sessionStorage:{getItem(){return 'test'},setItem(){}},
-  crypto:{randomUUID(){return 'test'}}, Date,
+  crypto:{randomUUID(){return 'test'}}, Date:class extends Date {static now(){return now}},
+  setTimeout(fn,delay){const id=++timerSerial;timers.set(id,{fn,at:now+delay});return id},
+  clearTimeout(id){timers.delete(id)},
   document:{visibilityState:'visible',hidden:false,getElementById:get,
-    querySelectorAll(){return []},querySelector(){return dialog ? {} : null},
+    querySelectorAll(s){return s==='[data-cart-axis]' ? buttons : []},querySelector(){return dialog ? {} : null},
     addEventListener(name,handler){handlers[name]=handler}},
   window:{addEventListener(name,handler){windowHandlers[name]=handler}}};
 vm.createContext(context);
 const source = fs.readFileSync(process.argv[1], 'utf8');
 vm.runInContext(source.slice(0, source.indexOf('function text(')) + '\n' +
+  source.slice(source.indexOf('async function action('), source.indexOf('function confirmAction(')) + '\n' +
   source.slice(source.indexOf('function switchPage(next)'), source.indexOf('for (let j = 0;')) + '\n' +
   source.slice(source.indexOf('document.addEventListener("keydown"'), source.indexOf('$("hil-input-form").onsubmit')) + '\n' +
-  source.slice(source.indexOf('window.addEventListener("blur"'), source.indexOf('for (const img')), context);
+  source.slice(source.indexOf('document.querySelectorAll("[data-cart-axis]").forEach(b => {',
+    source.indexOf('$("hil-input-form").onsubmit')), source.indexOf('for (const img')), context);
 context.capture = (path,body) => calls.push({path,body});
-vm.runInContext('action = async (path,body) => {capture(path,body);return true}; render = () => {}; text = () => {};', context);
+vm.runInContext(`let autoAck=true;
+  post = async (path,body) => {capture(path,body);return {}};
+  poll = async () => {lastPoll=Date.now();if(autoAck && cartesianAwaiting)
+    state.cartesian={...state.cartesian,last_command_id:cartesianAwaiting.id,
+      applied:{command_id:cartesianAwaiting.id}}};
+  render = () => {}; text = () => {}; toast = () => {};`, context);
 const ready = {connection:'connected',mode:'hil',hil_input:'keyboard',phase:'human',
-  epoch:5,tick:100,maintenance:'idle',cartesian:{last_command_id:10}};
+  epoch:5,tick:100,control_age_s:.01,maintenance:'idle',cartesian:{last_command_id:10,step_limit_mm:7}};
 function reset(changes={}) {
-  calls.length=0; dialog=false;
+  calls.length=0; dialog=false; timers.clear();
   context.document.visibilityState='visible'; context.document.hidden=false;
   vm.runInContext(`state=${JSON.stringify({...ready,...changes})};online=true;page='workspace';
-    keyboardArm='left';keyboardSuspendedEpoch=null;cartesianBusy=false;cartesianSerial=0;`, context);
+    keyboardArm='left';keyboardSuspendedEpoch=null;cartesianBusy=false;cartesianSerial=0;
+    cartesianHeld=null;cartesianAwaiting=null;lastPoll=Date.now();autoAck=true;`, context);
 }
+async function flush(){for(let i=0;i<8;i++) await Promise.resolve()}
 async function key(name,extra={}) {
   let prevented=false;
   handlers.keydown({key:name,target:{tagName:'DIV'},preventDefault(){prevented=true},...extra});
-  await Promise.resolve();
+  await flush();
   return prevented;
+}
+async function advance(ms) {
+  const until=now+ms;
+  while(true) {
+    const next=[...timers.entries()].sort((a,b)=>a[1].at-b[1].at)[0];
+    if(!next || next[1].at>until) break;
+    now=next[1].at;timers.delete(next[0]);next[1].fn();await flush();
+  }
+  now=until;
 }
 async function main() {
   const keys={ArrowUp:['x',.002],ArrowDown:['x',-.002],ArrowLeft:['y',-.002],
@@ -108,6 +130,65 @@ async function main() {
   reset();context.document.visibilityState='hidden';context.document.hidden=true;
   handlers.visibilitychange();assert.equal(calls[0].path,'/event/hold'); // Hidden event still pauses.
   reset({hil_input:'leader'});windowHandlers.blur();handlers.visibilitychange();assert.equal(calls.length,0);
+  reset();get('cartesian-step').value='5';
+  await key('ArrowDown');assert.equal(calls[0].body.delta,-.005);
+  for(let i=0;i<20;i++) assert.equal(await key('ArrowDown',{repeat:true}),true);
+  assert.equal(calls.length,1); // OS key repeat never controls the rate.
+  await advance(399);assert.equal(calls.length,1);
+  await advance(1);assert.equal(calls.length,2);
+  await advance(333);assert.equal(calls.length,3);
+  handlers.keyup({key:'ArrowDown'});await advance(1500);assert.equal(calls.length,3);
+  assert(calls.every(c=>c.body.arm==='left' && c.body.delta===-.005));
+  reset();get('cartesian-step').value='7';
+  await key('PageDown');assert.equal(calls[0].body.delta,-.007);
+  handlers.keyup({key:'PageDown'});await advance(1000);assert.equal(calls.length,1);
+  reset({cartesian:{step_limit_mm:5}});await key('PageDown');
+  await advance(1000);assert.equal(calls.length,0); // Old device cannot silently accept 7 mm.
+  get('cartesian-step').value='5';
+  for(const cancel of [()=>windowHandlers.blur(),()=>handlers.focusin({}),
+    ()=>handlers.compositionstart({}),()=>get('cartesian-step').onchange(),
+    ()=>{dialog=true},()=>{vm.runInContext("state.phase='policy'",context)},
+    ()=>{vm.runInContext("state.epoch=6",context)},
+    ()=>{vm.runInContext("state.control_age_s=.6",context)}]) {
+    reset();await key('PageDown');cancel();await advance(1500);
+    assert.equal(calls.filter(c=>c.path==='/hil/cartesian').length,1);
+  }
+  reset();await key('PageDown');await key('Control',{ctrlKey:true});
+  await advance(1000);assert.equal(calls.length,1);
+  reset();await key('PageDown');await vm.runInContext("action('/event/resume_policy')",context);
+  await advance(1000);assert.equal(calls.length,2);assert.equal(calls[1].path,'/event/resume_policy');
+  assert.equal(await key('PageDown'),false); // Stale HUMAN status cannot restart after handback click.
+  reset();vm.runInContext('autoAck=false',context);
+  await key('PageDown');await advance(1900);assert.equal(calls.length,1);
+  await advance(400);assert.equal(calls.length,2);assert.equal(calls[1].path,'/event/hold');
+  await advance(1500);assert.equal(calls.length,2); // No ack: pause instead of enqueueing.
+  reset();vm.runInContext('autoAck=false',context);await key('PageDown');
+  vm.runInContext("state.cartesian.error='逆解不可达';state.cartesian.last_command_id=11",context);
+  await advance(1000);assert.equal(calls.length,1);
+  const pointer={button:0,pointerId:3,isPrimary:true,preventDefault(){}};
+  for(const release of [()=>handlers.pointerup(pointer),()=>handlers.pointercancel(pointer),
+    ()=>buttons[0].onlostpointercapture(pointer)]) {
+    reset();buttons[0].onpointerdown(pointer);await flush();
+    await advance(400);assert.equal(calls.length,2);
+    release();buttons[0].onclick({detail:1});await advance(1000);
+    assert.equal(calls.length,2); // Captured/outside release and click never add a third step.
+  }
+  reset();buttons[0].onclick({detail:0});await flush();assert.equal(calls.length,1);
+  reset();buttons[0].onpointerdown(pointer);
+  vm.runInContext("renderKeyboardHil(true,true,false,false,true,'hil')",context);
+  assert.equal(buttons[0].disabled,false); // Rendering a pending step must not swallow pointerup.
+  await flush();handlers.pointerup(pointer);
+  reset();await key('Enter',{target:buttons[0]});await advance(400);
+  assert.equal(calls.length,2);
+  for(let i=0;i<20;i++) await key('Enter',{target:buttons[0],repeat:true});
+  assert.equal(calls.length,2);handlers.keyup({key:'Enter'});
+  await advance(1000);assert.equal(calls.length,2);
+  reset();let resolvePost;
+  context.delayed = new Promise(resolve=>{resolvePost=resolve});
+  vm.runInContext('post=async(path,body)=>{capture(path,body);await delayed;return {}}',context);
+  buttons[0].onpointerdown(pointer);await flush();handlers.pointerup(pointer);
+  await advance(1500);assert.equal(calls.length,1);
+  resolvePost();await flush();await advance(1000);assert.equal(calls.length,1);
 }
 main().catch(error=>{console.error(error);process.exitCode=1});
 """
@@ -181,13 +262,29 @@ def test_gripper_step_keeps_all_joints_and_other_arm(arm, index):
         jog.close()
 
 
-@pytest.mark.parametrize("axis,delta", [("x", .006), ("z", 0), ("y", float("nan")),
+@pytest.mark.parametrize("axis,delta", [("x", .008), ("z", 0), ("y", float("nan")),
                                       ("gripper", -.11), ("roll", .001)])
 def test_bad_steps_are_rejected(axis, delta):
     jog = CartesianJog(fake_kinematics)
     with pytest.raises(ValueError):
         request(jog, axis=axis, delta=delta)
     assert jog.thread is None
+
+
+@pytest.mark.parametrize("arm,delta", [(a, d) for a in ("left", "right") for d in (.005, .007)])
+def test_five_and_seven_mm_steps_keep_existing_joint_and_feedback_guards(arm, delta):
+    jog = CartesianJog(fake_kinematics)
+    try:
+        q = request(jog, arm, "z", delta)
+        target = wait_result(jog)
+        expected = q.copy()
+        expected[2 if arm == "left" else 9] += delta
+        np.testing.assert_allclose(target, expected)
+        assert jog.snapshot()["step_limit_mm"] == 7
+        assert jog.MAX_JOINT_STEP_RAD == .08
+        assert jog.MAX_TRACKING_ERROR_RAD == .15
+    finally:
+        jog.close()
 
 
 def test_invalid_feedback_and_closed_worker_are_rejected():
@@ -204,8 +301,10 @@ def test_invalid_feedback_and_closed_worker_are_rejected():
         jog.prepare()
 
 
-@pytest.mark.parametrize("arm,axis", [(a, xyz) for a in ("left", "right") for xyz in "xyz"])
-def test_official_yam_fk_ik_step_preserves_orientation_and_other_arm(arm, axis):
+@pytest.mark.parametrize("arm,axis,delta", [(a, xyz, d)
+    for a in ("left", "right") for xyz in "xyz" for d in (.001, .005, .007)
+    if (xyz, d) != ("y", .007)])
+def test_official_yam_fk_ik_step_preserves_orientation_and_other_arm(arm, axis, delta):
     from yam_abc_reproduce.hil.kinematics import DualArmEefConverter
 
     model = DualArmEefConverter()
@@ -214,11 +313,11 @@ def test_official_yam_fk_ik_step_preserves_orientation_and_other_arm(arm, axis):
     offset = 0 if arm == "left" else 7
     other = 7-offset
     expected = getattr(model, arm).fk(q[offset:offset+6]).copy()
-    expected["xyz".index(axis), 3] -= .001
+    expected["xyz".index(axis), 3] -= delta
     try:
         jog.prepare()
         assert jog.ready.wait(1)
-        jog.request(arm=arm, axis=axis, delta=-.001, epoch=3, command_id=1,
+        jog.request(arm=arm, axis=axis, delta=-delta, epoch=3, command_id=1,
                     target=q, measured=q, now=time.monotonic())
         target = wait_result(jog)
         assert target is not None, jog.error
@@ -228,6 +327,39 @@ def test_official_yam_fk_ik_step_preserves_orientation_and_other_arm(arm, axis):
         np.testing.assert_array_equal(target[other:other+7], q[other:other+7])
     finally:
         jog.close()
+
+
+@pytest.mark.parametrize("arm", ["left", "right"])
+def test_official_seven_mm_near_singular_pose_does_not_weaken_joint_guard(arm):
+    from yam_abc_reproduce.hil.kinematics import DualArmEefConverter
+
+    model = DualArmEefConverter()
+    jog = CartesianJog(lambda: model)
+    q = np.tile([.1, .4, .5, .2, .3, .1, .5], 2)
+    offset = 0 if arm == "left" else 7
+    kinematics = getattr(model, arm)
+    pose = kinematics.fk(q[offset:offset+6]).copy()
+    pose[1, 3] -= .007
+    solution = kinematics.ik(pose, q[offset:offset+6])
+    # This pose needs more than the existing 0.08 rad allowance for Y-7 mm.
+    assert np.max(np.abs(solution-q[offset:offset+6])) > jog.MAX_JOINT_STEP_RAD
+    try:
+        jog.prepare()
+        assert jog.ready.wait(1)
+        jog.request(arm=arm, axis="y", delta=-.007, epoch=3, command_id=1,
+                    target=q, measured=q, now=time.monotonic())
+        assert wait_result(jog) is None
+        assert "逆解关节变化过大" in jog.error
+        assert jog.applied is None
+    finally:
+        jog.close()
+
+
+def test_keyboard_step_selector_defaults_to_five_mm_and_offers_seven():
+    html = (Path(__file__).parents[1] / "yam_abc_reproduce/hil/static/index.html").read_text()
+    selector = html.split('id="cartesian-step"', 1)[1].split("</select>", 1)[0]
+    assert '<option value="5" selected>5 mm</option>' in selector
+    assert '<option value="7">7 mm</option>' in selector
 
 
 def test_single_inflight_cancel_rejects_old_result_and_duplicate_id():

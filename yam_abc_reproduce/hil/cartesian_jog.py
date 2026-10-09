@@ -13,7 +13,7 @@ import numpy as np
 
 
 class CartesianJog:
-    MAX_STEP_M = .005
+    MAX_STEP_M = .007
     MAX_GRIPPER_STEP = .1
     MAX_JOINT_STEP_RAD = .08
     MAX_TRACKING_ERROR_RAD = .15
@@ -49,7 +49,7 @@ class CartesianJog:
             raise ValueError("请选择左/右臂的 XYZ 或夹爪")
         limit = CartesianJog.MAX_GRIPPER_STEP if axis == "gripper" else CartesianJog.MAX_STEP_M
         if not np.isfinite(delta) or not 0 < abs(delta) <= limit + 1e-12:
-            raise ValueError("末端单步最多5毫米，夹爪单步最多10%")
+            raise ValueError("末端单步最多7毫米，夹爪单步最多10%")
 
     def cancel(self):
         self.generation += 1

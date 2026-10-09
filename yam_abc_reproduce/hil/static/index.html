@@ -288,6 +288,11 @@
                     ><strong id="disk">—<small> GB</small></strong>
                   </div>
                 </div>
+                <div class="task-dataset" id="task-dataset">
+                  <div><span>当前任务数据集</span><strong id="task-episode-count">—</strong><span>集</span></div>
+                  <span class="muted" id="task-dataset-status">请选择任务</span>
+                  <button class="button subtle" id="delete-last-episode" disabled>删除上一集</button>
+                </div>
                 <div id="output" class="output-path">
                   逐集保存 MP4＋HDF5 · 可上传服务器后独立转换
                 </div>
@@ -377,7 +382,7 @@
                   <button class="button" id="hil-input-apply" type="submit">应用</button>
                 </form>
                 <div id="keyboard-hil-controls" hidden>
-                  <div class="keyboard-toolbar"><span>基座 XYZ · 保持朝向</span><label>单步<select id="cartesian-step"><option value="1">1 mm</option><option value="2">2 mm</option><option value="5">5 mm</option></select></label></div>
+                  <div class="keyboard-toolbar"><span>基座 XYZ · 保持朝向</span><label>单步<select id="cartesian-step"><option value="1">1 mm</option><option value="2">2 mm</option><option value="5" selected>5 mm</option><option value="7">7 mm</option></select></label></div>
                   <div class="keyboard-arms">
                     <section class="keyboard-arm" data-keyboard-arm="left">
                       <button type="button" class="keyboard-arm-select active" data-select-keyboard-arm="left">左臂 <span>键盘选中</span></button>
@@ -394,7 +399,7 @@
                       <div class="cartesian-axis"><span id="keyboard-grip-right">夹爪</span><button class="button" data-cart-arm="right" data-cart-axis="gripper" data-cart-sign="-1">闭合</button><button class="button" data-cart-arm="right" data-cart-axis="gripper" data-cart-sign="1">张开</button></div>
                     </section>
                   </div>
-                  <p class="muted keyboard-shortcuts">方向键：XY　PageUp / Down：Z　[ / ]：夹爪<br>点击臂名选择键盘操作臂 · 每次按键一步 · 空格暂停</p>
+                  <p class="muted keyboard-shortcuts">方向键：XY　PageUp / Down：Z　[ / ]：夹爪<br>点击一步 · 长按慢动 · 松手停止连续触发 · 空格暂停</p>
                   <p id="cartesian-status" class="muted" role="status">先介入，再微调</p>
                 </div>
               </section>

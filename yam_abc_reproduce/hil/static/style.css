@@ -753,6 +753,19 @@ kbd {
   padding: 0 18px 16px;
   gap: 16px;
 }
+.task-dataset {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line, #e3e6e8);
+}
+.task-dataset > div { display: flex; align-items: baseline; gap: 7px; }
+.task-dataset strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.task-dataset > .muted { flex: 1; min-width: 100px; font-size: 12px; }
+.task-dataset .button { flex: 0 0 auto; width: auto; }
 .session-metrics > div > span {
   display: block;
   font-size: 12px;
@@ -2277,6 +2290,6 @@ textarea::placeholder {
 .keyboard-arm-select.active { color:var(--accent); border-color:var(--accent); }
 .keyboard-arm-select.active span { display:inline; }
 .cartesian-axis { display:grid; grid-template-columns:32px 1fr 1fr; gap:5px; align-items:center; margin:9px 0; font-size:12px; }
-.cartesian-axis .button { min-width:0; padding:6px 3px; min-height:34px; }
+.cartesian-axis .button { min-width:0; padding:6px 3px; min-height:34px; touch-action:none; user-select:none; }
 .keyboard-shortcuts { line-height:1.8; margin-top:10px; font-size:11px; }
 #cartesian-status { margin:8px 0 0; font-size:12px; }

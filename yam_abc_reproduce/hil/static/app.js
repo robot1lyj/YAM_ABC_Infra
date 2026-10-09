@@ -28,6 +28,9 @@ let state = {},
   lastPoll = 0;
 let keyboardArm = "left", cartesianBusy = false, cartesianSerial = 0;
 let keyboardSuspendedEpoch = null;
+let cartesianHeld = null, cartesianTimer, cartesianAwaiting = null;
+let deletingEpisode = false;
+const cartesianHoldDelayMs = 400, cartesianRepeatMs = 333;
 
 function keyboardActive() {
   return online && state.connection === "connected" && state.mode === "hil"
@@ -37,25 +40,89 @@ function keyboardActive() {
 }
 function keyboardReady() {
   return keyboardActive() && page === "workspace" && document.visibilityState === "visible"
-    && state.epoch !== keyboardSuspendedEpoch;
+    && state.epoch !== keyboardSuspendedEpoch && state.control_age_s < .5
+    && Date.now() - lastPoll < 1000;
 }
 function pauseKeyboard() {
+  stopCartesianHold();
   if (!keyboardActive() || state.epoch === keyboardSuspendedEpoch) return;
   // Block input immediately; returning before the HOLD acknowledgement must not resume it.
   keyboardSuspendedEpoch = state.epoch;
   action("/event/hold");
 }
+function stopCartesianHold(source) {
+  if (source && cartesianHeld?.source !== source) return;
+  cartesianHeld = null;
+  if (cartesianTimer !== undefined) {
+    clearTimeout(cartesianTimer);
+    cartesianTimer = undefined;
+  }
+}
+function refreshCartesianPending() {
+  if (!cartesianAwaiting) return;
+  const pending = cartesianAwaiting, jog = state.cartesian || {};
+  if (!keyboardReady() || state.epoch !== pending.epoch) {
+    cartesianAwaiting = null;
+    stopCartesianHold();
+  } else if (jog.applied?.command_id === pending.id) {
+    cartesianAwaiting = null; // Queued HTTP response alone is not execution acknowledgement.
+  } else if (jog.error && jog.last_command_id >= pending.id) {
+    cartesianAwaiting = null;
+    stopCartesianHold();
+  } else if (Date.now() - pending.at > 2000) {
+    cartesianAwaiting = null;
+    pauseKeyboard();
+    toast("微调执行未确认，已请求暂停；请检查状态后重新进入微调");
+  }
+}
 async function cartesianStep(selectedArm, axis, sign) {
-  if (!keyboardReady() || cartesianBusy || state.cartesian?.busy || state.cartesian?.warming) return;
+  refreshCartesianPending();
+  if (!keyboardReady() || cartesianBusy || cartesianAwaiting || state.cartesian?.busy || state.cartesian?.warming) return;
+  const stepMm = Number($("cartesian-step").value);
+  if (axis !== "gripper" && stepMm > (state.cartesian?.step_limit_mm || 5)) {
+    stopCartesianHold();
+    toast("当前后台单步上限为5 mm；7 mm需更新设备模块，暂请选择5 mm");
+    return;
+  }
   cartesianBusy = true;
   cartesianSerial = Math.max(cartesianSerial, state.cartesian?.last_command_id || 0) + 1;
+  const pending = {id: cartesianSerial, epoch: state.epoch, at: Date.now()};
+  cartesianAwaiting = pending;
   try {
-    await action("/hil/cartesian", {arm: selectedArm, axis,
-      delta: sign * (axis === "gripper" ? .05 : Number($("cartesian-step").value)/1000),
+    const accepted = await action("/hil/cartesian", {arm: selectedArm, axis,
+      delta: sign * (axis === "gripper" ? .05 : stepMm/1000),
       epoch: state.epoch, command_id: cartesianSerial, observed_tick: state.tick});
+    if (!accepted) {
+      if (cartesianAwaiting === pending) cartesianAwaiting = null;
+      pauseKeyboard(); // A timed-out POST may still have reached the owner; never repeat it.
+    }
   } finally { cartesianBusy = false; }
 }
+function startCartesianHold(source, selectedArm, axis, sign, button = null) {
+  if (cartesianHeld?.source === source) return;
+  stopCartesianHold();
+  refreshCartesianPending();
+  if (!keyboardReady() || cartesianBusy || cartesianAwaiting || state.cartesian?.busy || state.cartesian?.warming) return;
+  const held = {source, selectedArm, axis, sign, button, epoch: state.epoch};
+  cartesianHeld = held;
+  async function repeat(first = false) {
+    if (cartesianHeld !== held) return;
+    if (cartesianAwaiting && !cartesianBusy) await poll();
+    refreshCartesianPending();
+    if (cartesianHeld !== held) return;
+    if (!keyboardReady() || state.epoch !== held.epoch || document.querySelector("dialog[open]")) {
+      stopCartesianHold();
+      return;
+    }
+    await cartesianStep(selectedArm, axis, sign);
+    if (cartesianHeld === held)
+      cartesianTimer = setTimeout(() => repeat(), first ? cartesianHoldDelayMs : cartesianRepeatMs);
+  }
+  repeat(true); // One step immediately, then a capped repeat rate, independent of OS key repeat.
+}
 function renderKeyboardHil(connected, idle, paused, latched, recording, mode) {
+  refreshCartesianPending();
+  if (!keyboardReady() || document.querySelector("dialog[open]")) stopCartesianHold();
   const keyboard = state.hil_input === "keyboard";
   $("keyboard-hil-panel").hidden = mode !== "hil" || page === "rl";
   $("keyboard-hil-controls").hidden = !keyboard;
@@ -67,7 +134,9 @@ function renderKeyboardHil(connected, idle, paused, latched, recording, mode) {
     $("hil-input-select").dataset.loaded = "1";
   }
   document.querySelectorAll("[data-cart-axis]").forEach(b => {
-    b.disabled = !keyboardReady() || !!state.cartesian?.busy || !!state.cartesian?.warming || cartesianBusy;
+    // Keep the captured button enabled while held so its release cannot be lost.
+    b.disabled = !keyboardReady() || (cartesianHeld?.button !== b &&
+      (!!state.cartesian?.busy || !!state.cartesian?.warming || cartesianBusy || !!cartesianAwaiting));
   });
   document.querySelectorAll("[data-select-keyboard-arm]").forEach(b =>
     b.classList.toggle("active", b.dataset.selectKeyboardArm === keyboardArm));
@@ -76,7 +145,7 @@ function renderKeyboardHil(connected, idle, paused, latched, recording, mode) {
     text("keyboard-grip-" + name, value == null ? "夹爪" : (100*value).toFixed(0) + "%");
   }
   text("cartesian-status", state.cartesian?.error || (state.cartesian?.warming ? "准备末端计算…" : state.cartesian?.busy
-    ? "计算中 · 不积压指令" : keyboardReady() ? "可微调 · Leader 保持"
+    ? "计算中 · 不积压指令" : keyboardReady() ? "可微调 · 长按慢动 · Leader 保持"
     : "先介入，再微调；交还后继续模型"));
 }
 function text(id, value) {
@@ -130,6 +199,9 @@ async function post(path, body) {
   return result;
 }
 async function action(path, body) {
+  if (path !== "/hil/cartesian" && path !== "/heartbeat") stopCartesianHold();
+  if (keyboardActive() && /^\/event\/(hold|stop|resume_policy|mode:|end_intervention:)/.test(path))
+    keyboardSuspendedEpoch = state.epoch;
   try {
     await post(path, body);
     await poll();
@@ -140,6 +212,7 @@ async function action(path, body) {
   }
 }
 function confirmAction(title, description, callback) {
+  stopCartesianHold();
   text("confirm-title", title);
   text("confirm-text", description);
   $("confirm-action").onclick = async () => {
@@ -156,6 +229,27 @@ function activeDevice() {
     state.control_age_s < 0.5 &&
     state.phase !== "fault"
   );
+}
+function canDeleteEpisode() {
+  const dataset = state.task_dataset;
+  return online && !deletingEpisode && !busy && !!state.selected_task
+    && dataset?.task_id === state.selected_task.id && !!dataset.latest && !dataset.error
+    && !state.recording && !state.recording_saving && !state.intervention_pending
+    && !state.task_switching && !state.initializing
+    && (!state.maintenance || state.maintenance === "idle")
+    && (state.connection === "disconnected" || (activeDevice() && state.phase === "hold"));
+}
+function renderTaskDataset() {
+  const dataset = state.task_dataset;
+  const matches = dataset?.task_id === state.selected_task?.id;
+  text("task-episode-count", matches ? dataset?.count ?? "—" : "—");
+  text("task-dataset-status", !state.selected_task ? "请选择任务"
+    : !matches || dataset?.loading ? "正在统计…"
+    : dataset?.error || `${Number(dataset?.frames || 0).toLocaleString()} 帧 · 所有会话累计`);
+  $("delete-last-episode").disabled = !canDeleteEpisode();
+  $("delete-last-episode").title = canDeleteEpisode() ? "删除当前任务最近保存的一集，可恢复"
+    : "暂停、结束介入与维护并等待保存完成后可删除";
+  text("delete-last-episode", deletingEpisode ? "删除中…" : "删除上一集");
 }
 function camerasConnected() {
   return online && state.camera_connection === "connected";
@@ -445,6 +539,7 @@ function render() {
   );
   $("record-badge").className = "pill" + (recording ? " recording" : "");
   text("episode-count", String(state.episode_count || 0).padStart(2, "0"));
+  renderTaskDataset();
   text(
     "frame-count",
     (
@@ -1152,19 +1247,33 @@ document
   .forEach((b) => (b.onclick = () => b.closest("dialog").close()));
 // Movement shortcuts only belong to the visible workspace; do not capture typing or browser shortcuts.
 document.addEventListener("keydown", (e) => {
-  if (
-    e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.isComposing || e.target.isContentEditable ||
-    ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) ||
-    document.querySelector("dialog[open]")
-  )
-    return;
-  const keys = {ArrowUp: ["x", 1], ArrowDown: ["x", -1], ArrowLeft: ["y", -1],
-    ArrowRight: ["y", 1], PageUp: ["z", 1], PageDown: ["z", -1], "[": ["gripper", -1], "]": ["gripper", 1]};
-  if (keyboardReady() && !e.shiftKey && keys[e.key]) {
-    e.preventDefault();
-    cartesianStep(keyboardArm, ...keys[e.key]);
+  const source = "key:" + (e.code || e.key);
+  if (e.repeat) {
+    if (cartesianHeld?.source === source || e.target.dataset?.cartAxis) e.preventDefault();
     return;
   }
+  if (
+    e.ctrlKey || e.altKey || e.metaKey || e.isComposing || e.target.isContentEditable ||
+    ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) ||
+    document.querySelector("dialog[open]")
+  ) {
+    stopCartesianHold();
+    return;
+  }
+  const keys = {ArrowUp: ["x", 1], ArrowDown: ["x", -1], ArrowLeft: ["y", -1],
+    ArrowRight: ["y", 1], PageUp: ["z", 1], PageDown: ["z", -1], "[": ["gripper", -1], "]": ["gripper", 1]};
+  if (keyboardReady() && !e.shiftKey && e.key === "Enter" && e.target.dataset?.cartAxis) {
+    e.preventDefault();
+    startCartesianHold(source, e.target.dataset.cartArm, e.target.dataset.cartAxis,
+      Number(e.target.dataset.cartSign), e.target);
+    return;
+  }
+  if (keyboardReady() && !e.shiftKey && keys[e.key]) {
+    e.preventDefault();
+    startCartesianHold(source, keyboardArm, ...keys[e.key]);
+    return;
+  }
+  stopCartesianHold();
   const event = {
     i: "takeover",
     " ": "hold",
@@ -1185,13 +1294,34 @@ document.addEventListener("keydown", (e) => {
     else action("/event/" + event);
   }
 });
+document.addEventListener("keyup", e => stopCartesianHold("key:" + (e.code || e.key)));
 $("hil-input-form").onsubmit = async e => {
   e.preventDefault();
   await action("/hil/input", {input: $("hil-input-select").value});
 };
-document.querySelectorAll("[data-cart-axis]").forEach(b => b.onclick = () =>
-  cartesianStep(b.dataset.cartArm, b.dataset.cartAxis, Number(b.dataset.cartSign)));
+document.querySelectorAll("[data-cart-axis]").forEach(b => {
+  b.onpointerdown = e => {
+    if (e.button !== 0 || e.isPrimary === false) return;
+    e.preventDefault();
+    b.focus({preventScroll:true});
+    b.setPointerCapture(e.pointerId);
+    startCartesianHold("pointer:" + e.pointerId, b.dataset.cartArm,
+      b.dataset.cartAxis, Number(b.dataset.cartSign), b);
+  };
+  b.onlostpointercapture = e => stopCartesianHold("pointer:" + e.pointerId);
+  b.oncontextmenu = e => e.preventDefault();
+  // Pointer clicks already ran on pointerdown; preserve Enter/assistive clicks without duplicating steps.
+  b.onclick = e => {
+    if (e.detail === 0) cartesianStep(b.dataset.cartArm, b.dataset.cartAxis, Number(b.dataset.cartSign));
+  };
+});
+for (const event of ["pointerup", "pointercancel"])
+  document.addEventListener(event, e => stopCartesianHold("pointer:" + e.pointerId));
+document.addEventListener("focusin", () => stopCartesianHold());
+document.addEventListener("compositionstart", () => stopCartesianHold());
+$("cartesian-step").onchange = () => stopCartesianHold();
 document.querySelectorAll("[data-select-keyboard-arm]").forEach(b => b.onclick = () => {
+  stopCartesianHold();
   keyboardArm = b.dataset.selectKeyboardArm;
   document.querySelectorAll("[data-select-keyboard-arm]").forEach(el =>
     el.classList.toggle("active", el.dataset.selectKeyboardArm === keyboardArm));
@@ -1347,6 +1477,26 @@ $("choose-task").onclick = () => {
     $("task-options").append(button);
   }
   $("task-picker").showModal();
+};
+$("delete-last-episode").onclick = () => {
+  if (!canDeleteEpisode()) return;
+  const taskId = state.selected_task.id, latest = {...state.task_dataset.latest};
+  confirmAction("删除上一集？", `${state.selected_task.name} · ${latest.key} · ${latest.steps} 帧。删除后自动更新集数，不重排文件编号，数据保留可恢复副本。`, async () => {
+    if (!canDeleteEpisode() || state.selected_task.id !== taskId
+        || state.task_dataset.latest.key !== latest.key) {
+      toast("任务或最近保存的集已变化，请重新确认");
+      return;
+    }
+    deletingEpisode = true;
+    renderTaskDataset();
+    try {
+      if (await action("/recording/delete-last", {task_id: taskId, expected_key: latest.key}))
+        toast("上一集已删除，集数已更新；数据可恢复");
+    } finally {
+      deletingEpisode = false;
+      renderTaskDataset();
+    }
+  });
 };
 
 $("expand-vision").onclick = () => {

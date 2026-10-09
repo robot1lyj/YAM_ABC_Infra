@@ -124,6 +124,12 @@ class RecordingSettings(BaseModel):
     mode: Literal["standard", "grasp_diagnostics"]
 
 
+class DeleteEpisode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_id: str = Field(min_length=1, max_length=36)
+    expected_key: str = Field(pattern=r"^session_[^/\\]+/episode_\d{6,}$", max_length=160)
+
+
 class PolicySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     fusion: Literal["sync_hold", "tda_smooth", "rtc"]
@@ -254,6 +260,10 @@ def create_app(runtime, *, control_access=False):
     def recording_restart():
         invoke(runtime.restart_recording)
         return {"queued": "recording_restart"}
+
+    @app.post("/recording/delete-last")
+    def delete_last_episode(body: DeleteEpisode):
+        return invoke(runtime.delete_last_episode, **body.model_dump())
 
     @app.post("/control/reload")
     def interaction_reload():

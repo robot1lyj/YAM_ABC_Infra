@@ -115,6 +115,8 @@ uv run --locked --script scripts/dataset_workbench.py \
 
 ### HIL 人工纠正
 
+默认使用以下 Leader 流程。也可在 HOLD 选择「键盘末端微调」：介入先暂停模型，再分别点动两只 Follower 的基座 XYZ / 夹爪，Leader 保持不跟随，明确交还后恢复模型。单步与按键见[操作说明](docs/hil_quickstart.md#键盘末端微调hil-可选输入)。
+
 1. **介入**：Follower 保持，Leader 辅助对齐。
 2. **右 Leader①**：进入人工遥操作，不要求对齐误差达标。
 3. **人工阶段再按①**：两侧保持，Leader 高增益锁定。
@@ -181,7 +183,7 @@ uv run --locked --script scripts/convert_lerobot.py \
 
 设备配置入口为 [station_hil.yaml](configs/station_hil.yaml)，包含四路CAN角色、三台相机身份和夹爪行程。它是本工作站配置，不是任意设备通用标定；迁移前按 [工作站手册](docs/workstation.md) 复核。
 
-正式部署使用独立的 `yam-workstation` Web/API 与 `yam-device` 设备服务。默认开发命令仅监听本机；局域网绑定和 Host/Origin 配置见 [运行手册](docs/hil_quickstart.md#环境与无硬件试用)。
+正式部署使用独立的 `yam-workstation` Web/API 与 `yam-device` 设备服务。后续开发使用独立 worktree/分支、模拟端口及测试数据，验收后再合并上线，不占用正式界面。默认开发命令仅监听本机；局域网绑定和 Host/Origin 配置见 [运行手册](docs/hil_quickstart.md#环境与无硬件试用)。
 
 | 更新 / 故障 | 处理边界 |
 |---|---|

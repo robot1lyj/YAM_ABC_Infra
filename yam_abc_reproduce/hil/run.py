@@ -167,6 +167,9 @@ class Runtime:
         self.latencies = Latencies()
         self.emergency = threading.Event()
         self.jog = Jog()
+        from .cartesian_jog import CartesianJog
+        self.cartesian = CartesianJog()
+        self.cartesian_commands = queue.Queue(maxsize=1)
         self.maintenance = Maintenance(
             factory_zero=bool(settings.get("factory_zero_home", False)) and not io.mock
         )
@@ -363,6 +366,30 @@ class Runtime:
             raise ValueError("录制或紧急暂停时不可点动")
         self.jog.request(arm, joint, delta, target=target)
 
+    def configure_hil_input(self, *, input):
+        if input not in ("leader", "keyboard"):
+            raise ValueError("请选择 Leader 或键盘末端微调")
+        a = self.session.arbiter
+        if (a.mode != Mode.HIL or a.phase != Phase.HOLD or a.intervention_pending
+                or getattr(self.recorder, "recording", False)
+                or self.maintenance.latched or self.maintenance.state != "idle"):
+            raise ValueError("请在 HIL 保持、结束介入与录制后切换输入方式")
+        self._queue_policy_command(("hil_input", input))
+        if input == "keyboard":
+            self.cartesian.prepare()
+
+    def request_cartesian(self, *, arm, axis, delta, epoch, command_id, observed_tick):
+        self.cartesian.validate(arm, axis, delta)
+        a = self.session.arbiter
+        if (a.mode != Mode.HIL or a.hil_input != "keyboard" or a.phase != Phase.HUMAN
+                or epoch != a.epoch or self.task_switching or self.emergency.is_set()
+                or self.maintenance.latched or self.maintenance.state != "idle"):
+            raise ValueError("请先选择键盘微调并介入；暂停、交还或急停后旧指令无效")
+        if not 0 <= self.status.get("tick", 0)-observed_tick <= 30:
+            raise ValueError("微调所依据的面板状态已过期，请刷新状态后重试")
+        self.cartesian_commands.put_nowait(dict(arm=arm, axis=axis, delta=delta,
+            epoch=epoch, command_id=command_id, requested_at=time.monotonic()))
+
     def _queue_policy_command(self, command):
         if self.task_switching:
             raise ValueError("任务切换中，设置未提交；完成后可重试")
@@ -389,7 +416,9 @@ class Runtime:
                 and (a.intervention_pending or a._leader_frozen is not None)
             )
         )
-        if not (starts or resumes) or a.mode not in (Mode.HIL, Mode.INFERENCE):
+        keyboard_resumes = (event == "takeover" and a.mode == Mode.HIL
+            and a.hil_input == "keyboard" and a.phase == Phase.HOLD and a.intervention_pending)
+        if not (starts or resumes or keyboard_resumes) or a.mode not in (Mode.HIL, Mode.INFERENCE):
             return True
         if self.parts is not None and self.parts.config.mode in ("collect", "eval"):
             from .parts.protocol import handshake
@@ -410,6 +439,7 @@ class Runtime:
             self.recorder.set_mode(a.mode.value, self.outcome)
             self.recorder.metadata.update({
                 "recording_mode": self.recording_mode,
+                "hil_input": a.hil_input if a.mode == Mode.HIL else None,
                 "rtc": a.rtc_timeline is not None,
                 "policy_fusion": a.action_buffer.fusion,
                 "streaming": a.streaming,
@@ -584,6 +614,18 @@ class Runtime:
                         self.io.grasp_diagnostics_enabled = self.parts is not None or self.recording_mode == "grasp_diagnostics"
                         command_receipt.update(state="accepted", applied_at=time.monotonic())
                     policy_command = None
+                if policy_command is not None and policy_command[0] == "hil_input":
+                    if (a.mode != Mode.HIL or a.phase != Phase.HOLD or a.intervention_pending
+                            or getattr(self.recorder, "recording", False)
+                            or self.maintenance.latched or self.maintenance.state != "idle"):
+                        command_receipt.update(state="rejected", error="状态已变化，介入方式未切换")
+                    else:
+                        a.hil_input = policy_command[1]
+                        a._transition(Phase.HOLD, q)
+                        a._leader_frozen = leader.copy() if a.hil_input == "keyboard" else None
+                        self.cartesian.cancel()
+                        command_receipt.update(state="accepted", applied_at=time.monotonic())
+                    policy_command = None
                 if policy_command is not None:
                     if (a.phase != Phase.HOLD or getattr(self.recorder, "recording", False)
                             or (policy_command[0] == "interaction" and
@@ -649,6 +691,8 @@ class Runtime:
                 button_event = self.handle_buttons.read(
                     buttons, now=now, mode=a.mode, phase=a.phase
                 )
+                if a.mode == Mode.HIL and a.hil_input == "keyboard":
+                    button_event = None
                 if button_event in ("record", "discard") and not self.recording_allowed:
                     button_event = None
                 if self.recording_error and button_event in (
@@ -669,7 +713,8 @@ class Runtime:
                     urgent, urgent_at = None, None
                 if button_event:
                     event, requested_at = button_event, now
-                if urgent and a.mode == Mode.HIL and a.phase in (Phase.POLICY, Phase.RESUME):
+                if urgent and a.mode == Mode.HIL and (a.phase in (Phase.POLICY, Phase.RESUME)
+                        or (a.hil_input == "keyboard" and a.phase == Phase.HOLD and a.intervention_pending)):
                     event, requested_at = urgent, urgent_at
                     while not self.events.empty():
                         self.events.get_nowait()
@@ -730,6 +775,7 @@ class Runtime:
                 a = self.session.arbiter
                 if (
                     a.mode == Mode.HIL
+                    and a.hil_input == "leader"
                     and a.phase == Phase.POLICY
                     and error > self.mirror_error
                     and event != "takeover"
@@ -818,6 +864,37 @@ class Runtime:
                     event=event,
                     policy_tick=tick,
                 )
+                keyboard_active = (a.mode == Mode.HIL and a.hil_input == "keyboard"
+                    and a.phase == Phase.HUMAN and event is None
+                    and not self.emergency.is_set() and not self.maintenance.latched
+                    and self.maintenance.state == "idle")
+                if not keyboard_active:
+                    self.cartesian.cancel()
+                try:
+                    command = self.cartesian_commands.get_nowait()
+                except queue.Empty:
+                    command = None
+                if command is not None and keyboard_active and command["epoch"] == a.epoch:
+                    try:
+                        if time.monotonic()-command["requested_at"] > .5:
+                            raise ValueError("微调指令已过期，该步未执行")
+                        self.cartesian.request(arm=command["arm"], axis=command["axis"],
+                            delta=command["delta"], epoch=a.epoch, command_id=command["command_id"],
+                            target=a._hold, measured=q, now=time.monotonic())
+                    except (ValueError, queue.Full) as exc:
+                        self.cartesian.error = str(exc) or "微调计算中，请稍候"
+                if keyboard_active:
+                    target = self.cartesian.poll(a.epoch, time.monotonic())
+                    if target is not None:
+                        joints = np.ones(14, dtype=bool)
+                        joints[[6, 13]] = False
+                        if np.max(np.abs(target[joints]-q[joints])) > self.cartesian.MAX_TRACKING_ERROR_RAD:
+                            self.cartesian.applied = None
+                            self.cartesian.error = "微调反馈偏差过大，该步未执行；请暂停检查"
+                        else:
+                            a._hold = target.copy()
+                            decision.action = target
+                            decision.selected_action = target.copy()
                 if (self.session.policy_error and a.mode in (Mode.INFERENCE, Mode.HIL)
                         and isinstance(self.recorder, RECORDING_SESSIONS)):
                     self.recorder.stop_episode("aborted")
@@ -861,7 +938,7 @@ class Runtime:
                     q,
                     leader,
                     dt=period,
-                    mirror=a.mode == Mode.HIL,
+                    mirror=a.mode == Mode.HIL and a.hil_input == "leader",
                     **(
                         {"maintenance_leader": maintenance_action[1]}
                         if maintenance_action is not None
@@ -930,10 +1007,13 @@ class Runtime:
                     a.hold(submitted)
                 apply_done = time.monotonic()
                 transitions = []
-                if a.phase == Phase.TAKEOVER and previous_phase != Phase.TAKEOVER:
+                keyboard_takeover = (a.mode == Mode.HIL and a.hil_input == "keyboard"
+                    and a.phase == Phase.HUMAN and event == "takeover"
+                    and previous_phase in (Phase.POLICY, Phase.RESUME))
+                if (a.phase == Phase.TAKEOVER and previous_phase != Phase.TAKEOVER) or keyboard_takeover:
                     self.intervention_id += 1
                     transitions.append("takeover_applied")
-                if a.phase == Phase.HUMAN and previous_phase == Phase.TAKEOVER:
+                if a.phase == Phase.HUMAN and (previous_phase == Phase.TAKEOVER or keyboard_takeover):
                     transitions.append("human_started")
                 if a.phase == Phase.HOLD and event == "handback_hold":
                     transitions.append("handback_locked")
@@ -961,11 +1041,15 @@ class Runtime:
                     "epoch": decision.epoch,
                     "source": decision.source,
                     "is_intervention": decision.intervention,
-                    "expert_valid": decision.source == "human" and snapshot is not None,
+                    "expert_valid": decision.source == "human" and snapshot is not None
+                        and (a.hil_input != "keyboard" or a.mode != Mode.HIL or self.cartesian.applied is not None),
                     "policy_valid": decision.policy_valid,
                     "policy_fusion": a.action_buffer.fusion,
                     "policy_action": decision.policy_action,
-                    "human_action": leader if decision.source == "human" else None,
+                    "human_action": (decision.selected_action if a.mode == Mode.HIL
+                        and a.hil_input == "keyboard" else leader) if decision.source == "human" else None,
+                    "human_input": ({"mode": "keyboard", "command": self.cartesian.snapshot()["applied"]}
+                        if a.mode == Mode.HIL and a.hil_input == "keyboard" else {"mode": "leader"}),
                     "selected_action": decision.selected_action,
                     "bounded_action": decision.action.copy(),
                     "bounded_at": decision_done,
@@ -1060,6 +1144,9 @@ class Runtime:
                     else max(0, len(a._chunk) - a._index) if a._chunk is not None else 0
                 )
                 self.status = {
+                    "hil_input": a.hil_input,
+                    "cartesian": self.cartesian.snapshot(),
+                    "epoch": a.epoch,
                     "parts": None if self.parts is None else self.parts.record(),
                     "episode_elapsed_s": 0
                     if self._record_started is None
@@ -1194,6 +1281,7 @@ class Runtime:
                 self.parts.machine.cancel("runtime_fault", tick, time.monotonic())
             self.status = dict(self.status, phase="fault", error=f"{type(exc).__name__}: {exc}")
         finally:
+            self.cartesian.close()
             hold_errors = self.io.hold()
             if hold_errors:
                 self.status = dict(self.status, hold_errors=hold_errors)

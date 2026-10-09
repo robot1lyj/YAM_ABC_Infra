@@ -65,6 +65,7 @@ class Decision:
     leader_freeze: bool = False
     policy_selection: dict | None = None
     leader_hold_target: np.ndarray | None = None
+    leader_native_hold: bool = False
 
 
 def vector(value) -> np.ndarray:
@@ -176,6 +177,7 @@ class Arbiter:
         self.interaction_rules = interaction_rules
         self.intervention_pending = False
         self.intervention_waiting = False
+        self.hil_input = "leader"
 
     def _transition(self, phase: Phase, state: np.ndarray):
         self._leader_frozen = None
@@ -215,7 +217,17 @@ class Arbiter:
         self._previous_grip = h[[6, 13]].copy()
 
     def takeover(self, state, leader):
-        self.interaction_rules.takeover(self, state, leader)
+        if self.mode == Mode.HIL and self.hil_input == "keyboard":
+            if self.phase in (Phase.POLICY, Phase.RESUME) or (
+                self.phase == Phase.HOLD and self.intervention_pending
+            ):
+                self._transition(Phase.HUMAN, state)
+                self._leader_frozen = vector(leader)
+                self.intervention_pending = True
+                self.intervention_waiting = False
+                self._pickup = [True, True]
+        else:
+            self.interaction_rules.takeover(self, state, leader)
 
     def manual_ready(self, state, leader):
         self.interaction_rules.manual_ready(self, state, leader)
@@ -458,14 +470,19 @@ class Arbiter:
         if not observation_fresh and self.phase in (Phase.RESUME, Phase.POLICY):
             self._transition(Phase.HOLD, q)
         self.interaction_rules.alignment_step(self, leader, dt)
+        if self.mode == Mode.HIL and self.hil_input == "keyboard" and self._leader_frozen is None:
+            self._leader_frozen = vector(leader)  # No Leader mirroring in this input mode.
         policy = None
         action_index = None
         source = "hold"
         selected = self._hold.copy()
         if self.phase == Phase.HUMAN:
-            selected = vector(leader)
             source = "human"
-            for j, dim in enumerate((6, 13)):
+            if self.mode == Mode.HIL and self.hil_input == "keyboard":
+                selected = self._hold.copy()
+            else:
+                selected = vector(leader)
+            for j, dim in enumerate(() if self.mode == Mode.HIL and self.hil_input == "keyboard" else (6, 13)):
                 old = self._previous_grip[j]
                 new = selected[dim]
                 target = self._hold[dim]
@@ -543,4 +560,5 @@ class Arbiter:
             (self.rtc_timeline.last_selection if self.rtc_timeline is not None
              else self.action_buffer.last_selection) if policy is not None and self.streaming else None,
             self._leader_frozen.copy() if self._leader_frozen is not None else None,
+            self.mode == Mode.HIL and self.hil_input == "keyboard",
         )

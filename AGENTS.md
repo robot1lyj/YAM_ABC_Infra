@@ -18,6 +18,7 @@
 
 ## 环境与实施
 
+- 日后开发使用独立Git worktree与开发分支，另开模拟服务端口、配置和测试数据目录；不得边改正式工作目录边运行正式界面，不切换或重启用户正在使用的服务。测试/用户验收后才合并main并按部署边界上线；开发实例不与正式实例争用SDK/CAN。
 - Python3.12/uv；复现用 `uv sync --locked --extra camera --extra gui --extra deploy`，依赖索引与互斥组按 `docs/environment.md`。四模式入口 `uv run --no-sync yam-workstation`，本站配置 `configs/station_hil.yaml`；上游GELLO配置不用于本站。
 - 依赖变更提交 `pyproject.toml`/`uv.lock` 并验收；不提交虚拟环境、模型、运行数据或记忆账本。
 

@@ -78,6 +78,12 @@ class DeviceClient:
     def configure_recording(self, *, mode):
         return self._request("POST", "/recording/settings", {"mode": mode})
 
+    def configure_hil_input(self, **body):
+        return self._request("POST", "/hil/input", body)
+
+    def request_cartesian(self, **body):
+        return self._request("POST", "/hil/cartesian", body)
+
     def mark_parts_grasp(self, **body):
         return self._request("POST", "/parts/grasp", body)
 

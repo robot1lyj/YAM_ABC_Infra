@@ -71,6 +71,21 @@ class PartsMarker(BaseModel):
     reset: bool = False
 
 
+class HilInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    input: Literal["leader", "keyboard"]
+
+
+class CartesianStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    arm: Literal["left", "right"]
+    axis: Literal["x", "y", "z", "gripper"]
+    delta: float = Field(allow_inf_nan=False)
+    epoch: int = Field(strict=True, ge=0)
+    command_id: int = Field(strict=True, ge=1)
+    observed_tick: int = Field(strict=True, ge=0)
+
+
 def create_app(runtime, *, control_access=False):
     app = FastAPI(title="悟演智能采集工作台")
     owner_args = getattr(runtime, "args", None)
@@ -234,6 +249,16 @@ def create_app(runtime, *, control_access=False):
     def jog(body: JogRequest):
         invoke(runtime.request_jog, **body.model_dump(exclude_none=True))
         return {"queued": "jog"}
+
+    @app.post("/hil/input")
+    def hil_input(body: HilInput):
+        invoke(runtime.configure_hil_input, **body.model_dump())
+        return {"queued": "hil_input"}
+
+    @app.post("/hil/cartesian")
+    def cartesian_step(body: CartesianStep):
+        invoke(runtime.request_cartesian, **body.model_dump())
+        return {"queued": "cartesian_step"}
 
     @app.get("/camera/{role}.jpg")
     def camera(role: str):

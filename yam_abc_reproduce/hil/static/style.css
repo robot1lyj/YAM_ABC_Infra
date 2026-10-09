@@ -2263,3 +2263,20 @@ textarea::placeholder {
     transition: none;
   }
 }
+
+.keyboard-hil-panel { padding: 0 16px 12px; }
+.keyboard-hil-panel .panel-heading { padding: 12px 0 9px; }
+.keyboard-toolbar { display:flex; justify-content:space-between; align-items:center; margin:12px 0; font-size:12px; color:var(--muted); }
+.keyboard-toolbar label { display:flex; align-items:center; gap:6px; }
+.keyboard-toolbar select { width:auto; padding:4px 8px; }
+.keyboard-arms { display:grid; grid-template-columns:1fr 1fr; }
+.keyboard-arm { min-width:0; padding:0 10px 0 0; }
+.keyboard-arm + .keyboard-arm { border-left:1px solid var(--border); padding:0 0 0 10px; }
+.keyboard-arm-select { background:none; border:none; border-bottom:2px solid transparent; width:100%; padding:8px 0; text-align:left; font:inherit; font-weight:600; color:var(--muted); cursor:pointer; }
+.keyboard-arm-select span { display:none; font-size:10px; font-weight:400; }
+.keyboard-arm-select.active { color:var(--accent); border-color:var(--accent); }
+.keyboard-arm-select.active span { display:inline; }
+.cartesian-axis { display:grid; grid-template-columns:32px 1fr 1fr; gap:5px; align-items:center; margin:9px 0; font-size:12px; }
+.cartesian-axis .button { min-width:0; padding:6px 3px; min-height:34px; }
+.keyboard-shortcuts { line-height:1.8; margin-top:10px; font-size:11px; }
+#cartesian-status { margin:8px 0 0; font-size:12px; }

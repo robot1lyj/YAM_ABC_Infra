@@ -832,6 +832,18 @@ class Workbench:
         self.runtime.configure_recording(mode=mode)
         self.log(f"记录模式设置已提交：{mode}")
 
+    def configure_hil_input(self, *, input):
+        if self.runtime is None or self.state != "connected" or self.initializing:
+            raise ValueError("请先连接设备并退出初始化向导")
+        self.runtime.configure_hil_input(input=input)
+
+    def request_cartesian(self, **body):
+        if self.runtime is None or self.state != "connected" or self.initializing:
+            raise ValueError("请先连接设备并退出初始化向导")
+        if time.monotonic()-self._heartbeat > 3:
+            raise ValueError("操作台心跳已断开")
+        self.runtime.request_cartesian(**body)
+
     def mark_parts_grasp(self, **body):
         """Forward markers only; the control owner owns attempt state and CAN."""
         if self.runtime is None or self.state != "connected" or self.initializing:

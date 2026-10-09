@@ -26,6 +26,48 @@ let state = {},
   recordingDraft = null,
   toastTimer,
   lastPoll = 0;
+let keyboardArm = "left", cartesianBusy = false, cartesianSerial = 0;
+
+function keyboardReady() {
+  return online && state.connection === "connected" && state.mode === "hil"
+    && state.hil_input === "keyboard" && state.phase === "human"
+    && !state.stop_latched && (!state.maintenance || state.maintenance === "idle")
+    && !state.task_switching && !state.initializing;
+}
+async function cartesianStep(selectedArm, axis, sign) {
+  if (!keyboardReady() || cartesianBusy || state.cartesian?.busy || state.cartesian?.warming) return;
+  cartesianBusy = true;
+  cartesianSerial = Math.max(cartesianSerial, state.cartesian?.last_command_id || 0) + 1;
+  try {
+    await action("/hil/cartesian", {arm: selectedArm, axis,
+      delta: sign * (axis === "gripper" ? .05 : Number($("cartesian-step").value)/1000),
+      epoch: state.epoch, command_id: cartesianSerial, observed_tick: state.tick});
+  } finally { cartesianBusy = false; }
+}
+function renderKeyboardHil(connected, idle, paused, latched, recording, mode) {
+  const keyboard = state.hil_input === "keyboard";
+  $("keyboard-hil-panel").hidden = mode !== "hil" || page === "rl";
+  $("keyboard-hil-controls").hidden = !keyboard;
+  text("hil-input-current", keyboard ? "键盘末端微调" : "Leader 遥操作");
+  $("hil-input-apply").disabled = !(connected && idle && paused && !latched
+    && !recording && !state.intervention_pending && !state.initializing);
+  if (!$("hil-input-select").dataset.loaded && connected) {
+    $("hil-input-select").value = state.hil_input || "leader";
+    $("hil-input-select").dataset.loaded = "1";
+  }
+  document.querySelectorAll("[data-cart-axis]").forEach(b => {
+    b.disabled = !keyboardReady() || !!state.cartesian?.busy || !!state.cartesian?.warming || cartesianBusy;
+  });
+  document.querySelectorAll("[data-select-keyboard-arm]").forEach(b =>
+    b.classList.toggle("active", b.dataset.selectKeyboardArm === keyboardArm));
+  for (const [name, offset] of [["left", 6], ["right", 13]]) {
+    const value = state.follower_state?.[offset];
+    text("keyboard-grip-" + name, value == null ? "夹爪" : (100*value).toFixed(0) + "%");
+  }
+  text("cartesian-status", state.cartesian?.error || (state.cartesian?.warming ? "准备末端计算…" : state.cartesian?.busy
+    ? "计算中 · 不积压指令" : keyboardReady() ? "可微调 · Leader 保持"
+    : "先介入，再微调；交还后继续模型"));
+}
 function text(id, value) {
   $(id).textContent = value;
 }
@@ -279,7 +321,8 @@ function render() {
         : maint === "gravity"
           ? "重力补偿"
           : connected
-            ? (state.phase === "hold" && state.leader_locked ? "已锁定 · 等待页面交还" : phases[state.phase] || state.phase)
+            ? (state.phase === "hold" && state.leader_locked && (state.hil_input !== "keyboard"
+              || state.intervention_pending) ? "已锁定 · 等待页面交还" : phases[state.phase] || state.phase)
             : "未就绪",
   );
   text(
@@ -297,7 +340,7 @@ function render() {
                 ? "录制失败，已保持；排除存储或编码原因后可恢复录制服务"
                 : "等待开始指令"
               : state.phase === "human"
-                ? "Leader 正在控制 Follower"
+                ? state.hil_input === "keyboard" && mode === "hil" ? "键盘微调 · 模型已暂停" : "Leader 正在控制 Follower"
                 : xr1Replay ? "末端回放执行中" : "本地策略控制中",
   );
   text(
@@ -319,6 +362,7 @@ function render() {
     ? "推理通信尚未就绪；可在保持状态重载推理通信" : "";
   if (intervening) $("start").title = "介入期间只能暂停或明确交还模型";
   renderRL({connected, idle, paused, latched, recording, policyEditable, mode, parts});
+  renderKeyboardHil(connected, idle, paused, latched, recording, mode);
   $("header-stop").disabled =
     online && state.connection === "disconnected";
   $("header-reset").hidden = !latched;
@@ -326,9 +370,12 @@ function render() {
   $("takeover").disabled = !(
     canRun &&
     mode === "hil" &&
-    ["policy", "resume"].includes(state.phase)
+    (["policy", "resume"].includes(state.phase) || (state.hil_input === "keyboard"
+      && paused && state.intervention_pending))
   );
-  $("resume").disabled = !(canRun && mode === "hil" && (intervening || (paused && state.leader_locked)));
+  text("takeover", state.hil_input === "keyboard" && paused && state.intervention_pending ? "继续微调" : "介入 I");
+  $("resume").disabled = !(canRun && mode === "hil" && (intervening || (paused
+    && state.leader_locked && state.hil_input !== "keyboard")));
   text(
     "handle-hint",
     teleopView
@@ -336,7 +383,8 @@ function render() {
       : mode === "collect"
       ? "手柄① 开始 / 结束录制　\n手柄② 放弃当前集"
       : mode === "hil"
-        ? "I 介入锁定 → 右①遥操作 → ①锁定待交还　\n点击交还模型继续 · ② 无功能"
+        ? state.hil_input === "keyboard" ? "I 暂停模型并微调 · 点击交还模型继续　\nLeader 保持 · 手柄按钮不接管"
+        : "I 介入锁定 → 右①遥操作 → ①锁定待交还　\n点击交还模型继续 · ② 无功能"
         : "手柄按钮不分配功能",
   );
   text(
@@ -353,7 +401,7 @@ function render() {
               : paused
                 ? "姿态保持"
                 : state.source === "human"
-                  ? "Leader 遥操作"
+                  ? state.hil_input === "keyboard" && mode === "hil" ? "键盘末端微调" : "Leader 遥操作"
                   : state.policy_waiting_for_reply
                     ? `${xr1Replay ? "等待回放" : "等待 Thor"} · 姿态保持`
                   : state.policy_trajectory_active
@@ -1098,6 +1146,13 @@ document.addEventListener("keydown", (e) => {
     document.querySelector("dialog[open]")
   )
     return;
+  const keys = {ArrowUp: ["x", 1], ArrowDown: ["x", -1], ArrowLeft: ["y", -1],
+    ArrowRight: ["y", 1], PageUp: ["z", 1], PageDown: ["z", -1], "[": ["gripper", -1], "]": ["gripper", 1]};
+  if (keyboardReady() && keys[e.key]) {
+    e.preventDefault();
+    cartesianStep(keyboardArm, ...keys[e.key]);
+    return;
+  }
   const event = {
     i: "takeover",
     " ": "hold",
@@ -1117,6 +1172,21 @@ document.addEventListener("keydown", (e) => {
     else if (event === "discard") $("discard").click();
     else action("/event/" + event);
   }
+});
+$("hil-input-form").onsubmit = async e => {
+  e.preventDefault();
+  await action("/hil/input", {input: $("hil-input-select").value});
+};
+document.querySelectorAll("[data-cart-axis]").forEach(b => b.onclick = () =>
+  cartesianStep(b.dataset.cartArm, b.dataset.cartAxis, Number(b.dataset.cartSign)));
+document.querySelectorAll("[data-select-keyboard-arm]").forEach(b => b.onclick = () => {
+  keyboardArm = b.dataset.selectKeyboardArm;
+  document.querySelectorAll("[data-select-keyboard-arm]").forEach(el =>
+    el.classList.toggle("active", el.dataset.selectKeyboardArm === keyboardArm));
+});
+window.addEventListener("blur", () => { if (keyboardReady()) action("/event/hold"); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && keyboardReady()) action("/event/hold");
 });
 for (const img of document.querySelectorAll(".camera img")) {
   img.onload = () => {

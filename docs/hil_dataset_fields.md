@@ -1,4 +1,4 @@
-# HIL 原始数据字段（按当前写入代码，2026-09-28）
+# HIL 原始数据字段（按当前写入代码，2026-10-09）
 
 原始格式为 `yam_hil_v2`：每集 manifest.json，每段 samples.h5 和 top/left/right.mp4；不是LeRobot导出格式。三路RGB视频独立存储，不在HDF5中存像素。下列字段可空，不能把空值当作0。
 
@@ -16,8 +16,9 @@
 | leader_state | Leader反馈/手柄开度，14D |
 | observation_state | 与观测图像配对的状态，14D；可能空 |
 | policy_action | 本tick选中的模型目标，14D；非策略帧可空 |
-| human_action | 人工阶段的原始Leader输入，14D；不是补偿后的Follower目标 |
-| selected_action | 仲裁选中目标，人工阶段复用绝对1:1映射，无相对偏移，14D |
+| human_action | Leader输入时为原始Leader14D；键盘微调时为IK后的14D人工绝对目标，不能当成Leader反馈 |
+| human_input | 输入方式mode=leader/keyboard；键盘command记录操作臂、轴、步长、代次、指令编号与计算时间 |
+| selected_action | 仲裁选中14D目标；Leader人工复用绝对1:1映射，键盘人工使用IK目标，其余臂保持 |
 | bounded_action、bounded_at | 下发接口前目标与准备完成时刻 |
 | submitted_action、submitted_at、apply_returned_at | 实际提交SDK的目标、按臂写入时间戳、写调用返回时间；不代表电机到位时间 |
 | constraint_mask | 14维，提交目标与选中目标是否不同 |
@@ -78,6 +79,8 @@ video_indices为int64 N×3。camera_host_received_at、camera_device_timestamp_m
 固定存储字段：`schema, episode_id, fps, steps, segments, outcome, episode_success, error, clock, action_semantics`。outcome为recording/unknown/success/failure/discarded/aborted等；episode_success在明确成功/失败时保存对应字符串，否则null，非逐帧reward。
 
 配置/来源元数据：`station, mock, rtc, streaming, action_dt, policy_fusion, expected_policy_latency, prefetch_margin, rtc_delay_steps, operator_task, task, collection_task, collection_mode, video_encoder`。station含robot/cameras/control_hz/save_root/task_name/data_format/deploy_home_pose等配置快照；collection_task含id/created_at/name/instruction/task。
+
+键盘 HIL 新集另保存 `hil_input=keyboard`（默认为leader）。每帧 `human_input.command` 可空；有值时含 `arm, axis, delta, epoch, generation, command_id, requested_at, completed_at`，XYZ还含基座SE(3) `target_pose`。XYZ delta单位m，夹爪delta为归一化开度；时间为主机单调秒。只在接受第一步后标记 `expert_valid`，继续保持该人工目标的帧仍可有效；计算未完成/拒绝且此前无接受目标的帧不冒充专家动作。按 `command.arm`识别本次纠正臂，另一侧14D分量是保持目标。输入方式不在活动集内切换。
 
 `omitted_intervention_waits`：仅本集的区间列表，每项含`intervention_id, reason, first_tick, last_tick, start_time, end_time, event_requested_at, event_applied_at, frames`。reason区分takeover_wait（介入到人工）与handback_wait（手柄锁定到交还）；旧数据可能没有reason。区间时间是首尾采样时刻，帧数/30才是30Hz名义时长。可选terminal_status、close_errors为退出/收尾诊断，不保证每集存在。
 

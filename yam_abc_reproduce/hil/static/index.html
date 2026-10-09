@@ -370,6 +370,34 @@
                   手柄① 开始 / 结束录制<br />手柄② 放弃当前集
                 </div>
               </section>
+              <section class="panel keyboard-hil-panel" id="keyboard-hil-panel" hidden>
+                <div class="panel-heading"><h2>人工介入</h2><span class="muted" id="hil-input-current">Leader 遥操作</span></div>
+                <form id="hil-input-form" class="policy-settings">
+                  <label>介入方式<select id="hil-input-select"><option value="leader">Leader 遥操作</option><option value="keyboard">键盘末端微调</option></select></label>
+                  <button class="button" id="hil-input-apply" type="submit">应用</button>
+                </form>
+                <div id="keyboard-hil-controls" hidden>
+                  <div class="keyboard-toolbar"><span>基座 XYZ · 保持朝向</span><label>单步<select id="cartesian-step"><option value="1">1 mm</option><option value="2">2 mm</option><option value="5">5 mm</option></select></label></div>
+                  <div class="keyboard-arms">
+                    <section class="keyboard-arm" data-keyboard-arm="left">
+                      <button type="button" class="keyboard-arm-select active" data-select-keyboard-arm="left">左臂 <span>键盘选中</span></button>
+                      <div class="cartesian-axis"><span>X</span><button class="button" data-cart-arm="left" data-cart-axis="x" data-cart-sign="-1">−</button><button class="button" data-cart-arm="left" data-cart-axis="x" data-cart-sign="1">＋</button></div>
+                      <div class="cartesian-axis"><span>Y</span><button class="button" data-cart-arm="left" data-cart-axis="y" data-cart-sign="-1">−</button><button class="button" data-cart-arm="left" data-cart-axis="y" data-cart-sign="1">＋</button></div>
+                      <div class="cartesian-axis"><span>Z</span><button class="button" data-cart-arm="left" data-cart-axis="z" data-cart-sign="-1">下降</button><button class="button" data-cart-arm="left" data-cart-axis="z" data-cart-sign="1">上升</button></div>
+                      <div class="cartesian-axis"><span id="keyboard-grip-left">夹爪</span><button class="button" data-cart-arm="left" data-cart-axis="gripper" data-cart-sign="-1">闭合</button><button class="button" data-cart-arm="left" data-cart-axis="gripper" data-cart-sign="1">张开</button></div>
+                    </section>
+                    <section class="keyboard-arm" data-keyboard-arm="right">
+                      <button type="button" class="keyboard-arm-select" data-select-keyboard-arm="right">右臂 <span>键盘选中</span></button>
+                      <div class="cartesian-axis"><span>X</span><button class="button" data-cart-arm="right" data-cart-axis="x" data-cart-sign="-1">−</button><button class="button" data-cart-arm="right" data-cart-axis="x" data-cart-sign="1">＋</button></div>
+                      <div class="cartesian-axis"><span>Y</span><button class="button" data-cart-arm="right" data-cart-axis="y" data-cart-sign="-1">−</button><button class="button" data-cart-arm="right" data-cart-axis="y" data-cart-sign="1">＋</button></div>
+                      <div class="cartesian-axis"><span>Z</span><button class="button" data-cart-arm="right" data-cart-axis="z" data-cart-sign="-1">下降</button><button class="button" data-cart-arm="right" data-cart-axis="z" data-cart-sign="1">上升</button></div>
+                      <div class="cartesian-axis"><span id="keyboard-grip-right">夹爪</span><button class="button" data-cart-arm="right" data-cart-axis="gripper" data-cart-sign="-1">闭合</button><button class="button" data-cart-arm="right" data-cart-axis="gripper" data-cart-sign="1">张开</button></div>
+                    </section>
+                  </div>
+                  <p class="muted keyboard-shortcuts">方向键：XY　PageUp / Down：Z　[ / ]：夹爪<br>点击臂名选择键盘操作臂 · 每次按键一步 · 空格暂停</p>
+                  <p id="cartesian-status" class="muted" role="status">先介入，再微调</p>
+                </div>
+              </section>
               <section class="panel policy-panel" id="policy-panel" hidden>
                 <div class="panel-heading"><h2>推理执行</h2><span class="pill" id="policy-mode">—</span></div>
                 <div class="policy-metrics">

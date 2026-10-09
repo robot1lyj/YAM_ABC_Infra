@@ -452,7 +452,7 @@ function render() {
       (state.episodes || []).reduce((sum, ep) => sum + ep.steps, 0)
     ).toLocaleString(),
   );
-  text("interventions", state.intervention_id || 0);
+  text("interventions", state.session_intervention_count ?? "—");
   text(
     "disk",
     state.disk_free_gb == null ? "— GB" : state.disk_free_gb.toFixed(1) + " GB",

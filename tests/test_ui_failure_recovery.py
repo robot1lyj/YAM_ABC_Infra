@@ -1,6 +1,7 @@
 """Recovery paths without robot, camera, CAN or model access."""
 
 import builtins
+import json
 import shutil
 import subprocess
 import threading
@@ -10,6 +11,100 @@ from types import SimpleNamespace
 import pytest
 
 from yam_abc_reproduce.hil.workbench import Workbench
+
+
+def session_state(output, **changes):
+    return dict(output=str(output), intervention_id=6, episodes=[], episode_count=0,
+        recorded_steps=0, recording=False, recording_saving=False,
+        intervention_pending=False, **changes)
+
+
+def saved_first_row(output, row):
+    episode = output / "episode_000001"
+    episode.mkdir(parents=True)
+    (episode / "manifest.json").write_text(json.dumps({"schema": "yam_hil_v1"}))
+    (episode / "steps.jsonl").write_text(json.dumps(row) + "\n")
+
+
+def test_status_counts_current_session_without_resetting_provenance(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from yam_abc_reproduce.hil.web import create_app
+
+    owner = SimpleNamespace(status=session_state(tmp_path / "first"))
+    with TestClient(create_app(owner)) as client:
+        state = client.get("/status").json()
+        assert state["session_intervention_count"] == 0
+        assert state["intervention_id"] == owner.status["intervention_id"] == 6
+        owner.status.update(recording=True, intervention_id=7)
+        assert client.get("/status").json()["session_intervention_count"] == 1
+        owner.status = session_state(tmp_path / "second")
+        owner.status["intervention_id"] = 7
+        assert client.get("/status").json()["session_intervention_count"] == 0
+
+
+@pytest.mark.parametrize("row,current,expected", [
+    ({"intervention_id": 6, "is_intervention": False}, 6, 0),
+    ({"intervention_id": 6, "is_intervention": False}, 7, 1),
+    ({"intervention_id": 7, "is_intervention": True}, 7, 1),
+    ({"intervention_id": 7, "transitions": ["takeover_applied"]}, 8, 2),
+])
+def test_web_restart_recovers_session_count_from_recording(tmp_path, row, current, expected):
+    from yam_abc_reproduce.hil.web import _SessionInterventions
+
+    saved_first_row(tmp_path, row)
+    state = session_state(tmp_path)
+    state.update(episodes=[{"path": "episode_000001"}], recorded_steps=2261,
+        intervention_id=current)
+    counter = _SessionInterventions()
+    assert counter.count(state) is None
+    counter.reader.join(2)
+    assert counter.count(state) == expected
+    reader = counter.reader
+    assert counter.count(state) == expected
+    assert counter.reader is reader  # Cached, not a disk scan on every poll.
+
+
+def test_count_recovery_does_not_block_status_or_leak_across_tasks(tmp_path, monkeypatch):
+    from yam_abc_reproduce.hil import web
+
+    saved_first_row(tmp_path, {"intervention_id": 6})
+    blocked, release = threading.Event(), threading.Event()
+
+    def slow_rows(path):
+        blocked.set()
+        assert release.wait(2)
+        yield {"intervention_id": 6}
+
+    monkeypatch.setattr(web, "read_rows", slow_rows)
+    counter = web._SessionInterventions()
+    state = session_state(tmp_path)
+    state.update(recording=True)
+    assert counter.count(state) is None
+    assert blocked.wait(1)
+    try:
+        assert counter.count(state) is None  # Does not wait for the disk reader.
+        new_state = session_state(tmp_path / "new")
+        new_state["intervention_id"] = 9
+        assert counter.count(new_state) == 0
+    finally:
+        release.set()
+        counter.reader.join(2)
+    new_state.update(recording=True, intervention_id=10)
+    assert counter.count(new_state) == 1
+
+
+def test_unreadable_session_count_is_unknown_not_global_id(tmp_path):
+    from yam_abc_reproduce.hil.web import _SessionInterventions
+
+    saved_first_row(tmp_path, {"intervention_id": None})
+    counter = _SessionInterventions()
+    state = session_state(tmp_path)
+    state.update(recorded_steps=2261)
+    assert counter.count(state) is None
+    counter.reader.join(2)
+    assert counter.count(state) is None
+    assert counter.count({}) is None
 
 
 def camera_service():
@@ -185,6 +280,12 @@ for (const extra of [{intervention_pending:true},{recording:true},{task_switchin
 }
 render({connection:'connected',mode:'hil',recording_error:null,recording_recovery:{state:'complete'}});
 assert.equal(get('recording-restart').hidden, true);
+render({intervention_id:6,session_intervention_count:0});
+assert.equal(get('interventions').textContent, 0);
+render({intervention_id:7,session_intervention_count:1});
+assert.equal(get('interventions').textContent, 1);
+render({intervention_id:6,session_intervention_count:null});
+assert.equal(get('interventions').textContent, '—');
 """
     result = subprocess.run(
         [node, "-e", script, str(source)], capture_output=True, text=True, timeout=10

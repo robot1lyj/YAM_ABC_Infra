@@ -12,7 +12,74 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .storage import read_rows
+
 STATIC = Path(__file__).with_name("static")
+
+
+class _SessionInterventions:
+    """Count this recording session, not the device's provenance ID.
+
+    Recover the baseline after Web-only restarts from the first recorded row.
+    Disk reads stay outside /status: slow storage must not block controls.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.output = None
+        self.base = None
+        self.reader = None
+        self.retry_at = 0.0
+
+    def count(self, state):
+        output, current = state.get("output"), state.get("intervention_id")
+        if not output or type(current) is not int or current < 0:
+            return None
+        with self.lock:
+            if output != self.output:
+                self.output, self.base, self.retry_at = output, None, 0.0
+            if (
+                not state.get("episodes") and not state.get("episode_count")
+                and not state.get("recorded_steps") and not state.get("recording")
+                and not state.get("recording_saving")
+                and not state.get("intervention_pending")
+            ):
+                self.base = current
+            if self.base is not None:
+                return current - self.base if current >= self.base else None
+            now = time.monotonic()
+            if (self.reader is None or not self.reader.is_alive()) and now >= self.retry_at:
+                self.retry_at = now + 1
+                self.reader = threading.Thread(target=self._recover, args=(output,), daemon=True)
+                try:
+                    self.reader.start()
+                except RuntimeError:
+                    self.reader = None  # A display error must not break /status.
+            return None
+
+    def _recover(self, output):
+        base = None
+        try:
+            for episode in sorted(Path(output).glob("episode_*")):
+                if not (episode / "manifest.json").is_file():
+                    continue
+                rows = read_rows(episode)
+                try:
+                    first = next(rows, {})
+                finally:
+                    rows.close()
+                value = first.get("intervention_id")
+                if type(value) is int and value >= 0:
+                    # Count a takeover already active on the first saved frame.
+                    started = bool(first.get("is_intervention") or
+                        "takeover_applied" in (first.get("transitions") or []))
+                    base = max(0, value - int(started))
+                    break
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # Incomplete data stays unknown; retry instead of guessing.
+        with self.lock:
+            if self.output == output and self.base is None:
+                self.base = base
 
 
 class Connect(BaseModel):
@@ -88,6 +155,7 @@ class CartesianStep(BaseModel):
 
 def create_app(runtime, *, control_access=False):
     app = FastAPI(title="悟演智能采集工作台")
+    interventions = _SessionInterventions()
     owner_args = getattr(runtime, "args", None)
     lease = {"owner": None, "at": 0.0}
     listen_host = getattr(owner_args, "web_host", "127.0.0.1")
@@ -145,7 +213,12 @@ def create_app(runtime, *, control_access=False):
 
     @app.get("/status")
     def status():
-        return {**runtime.status, "control_auth_required": False}
+        state = dict(runtime.status)
+        return {
+            **state,
+            "session_intervention_count": interventions.count(state),
+            "control_auth_required": False,
+        }
 
     @app.post("/event/{event}")
     def event(event: str):

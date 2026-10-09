@@ -27,12 +27,23 @@ let state = {},
   toastTimer,
   lastPoll = 0;
 let keyboardArm = "left", cartesianBusy = false, cartesianSerial = 0;
+let keyboardSuspendedEpoch = null;
 
-function keyboardReady() {
+function keyboardActive() {
   return online && state.connection === "connected" && state.mode === "hil"
     && state.hil_input === "keyboard" && state.phase === "human"
     && !state.stop_latched && (!state.maintenance || state.maintenance === "idle")
     && !state.task_switching && !state.initializing;
+}
+function keyboardReady() {
+  return keyboardActive() && page === "workspace" && document.visibilityState === "visible"
+    && state.epoch !== keyboardSuspendedEpoch;
+}
+function pauseKeyboard() {
+  if (!keyboardActive() || state.epoch === keyboardSuspendedEpoch) return;
+  // Block input immediately; returning before the HOLD acknowledgement must not resume it.
+  keyboardSuspendedEpoch = state.epoch;
+  action("/event/hold");
 }
 async function cartesianStep(selectedArm, axis, sign) {
   if (!keyboardReady() || cartesianBusy || state.cartesian?.busy || state.cartesian?.warming) return;
@@ -936,6 +947,7 @@ async function heartbeat() {
   }
 }
 function switchPage(next) {
+  if (next !== page) pauseKeyboard();
   page = next;
   document
     .querySelectorAll("[data-page]")
@@ -1138,17 +1150,17 @@ $("connect-form").onsubmit = async (e) => {
 document
   .querySelectorAll("[data-close]")
   .forEach((b) => (b.onclick = () => b.closest("dialog").close()));
-// Keyboard remains available on both pages; never intercept typing or open dialogs.
+// Movement shortcuts only belong to the visible workspace; do not capture typing or browser shortcuts.
 document.addEventListener("keydown", (e) => {
   if (
-    e.repeat ||
+    e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.isComposing || e.target.isContentEditable ||
     ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) ||
     document.querySelector("dialog[open]")
   )
     return;
   const keys = {ArrowUp: ["x", 1], ArrowDown: ["x", -1], ArrowLeft: ["y", -1],
     ArrowRight: ["y", 1], PageUp: ["z", 1], PageDown: ["z", -1], "[": ["gripper", -1], "]": ["gripper", 1]};
-  if (keyboardReady() && keys[e.key]) {
+  if (keyboardReady() && !e.shiftKey && keys[e.key]) {
     e.preventDefault();
     cartesianStep(keyboardArm, ...keys[e.key]);
     return;
@@ -1184,9 +1196,9 @@ document.querySelectorAll("[data-select-keyboard-arm]").forEach(b => b.onclick =
   document.querySelectorAll("[data-select-keyboard-arm]").forEach(el =>
     el.classList.toggle("active", el.dataset.selectKeyboardArm === keyboardArm));
 });
-window.addEventListener("blur", () => { if (keyboardReady()) action("/event/hold"); });
+window.addEventListener("blur", pauseKeyboard);
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden && keyboardReady()) action("/event/hold");
+  if (document.hidden) pauseKeyboard();
 });
 for (const img of document.querySelectorAll(".camera img")) {
   img.onload = () => {

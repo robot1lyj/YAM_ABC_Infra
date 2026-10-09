@@ -1,7 +1,10 @@
 """Keyboard HIL contract: no motors, no network policy or background SDK writes."""
 
+import shutil
+import subprocess
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,6 +12,108 @@ import pytest
 
 from yam_abc_reproduce.hil.cartesian_jog import CartesianJog
 from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
+
+
+def test_keyboard_ui_input_scope_and_focus_pause():
+    """Exercise shipped handlers, not copies: no hidden-page jogs or implicit resume."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node required for UI event regression")
+    source = Path(__file__).parents[1] / "yam_abc_reproduce/hil/static/app.js"
+    script = r"""
+const assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
+const calls = [], nodes = new Map(), handlers = {}, windowHandlers = {};
+let dialog = false;
+function get(id) {
+  if (!nodes.has(id)) nodes.set(id, {value:'2',hidden:false,
+    click(){calls.push({path:'click:' + id})}});
+  return nodes.get(id);
+}
+const context = {sessionStorage:{getItem(){return 'test'},setItem(){}},
+  crypto:{randomUUID(){return 'test'}}, Date,
+  document:{visibilityState:'visible',hidden:false,getElementById:get,
+    querySelectorAll(){return []},querySelector(){return dialog ? {} : null},
+    addEventListener(name,handler){handlers[name]=handler}},
+  window:{addEventListener(name,handler){windowHandlers[name]=handler}}};
+vm.createContext(context);
+const source = fs.readFileSync(process.argv[1], 'utf8');
+vm.runInContext(source.slice(0, source.indexOf('function text(')) + '\n' +
+  source.slice(source.indexOf('function switchPage(next)'), source.indexOf('for (let j = 0;')) + '\n' +
+  source.slice(source.indexOf('document.addEventListener("keydown"'), source.indexOf('$("hil-input-form").onsubmit')) + '\n' +
+  source.slice(source.indexOf('window.addEventListener("blur"'), source.indexOf('for (const img')), context);
+context.capture = (path,body) => calls.push({path,body});
+vm.runInContext('action = async (path,body) => {capture(path,body);return true}; render = () => {}; text = () => {};', context);
+const ready = {connection:'connected',mode:'hil',hil_input:'keyboard',phase:'human',
+  epoch:5,tick:100,maintenance:'idle',cartesian:{last_command_id:10}};
+function reset(changes={}) {
+  calls.length=0; dialog=false;
+  context.document.visibilityState='visible'; context.document.hidden=false;
+  vm.runInContext(`state=${JSON.stringify({...ready,...changes})};online=true;page='workspace';
+    keyboardArm='left';keyboardSuspendedEpoch=null;cartesianBusy=false;cartesianSerial=0;`, context);
+}
+async function key(name,extra={}) {
+  let prevented=false;
+  handlers.keydown({key:name,target:{tagName:'DIV'},preventDefault(){prevented=true},...extra});
+  await Promise.resolve();
+  return prevented;
+}
+async function main() {
+  const keys={ArrowUp:['x',.002],ArrowDown:['x',-.002],ArrowLeft:['y',-.002],
+    ArrowRight:['y',.002],PageUp:['z',.002],PageDown:['z',-.002],'[':['gripper',-.05],']':['gripper',.05]};
+  for (const arm of ['left','right']) for (const [name,[axis,delta]] of Object.entries(keys)) {
+    reset(); vm.runInContext(`keyboardArm='${arm}'`, context);
+    assert.equal(await key(name),true);
+    assert.deepEqual(calls.map(x=>JSON.parse(JSON.stringify(x))), [{path:'/hil/cartesian',body:{
+      arm,axis,delta,epoch:5,command_id:11,observed_tick:100}}]);
+  }
+  for (const extra of [{ctrlKey:true},{altKey:true},{metaKey:true},{shiftKey:true},
+    {repeat:true},{isComposing:true},{target:{tagName:'DIV',isContentEditable:true}},
+    ...['INPUT','TEXTAREA','SELECT'].map(tagName=>({target:{tagName}}))]) {
+    reset(); assert.equal(await key('ArrowDown',extra),false); assert.equal(calls.length,0);
+  }
+  for (const extra of [{ctrlKey:true},{altKey:true},{metaKey:true},{isComposing:true}]) {
+    reset(); await key('s',extra); assert.equal(calls.length,0); // Browser/IME input never starts a model.
+  }
+  reset(); dialog=true; await key('PageDown'); assert.equal(calls.length,0);
+  for (const page of ['devices','rl']) {
+    reset(); vm.runInContext(`page='${page}'`,context);
+    assert.equal(await key('ArrowDown'),false);
+    await vm.runInContext("cartesianStep('right','z',-1)",context);
+    assert.equal(calls.length,0); // Buttons use the same page gate.
+  }
+  reset(); context.document.visibilityState='hidden'; context.document.hidden=true;
+  await key('PageDown'); assert.equal(calls.length,0);
+  for (const changes of [{connection:'fault'},{phase:'hold'},{phase:'policy'},
+    {hil_input:'leader'},{mode:'inference'},{stop_latched:true},{maintenance:'homing'},
+    {task_switching:true},{initializing:true},{cartesian:{busy:true}},{cartesian:{warming:true}}]) {
+    reset(changes); await key('PageDown'); assert.equal(calls.length,0,JSON.stringify(changes));
+  }
+  reset(); vm.runInContext('online=false',context); await key('PageDown'); assert.equal(calls.length,0);
+  reset(); vm.runInContext('cartesianBusy=true',context);
+  await key('PageDown'); assert.equal(calls.length,0);
+  await key(' '); assert.equal(calls[0].path,'/event/hold'); // Pause is not gated by an in-flight jog.
+  reset(); vm.runInContext("switchPage('workspace')",context); assert.equal(calls.length,0);
+  vm.runInContext("switchPage('devices');switchPage('workspace')",context);
+  assert.equal(calls.length,1); assert.equal(calls[0].path,'/event/hold');
+  await key('PageDown'); assert.equal(calls.length,1); // Returning before HOLD acknowledgement stays blocked.
+  reset(); windowHandlers.blur();
+  context.document.visibilityState='hidden';context.document.hidden=true;handlers.visibilitychange();
+  assert.equal(calls.length,1);assert.equal(calls[0].path,'/event/hold'); // Blur + hidden is one pause.
+  context.document.visibilityState='visible';context.document.hidden=false;
+  await key('PageDown'); assert.equal(calls.length,1);
+  vm.runInContext("state.phase='hold';state.epoch=6",context);
+  await key('PageDown'); assert.equal(calls.length,1);
+  vm.runInContext("state.phase='human';state.epoch=7",context); // Explicit new takeover/continue.
+  await key('PageDown'); assert.equal(calls.length,2);assert.equal(calls[1].path,'/hil/cartesian');
+  reset();context.document.visibilityState='hidden';context.document.hidden=true;
+  handlers.visibilitychange();assert.equal(calls[0].path,'/event/hold'); // Hidden event still pauses.
+  reset({hil_input:'leader'});windowHandlers.blur();handlers.visibilitychange();assert.equal(calls.length,0);
+}
+main().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    result = subprocess.run([node, "-e", script, str(source)],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
 
 
 class FakeArm:

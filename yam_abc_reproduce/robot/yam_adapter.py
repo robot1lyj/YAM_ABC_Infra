@@ -12,6 +12,7 @@ bench. The defaults here are placeholders.
 
 from __future__ import annotations
 
+import inspect
 import time
 from threading import Event
 
@@ -45,6 +46,7 @@ def _build_yam(
     gripper_limits: list[float] | None = None,
     *,
     use_coulomb_friction: bool = False,
+    gripper_force_limit_n: float | None = None,
 ):
     """Construct an i2rt YAM robot, converting our string config to i2rt enums.
 
@@ -85,6 +87,24 @@ def _build_yam(
         ),
         use_coulomb_friction=use_coulomb_friction,
     )
+    if gripper_force_limit_n is not None:
+        if (
+            type(gripper_force_limit_n) not in (int, float)
+            or not np.isfinite(gripper_force_limit_n)
+            or gripper_force_limit_n <= 0
+        ):
+            raise ValueError("gripper_force_limit_n must be finite and positive (N)")
+        params = inspect.signature(get_robot_module.get_yam_robot).parameters
+        if "limit_gripper_force" not in params and not any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+        ):
+            # Refuse BEFORE CAN ownership/startup. Never quietly use the SDK's
+            # hardcoded 50 N after the operator has requested a lower force.
+            raise RuntimeError(
+                "i2rt configurable gripper force limit missing; run "
+                "scripts/apply_i2rt_safety_patches.sh before connecting hardware"
+            )
+        options["limit_gripper_force"] = float(gripper_force_limit_n)
     return construct_owned_yam(channel, lambda: get_robot_module.get_yam_robot(**options))
 
 
@@ -134,8 +154,14 @@ class YamRobot(RobotInterface):
         gripper_limits: list[float] | None = None,
         gripper_raw_open: float = 1.0,
         gripper_raw_closed: float = 0.0,
+        gripper_force_limit_n: float = 50.0,
     ):
-        self._robot = _build_yam(channel, arm_type, gripper_type, ee_mass, gripper_limits)
+        if gripper_force_limit_n is None:
+            raise ValueError("gripper_force_limit_n must be finite and positive (N)")
+        self._robot = _build_yam(
+            channel, arm_type, gripper_type, ee_mass, gripper_limits,
+            gripper_force_limit_n=gripper_force_limit_n,
+        )
         self._n = num_arm_joints
         self._g_open = gripper_raw_open
         self._g_closed = gripper_raw_closed

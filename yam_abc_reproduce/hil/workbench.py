@@ -111,6 +111,7 @@ class Workbench:
                 "channel": robot_channel_for(robot),
                 "gripper": robot.gripper,
                 "gripper_limits": robot.gripper_limits,
+                "gripper_force_limit_n": robot.gripper_force_limit_n,
             }
             for robot in cfg.robot.robots
         ]

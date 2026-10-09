@@ -8,6 +8,7 @@ can carry extra documentation fields without breaking.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -156,6 +157,14 @@ class RobotUnitConfig:
     gripper: str = "linear_4310"
     gripper_limits: list[float] | None = None
     channel: str | None = None
+    # i2rt's stalled-contact SOFT force target in N, not a peak motor-Nm cap.
+    # Keep the official default outside explicitly configured stations.
+    gripper_force_limit_n: float = 50.0
+
+    def __post_init__(self):
+        value = self.gripper_force_limit_n
+        if type(value) not in (int, float) or not isfinite(value) or value <= 0:
+            raise ValueError("gripper_force_limit_n must be finite and positive (N)")
 
 
 @dataclass
@@ -331,6 +340,9 @@ def apply_station_form(base: StationConfig, form: dict[str, Any]) -> StationConf
                     type=rtype,
                     gripper=gripper,
                     gripper_limits=(prev.gripper_limits if (prev and prev.gripper == gripper) else None),
+                    gripper_force_limit_n=(
+                        prev.gripper_force_limit_n if prev else 50.0
+                    ),
                     # The rail edits this one, so blank means "back to the type default".
                     channel=(r.get("channel") or "").strip() or None,
                 )

@@ -137,6 +137,7 @@ def build_arm_units(
                 arm_type=cfg.robot.arm_type,
                 ee_mass=cfg.robot.ee_mass,
                 gripper_limits=r.gripper_limits,
+                gripper_force_limit_n=r.gripper_force_limit_n,
             )
             opened.append(follower)
             _report_gripper_travel(_arm_name(r.type), r, follower.gripper_limits())

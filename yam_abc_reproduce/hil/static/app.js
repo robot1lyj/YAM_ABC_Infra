@@ -863,7 +863,7 @@ function renderInitialization(context) {
     $("init-inventory").replaceChildren();
     const labels = [
       ...(inventory.followers || []).map(
-        (d) => `${d.side} follower · ${d.channel} · ${d.gripper}`,
+        (d) => `${d.side} follower · ${d.channel} · ${d.gripper}${Number.isFinite(d.gripper_force_limit_n) ? ` · 软限力配置 ${d.gripper_force_limit_n} N（连接时应用）` : ""}`,
       ),
       ...(inventory.leaders || []).map(
         (d) => `${d.side} leader · ${d.channel} · ${d.gripper}`,

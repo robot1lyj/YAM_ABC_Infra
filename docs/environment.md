@@ -98,7 +98,7 @@ uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 
 ### IPC连接与地址
 
-IPC SSH用户名为`linux`，不是开发机用户名`wuyan-lyj`；密码不入库。**Wi-Fi地址由DHCP分配，连接前确认，不把日期快照当固定入口。**2026-10-09经Thor直连复核：`wlan0=10.18.10.13/23`，面板 `http://10.18.10.13:8766/`。该地址不是永久保证；开发机可通过已配置Thor跳板访问`linux@192.168.250.2`查询IPC实际地址，核对已有SSH主机密钥，不绕过验证。
+IPC SSH用户名为`linux`，不是开发机用户名`wuyan-lyj`；密码不入库。**Wi-Fi地址由DHCP分配，连接前确认，不把日期快照当固定入口。**2026-10-10部署时经Thor直连复核：`wlan0=10.18.10.82/23`，面板 `http://10.18.10.82:8766/`。该地址不是永久保证；开发机可通过已配置Thor跳板访问`linux@192.168.250.2`查询IPC实际地址，核对已有SSH主机密钥，不绕过验证。
 
 `10.18.31.234:8767`是独立x86数据集服务器，不是设备IPC。Web的[start_ipc_web.sh](../scripts/start_ipc_web.sh)在启动时读取wlan0 IPv4；运行中换址需只刷新Web绑定，不重启设备。10月9日曾因换址而残留旧绑定，仅重启Web后HTTP恢复，device PID未变；不据此认定SDK反馈故障已修复。
 

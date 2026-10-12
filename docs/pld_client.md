@@ -1,6 +1,6 @@
 # PLD-Grasp 抓取修正专家客户端
 
-状态：2026-10-12，已增量部署IPC并受控重启一次，未自动连接或运动。完整替换旧PARTS模块，不兼容旧配置、接口或原始包；TDA/raw代码也已删除，仅保留完整50步同步和原生RTC。当前启动probe、RTC d=9、30 Hz直达SDK，Thor实际握手仅支持off/probe诊断、未加载正式专家。部署版本、备份及两次无电机网络探针见[验收](acceptance.md)，正式新采集逐tick记录仍待用户现场测试。
+状态：2026-10-12，已增量部署IPC；用户随后采集的probe第01/02集已核对：逐tick来源、前缀、完整回复和三路视频无错位，边界说明见[验收](acceptance.md)。完整替换旧PARTS模块，不兼容旧配置、接口或原始包；TDA/raw代码也已删除，仅保留完整50步同步和原生RTC。当前probe、RTC d=9、30 Hz直达SDK，Thor实际握手仅支持off/probe诊断、未加载正式专家；不能把链路验收当作SAC训练就绪或抓取效果证明。
 
 ## 职责和模式
 
@@ -51,6 +51,12 @@ shadow/probe 顶层 actions 必须与回复 base 完全相同；核对身份、�
 - manifest 记录 pld 模式/身份、action_limits、policy_events 相对引用。整轮 C/N 在暂停保存后按原 episode_id 写入 evaluation 事件，purpose=evaluation_only，不是逐帧 reward。
 
 必须复制整个 session（含 policy_events.jsonl），不能只拷 episode。Thor 数据管家当前主要从 HDF5 消费已到达正常帧的回复；取消、晚到或等待期间仅在 sidecar 的响应需要同时读 sidecar 复核，不能用伪造视频行补齐。录制队列/序列化失败明确暂停，不悄悄丢掉 trace。原始 tick/time 不重排，连续训练 timestamp 及等待边界沿用原机制。
+
+### 操作员页面与整轮评估
+
+RL页复用三路相机、开始/暂停、当前任务总集数和原“删除上一集”流程，不另造一套计数或删除接口。技术字段收在默认关闭的诊断详情；修改页面不改设备控制。C/N在暂停并保存后填写，关联当前刚结束的原episode_id；进入新集清空输入，防止上一集数字被误带入。
+
+点击“记录本轮评估”后，写入**本次session根目录的`policy_events.jsonl`**：`event=evaluation`、`episode_id=原UUID`、`time=IPC单调秒`、`details.evaluation={C,N,purpose:"evaluation_only"}`。不是每帧HDF5字段，不会自动改manifest的outcome，也不是SAC奖励。重复提交是追加事件，不覆盖旧行，不能把点击次数当独立实验次数。页面成功提示指写入录制队列已接受，不是新的逐帧标签。
 
 ## 实际动作边界与单位
 

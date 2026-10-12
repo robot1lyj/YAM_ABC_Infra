@@ -287,6 +287,13 @@ def test_pld_web_has_five_modes_and_no_old_grasp_marker():
         html = client.get("/").text
         assert "PLD-Grasp" in html and 'value="probe"' in html
         assert "--parts-config" not in html and "入口高度" not in html
+        assert 'id="delete-last-episode"' in html
+        assert 'class="policy-disclosure rl-diagnostics"' in html
+        diagnostics = html.split('class="policy-disclosure rl-diagnostics"', 1)[1].split("</details>", 1)[0]
+        for field in ("pld-contract", "pld-snapshot", "rl-control-mode", "rl-observation-panel"):
+            assert f'id="{field}"' in diagnostics
+        assert html.count('id="delete-last-episode"') == 1  # Reuse deletion and safety checks.
+        assert 'required' in html.split('id="pld-correct"', 1)[1].split('/>', 1)[0]
     assert [item["mode"] for item in configured] == list(MODES)
 
 
@@ -427,18 +434,25 @@ const assert = require('assert/strict'), nodes = new Map();
 const $ = id => { if (!nodes.has(id)) nodes.set(id, {value:'', options:[], textContent:''}); return nodes.get(id) };
 const text = (id, v) => $(id).textContent = v;
 const state = {phase:'hold'}, names = {inference:'模型推理'}, phases = {hold:'已保持'};
-let renderedPldMode = null;
+let renderedPldMode = null, pldEvaluationEpisode = null;
 for (const value of ['off','shadow','probe','collect','eval']) $('pld-mode').options.push({value});
 """ + "function renderRL(" + function + """
 const props = {connected:true,paused:true,recording:false,policyEditable:true,mode:'inference',
   pld:{mode:'off',supported_modes:['off','probe'],server_phase:'probe_diagnostics_only',actor_loaded:false}};
 renderRL(props);
 assert.deepEqual($('pld-mode').options.filter(o=>!o.disabled).map(o=>o.value), ['off','probe']);
-assert.match($('rl-capability').textContent, /未加载 actor/);
+assert.match($('rl-capability').textContent, /未加载专家/);
 $('pld-mode').value = 'probe'; renderRL(props);
 assert.equal($('pld-mode').value, 'probe'); // Polling must not erase the unsubmitted draft.
 props.pld.mode='probe'; props.pld.replay_contract_ready=false; renderRL(props);
-assert.match($('rl-readiness').textContent, /不可用于 SAC/);
+assert.match($('rl-readiness').textContent, /尚未启用专家修正/);
+assert.match($('rl-capability').textContent, /不可用于 SAC/);
+assert.equal($('rl-prepare').hidden, true); // No redundant prepare action in inference.
+state.episode_id='episode-one'; renderRL(props);
+$('pld-correct').value='5'; $('pld-total').value='10';
+renderRL(props); assert.equal($('pld-correct').value, '5');
+state.episode_id='episode-two'; renderRL(props);
+assert.equal($('pld-correct').value, ''); assert.equal($('pld-total').value, '');
 """
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 

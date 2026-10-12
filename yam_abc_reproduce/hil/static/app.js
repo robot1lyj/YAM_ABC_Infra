@@ -361,7 +361,7 @@ function render() {
     !idle || latched || state.intervention_pending || state.task_switching || recoveringRecording;
   text("recording-restart", recoveringRecording ? "录制服务恢复中…" : "恢复录制服务");
   $("recording-restart").title = "保留故障数据并创建新数据会话，不断开机械臂、不自动开始运动";
-  $("policy-panel").hidden = !["inference", "hil"].includes(mode);
+  $("policy-panel").hidden = rlView || !["inference", "hil"].includes(mode);
   text("policy-mode", state.policy_fusion === "sync_hold" ? (state.policy_url === "ws://127.0.0.1:8003" ? "XR-1 末端回放" : state.policy_waiting_for_reply ? "同步推理 · 保持" : "同步推理") : state.policy_fusion === "rtc" ? "RTC 推理" : connected ? "模式待确认" : "未连接");
   text("policy-rtt", state.policy_observed_rtt_p95_s == null ? "—" : `${Math.round(state.policy_observed_rtt_p95_s * 1000)} ms`);
   text("policy-buffer", state.policy_buffer_seconds == null ? "—" : `${Math.max(0, state.policy_buffer_seconds).toFixed(2)} s`);
@@ -402,7 +402,7 @@ function render() {
   if (!$("policy-source-url").value) $("policy-source-url").value = state.policy_url || "";
   text("policy-source-current", `当前来源：${state.policy_url || "未配置"}`);
   $("planner-restart").disabled = !policyEditable || !!state.mock;
-  $("session-summary").hidden = teleopView || rlView;
+  $("session-summary").hidden = teleopView && !rlView;
   $("recent-episodes").hidden = teleopView || rlView;
   text("control-title", rlView ? "RL 控制" : teleopView ? "遥操作控制" : "采集控制");
   text(
@@ -959,7 +959,14 @@ function healthRow(label, value, ok) {
   $("health").append(row);
 }
 let renderedPldMode = null;
+let pldEvaluationEpisode = null;
 function renderRL({connected, paused, latched, recording, policyEditable, mode, pld}) {
+  if (pldEvaluationEpisode !== (state.episode_id || null)) {
+    pldEvaluationEpisode = state.episode_id || null;
+    $("pld-correct").value = "";
+    $("pld-total").value = "";
+    text("pld-evaluation-status", "暂停保存后填写，关联本次保存的一集。");
+  }
   const cfg = pld?.config || state.pld_configuration || {};
   const runMode = pld?.mode || cfg.mode || "off";
   text("rl-mode", runMode);
@@ -974,7 +981,7 @@ function renderRL({connected, paused, latched, recording, policyEditable, mode, 
   $("pld-apply").disabled = !policyEditable || state.intervention_pending;
   text("rl-control-mode", `${names[mode] || "未连接"} · ${phases[state.phase] || "未就绪"}`);
   text("rl-active-arm", pld?.arm === "left" ? "左臂活动" : pld?.arm === "right" ? "右臂活动" : "无活动臂");
-  text("rl-capability", pld?.server_phase === "probe_diagnostics_only" ? "仅 probe · 未加载 actor" :
+  text("rl-capability", pld?.server_phase === "probe_diagnostics_only" ? "仅 probe · 未加载专家，不可用于 SAC 训练" :
     runMode === "off" ? "原 Pi" : pld?.ready ? "PLD-Grasp · 已核对" : "未就绪");
   text("rl-recording", state.recording_error ? "记录失败" : state.recording_saving ? "整理中" : recording ? "正在记录" : "未开始");
   text("rl-run-id", pld?.run_id || "—");
@@ -985,11 +992,12 @@ function renderRL({connected, paused, latched, recording, policyEditable, mode, 
   text("pld-gate", pld?.gate ? pld.gate.active ? "Thor 窗口活动" : "Thor 未介入" : "等待 Thor");
   text("rl-readiness", pld?.error || (runMode === "off" ? "off · 执行原 Pi" :
     runMode === "probe" ? (pld?.replay_contract_ready === false ?
-      "probe · 仅链路诊断，执行原 Pi；本批不可用于 SAC 训练" : "probe · 执行原 Pi，完整记录专家链路") :
+      "只记录原 Pi 动作，当前尚未启用专家修正。" : "probe · 执行原 Pi，完整记录专家链路") :
     runMode === "shadow" ? "shadow · 计算修正但不执行" :
     runMode === "collect" ? "collect · 执行有界随机修正；先完成 probe 核验" :
     "eval · 执行无探索噪声的专家输出"));
   $("rl-prepare").disabled = !policyEditable || mode === "inference" || !state.selected_task || state.intervention_pending;
+  $("rl-prepare").hidden = mode === "inference";
   $("pld-evaluation-apply").disabled = !connected || !paused || latched || recording ||
     state.recording_saving || !state.episode_id;
 }
@@ -1065,8 +1073,12 @@ $("pld-form").onsubmit = async (event) => {
 };
 $("pld-evaluation-form").onsubmit = async (event) => {
   event.preventDefault();
-  await action("/pld/evaluation", {episode_id: state.episode_id,
-    correct: Number($("pld-correct").value), total: Number($("pld-total").value)});
+  const episodeId = state.episode_id;
+  if (await action("/pld/evaluation", {episode_id: episodeId,
+    correct: Number($("pld-correct").value), total: Number($("pld-total").value)})) {
+    pldEvaluationEpisode = episodeId;
+    text("pld-evaluation-status", "已记录到本集评估日志（policy_events.jsonl）。");
+  }
 };
 document
   .querySelectorAll("[data-event]")

@@ -100,7 +100,7 @@ uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 
 IPC SSH用户名为`linux`，不是开发机用户名`wuyan-lyj`；密码不入库。**Wi-Fi地址由DHCP分配，连接前确认，不把日期快照当固定入口。**2026-10-12经Thor直连复核：连接`琶洲模方`，`wlan0=192.168.110.87/23`；开发机同名Wi-Fi却为另一网段，不能仅凭SSID判断互通。开发机可通过已配置Thor跳板访问`linux@192.168.250.2`查询IPC实际地址，核对已有SSH主机密钥，不绕过验证。
 
-`10.18.31.234:8767`是独立x86数据集服务器，不是设备IPC。新版Web的[start_ipc_web.sh](../scripts/start_ipc_web.sh)使用`0.0.0.0 --web-allow-local-addresses`，不再读取并固定启动时的wlan0地址，Wi-Fi临时失联也不挡住Web启动。HTTP Host只动态信任实际接收该请求的本机IPv4地址（由ASGI/socket提供，不读取转发头）；任意域名/非本机目标地址与跨站控制仍拒绝。DHCP换址后通过新地址访问，无需重启Web或设备；原来的浏览器地址不会自动变成新IP，也不能解决跨网段不通。此监听是局域网入口，不应映射到公网。2026-10-12该修复已通过离线测试，部署状态见[验收](acceptance.md)。
+`10.18.31.234:8767`是独立x86数据集服务器，不是设备IPC。新版Web的[start_ipc_web.sh](../scripts/start_ipc_web.sh)使用`0.0.0.0 --web-allow-local-addresses`，不再读取并固定启动时的wlan0地址，Wi-Fi临时失联也不挡住Web启动。HTTP Host只动态信任实际接收该请求的本机IPv4地址（由ASGI/socket提供，不读取转发头）；任意域名/非本机目标地址与跨站控制仍拒绝。DHCP换址后通过新地址访问，无需重启Web或设备；原来的浏览器地址不会自动变成新IP，也不能解决跨网段不通。此监听是局域网入口，不应映射到公网。2026-10-12该修复已只重启Web部署，设备进程未重启；测试与运行边界见[验收](acceptance.md)。
 
 办公Wi-Fi不互通时可复用Thor直连建立仅监听开发机回环的临时面板入口，不改办公网络：
 

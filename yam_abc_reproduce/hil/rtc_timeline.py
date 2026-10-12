@@ -39,7 +39,6 @@ class RtcTimeline:
         self.has_accepted_plan = False
         self.accepted_replies = 0
         self.late_replies = 0
-        self.edit_target = None  # Optional client hook; committed rows bypass it.
 
     def clear(self):
         self._submitted.clear()
@@ -71,10 +70,6 @@ class RtcTimeline:
             return target.copy(), source
         if tick in self._plan:
             target = self._plan[tick].copy()
-            if self.edit_target is not None:
-                target, owner = self.edit_target(tick, target, self._owners.get(tick))
-                self._owners[tick] = owner
-                self.last_selection = owner
             return target, "policy"
         self.last_selection = None
         return self._action(self._last_target if self._last_target is not None else hold_target), "hold"
@@ -145,47 +140,6 @@ class RtcTimeline:
         )
         self.pending = commitment
         return commitment
-
-    def scheduler_snapshot(self, observation_tick):
-        """Only actual submissions/immutable queued targets are valid final targets.
-
-        Uncommitted predictions may still be edited; they are not mislabeled as
-        final queue entries. Missing rows are zero with an explicit false mask.
-        """
-        history = dict(self._submitted)
-        targets = np.zeros((50, 14), dtype=np.float64)
-        valid = np.zeros(50, dtype=bool)
-        committed = np.zeros(50, dtype=bool)
-        for index in range(50):
-            tick = observation_tick + index
-            if tick in history:
-                targets[index], valid[index] = history[tick], True
-                committed[index] = True
-            elif tick in self._committed:
-                targets[index], valid[index] = self._committed[tick][0], True
-                committed[index] = True
-        return dict(targets=targets, valid_mask=valid, committed_mask=committed,
-                    missing_reason="uncommitted_prediction_is_not_a_final_target")
-
-    def final_target_at(self, tick: int):
-        """Look up an immutable target, never an uncommitted model prediction."""
-        if tick in self._committed:
-            return self._committed[tick][0].copy()
-        for submitted_tick, target in reversed(self._submitted):
-            if submitted_tick == tick:
-                return target.copy()
-        return None
-
-    def pending_residual_arms(self):
-        """Only immutable future residuals block a new grasp attempt."""
-        arms = set()
-        for tick in self._committed:
-            parts = (self._owners.get(tick) or {}).get("parts") or {}
-            residual = parts.get("physical_residual_rad", [0] * 14)
-            for arm, indices in (("left", range(6)), ("right", range(7, 13))):
-                if any(abs(residual[i]) > 0 for i in indices):
-                    arms.add(arm)
-        return arms
 
     def install(self, commitment: RtcCommitment, actions, *, current_tick: int,
                 limit_target, request: dict | None = None) -> bool:

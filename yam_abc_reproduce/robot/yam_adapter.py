@@ -226,16 +226,18 @@ class YamRobot(RobotInterface):
         return q[: self._n + 1], age, feedback
 
     def command_joint_pos(self, pos: np.ndarray) -> None:
-        pos = np.asarray(pos, dtype=np.float64).reshape(-1)
+        pos = self.limit_hil_target(pos)
         arm = pos[: self._n]
-        margin = getattr(self, "_gripper_command_margin", GRIPPER_ENDPOINT_MARGIN)
-        grip = np.clip(
-            pos[self._n],
-            margin,
-            1.0 - margin,
-        )
+        grip = pos[self._n]
         grip_raw = _denormalize(grip, self._g_closed, self._g_open)
         self._robot.command_joint_pos(np.concatenate([arm, [grip_raw]]))
+
+    def limit_hil_target(self, pos):
+        """Expose the existing endpoint clamp so recorded SDK commands are truthful."""
+        target = np.asarray(pos, dtype=np.float64).reshape(-1).copy()
+        margin = getattr(self, "_gripper_command_margin", GRIPPER_ENDPOINT_MARGIN)
+        target[self._n] = np.clip(target[self._n], margin, 1 - margin)
+        return target
 
     def gravity_compensate(self, pos: np.ndarray) -> None:
         """Arm gravity compensation with gripper position retained, control-owner only."""

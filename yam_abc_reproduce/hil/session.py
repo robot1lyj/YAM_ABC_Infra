@@ -7,6 +7,7 @@ both arms, logs requested and actually submitted commands, and mirrors leaders.
 import numpy as np
 
 from .core import Arbiter, Phase
+from .policy import reply_record
 
 
 class Session:
@@ -20,7 +21,7 @@ class Session:
         self._policy_recovering = False
         self.replay_next_frame = 0
         self._replay_block = None
-        self.parts = None
+        self.pld = None
 
     def suspend_policy(self, state, leader, reason, *, planner=False):
         """Quarantine external policy failures without stopping the SDK owner.
@@ -107,8 +108,6 @@ class Session:
             self.arbiter.fail(state, "operator stop")
         elif event is not None:
             raise ValueError(f"unknown event: {event}")
-        if self.parts is not None and event not in (None, "start", "resume_policy"):
-            self.parts.machine.cancel(f"operator:{event}", policy_tick, now)
         if (
             self.worker is not None
             and not getattr(self.worker, "planner_alive", True)
@@ -123,21 +122,8 @@ class Session:
         if self.worker:
             reply = self.worker.poll()
             if reply is not None:
-                self.last_reply = {
-                    "token": reply.token.__dict__,
-                    "received_at": now,
-                    "discarded": reply.token != self.arbiter.pending,
-                    "error": reply.error,
-                    "worker_elapsed_ms": reply.worker_elapsed_ms,
-                    "server_timing": reply.server_timing,
-                    "client_timing": reply.client_timing,
-                    "actions": reply.actions
-                    if reply.actions is not None and np.isfinite(reply.actions).all()
-                    else None,
-                    **({"parts_ref": {"run_id": self.parts.run_id,
-                       "request_epoch": reply.token.epoch, "request_id": reply.token.request_id}}
-                       if self.parts is not None else {}),
-                }
+                self.last_reply = reply_record(reply, now=now,
+                    discarded=reply.token != self.arbiter.pending)
                 if reply.token.observation_policy_tick is not None:
                     takeover = (
                         reply.token.observation_policy_tick
@@ -148,13 +134,7 @@ class Session:
                         "rtc_reply_tick": policy_tick,
                         "rtc_slack_ticks": takeover - policy_tick,
                     })
-                if self.parts is not None:
-                    try:
-                        self.parts.accept_reply(reply, metadata=getattr(self.worker.client, "metadata", None),
-                            discarded=reply.token != self.arbiter.pending)
-                    except ValueError as exc:
-                        self.last_reply.update(discarded=True, error=str(exc))
-                        self.suspend_policy(state, leader, str(exc))
+
             if reply is not None and reply.token == self.arbiter.pending:
                 refusal = (reply.server_timing or {}).get("replay_refused")
                 if refusal and (reply.server_timing or {}).get("source") == "recorded_replay":
@@ -163,6 +143,7 @@ class Session:
                     self.notice = str(refusal)
                     self.last_reply["discarded"] = True
                 elif reply.error:
+                    self.last_reply["discarded"] = True
                     self.suspend_policy(state, leader, reply.error, planner=reply.planner_error)
                 else:
                     try:
@@ -178,6 +159,8 @@ class Session:
                             self.arbiter.accept(reply.token, reply.actions, now)
                         )
                         self.last_reply["discarded"] = not accepted
+                        if accepted and self.pld is not None:
+                            self.pld.last_trace = getattr(reply, "pld", None)
                         timing = reply.server_timing or {}
                         if accepted and timing.get("source") == "recorded_replay":
                             self._replay_block = (
@@ -202,18 +185,10 @@ class Session:
                             planner=(self.arbiter.external_planner
                                      and self.arbiter.rtc_timeline is None),
                         )
-        try:
-            decision = self.arbiter.step(
-                state, leader, now=now, dt=dt, observation_fresh=fresh,
-                leader_ready=leader_ready, policy_tick=policy_tick,
-            )
-        except ValueError as exc:
-            if self.parts is None or not str(exc).startswith("PARTS"):
-                raise
-            self.parts.machine.cancel(str(exc), policy_tick, now)
-            self.suspend_policy(state, leader, str(exc))
-            decision = self.arbiter.step(state, leader, now=now, dt=dt,
-                observation_fresh=fresh, leader_ready=leader_ready, policy_tick=policy_tick)
+        decision = self.arbiter.step(
+            state, leader, now=now, dt=dt, observation_fresh=fresh,
+            leader_ready=leader_ready, policy_tick=policy_tick,
+        )
         if (self.worker and fresh and observation is not None
                 and self.arbiter.rtc_timeline is None
                 and not (self._replay_block is not None and decision.source == "policy")):
@@ -222,13 +197,7 @@ class Session:
             request_observation["_replay_cursor"] = {
                 "next_frame": self.replay_next_frame, "epoch": self.arbiter.epoch,
             }
-            if token is not None and self.parts is not None and self.parts.capability == "supported":
-                from .policy import PolicyJob
-                request_observation = PolicyJob(request_observation, self.parts.build_request(
-                    token, observation_tick=policy_tick, observation=observation))
-            elif token is not None and self.parts is not None:
-                # Unsupported shadow still records the unmodified base request.
-                self.parts.build_request(token, observation_tick=policy_tick, observation=observation)
+
             if token is not None and not self.worker.submit(token, request_observation):
                 # A stale RPC is still in flight. Retry on a later tick, never wait.
                 self.arbiter.pending = None

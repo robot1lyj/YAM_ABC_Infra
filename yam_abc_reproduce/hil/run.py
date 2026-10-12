@@ -38,7 +38,8 @@ from .metrics import Latencies
 from .observation import Observations
 from .planned_buffer import PlannedActionBuffer
 from .planner_process import ProcessActionPlanner
-from .policy import PolicyWorker, RtcJob
+from .pld import PldClient, PldConfig
+from .policy import PolicyWorker, RtcJob, reply_record
 from .policy_process import ProcessPolicyClient
 from .recording import RecordingSession
 from .recording_service import RemoteRecordingSession
@@ -177,57 +178,88 @@ class Runtime:
         self.recording_error = None
         self._record_started = None
         self.recording_allowed = True
-        self.parts = None
-        self.parts_journal = None
-        parts_config = settings.get("parts")
-        if parts_config and parts_config.get("mode", "off") != "off":
-            self._build_parts(parts_config)
+        if "parts" in settings:
+            raise ValueError("旧 RL/PARTS 配置已移除，请使用 PLD-Grasp 的 pld 配置")
+        self.pld = PldClient(settings.get("pld"))
+        self.session.pld = self.pld
+        self._submitted_history = deque(maxlen=128)
+        self._pld_pending = None
+        if self.pld.enabled:
+            self.io.grasp_diagnostics_enabled = True
 
-    def _build_parts(self, value):
-        self.parts, self.parts_journal = self._new_parts(value)
-        self.session.parts = self.parts
-        self.io.grasp_diagnostics_enabled = True
-        self.recorder.metadata["parts"] = dict(schema="yam_parts_raw_v1", run_id=self.parts.run_id,
-            contract_sha=self.parts.config.contract_sha, mode=self.parts.config.mode,
-            run_path=str(self.parts_journal.path))
+    def rotate_pld_session(self):
+        """A task/data-session change starts an independent Thor run, not a grasp."""
+        self.pld = PldClient(self.pld.config.as_dict())
+        self.session.pld = self.pld
 
-    def _new_parts(self, value):
-        import uuid
+    def configure_pld(self, **settings):
+        candidate = PldConfig.from_dict(settings)
+        a = self.session.arbiter
+        if (a.phase != Phase.HOLD or a.intervention_pending or self.recorder.recording
+                or self.recorder.saving or self.maintenance.state != "idle"
+                or self.maintenance.latched):
+            raise ValueError("请先暂停、结束介入并等待保存完成，再切换 PLD-Grasp 模式")
+        if candidate.mode != "off" and a.rtc_timeline is None:
+            raise ValueError("PLD-Grasp 需要原生 RTC；请先在推理设置选择 RTC")
+        client = PldClient(candidate.as_dict())
+        client.prepare(getattr(self.worker.client, "metadata", None) if self.worker else None,
+                       rtc=a.rtc_timeline is not None)
+        self._queue_policy_command(("pld", client))
 
-        from .parts import PartsClient, PartsConfig
-        from .parts.recording import PartsJournal
+    def evaluate_pld_round(self, *, correct, total, episode_id):
+        if (type(correct) is not int or type(total) is not int
+                or not 0 <= correct <= total or total <= 0):
+            raise ValueError("整轮评估需要 0 ≤ C ≤ N 且 N > 0")
+        if (self.session.arbiter.phase != Phase.HOLD or self.recorder.recording
+                or self.recorder.saving or not episode_id
+                or episode_id != getattr(self.recorder, "episode_id", None)):
+            raise ValueError("请暂停保存后为当前已结束的一集填写C/N；集号变化时重新核对")
+        if not self.recorder.record_policy_reply(dict(
+            event="evaluation", episode_id=episode_id, time=time.monotonic(),
+            details={"evaluation": dict(C=correct, N=total, purpose="evaluation_only")})):
+            raise ValueError("整轮评估记录失败")
 
-        config = PartsConfig.from_dict(value)
-        config.validate_execution()
-        if config.mode in ("collect", "eval") and self.session.arbiter.rtc_timeline is None:
-            raise ValueError("PARTS collect/eval currently requires the direct trained RTC path")
-        run_id = "parts_" + uuid.uuid4().hex
-        root = Path(self.recorder.path).parent / "parts" / run_id
-        journal = PartsJournal(root, dict(run_id=run_id, session_id=Path(self.recorder.path).name,
-            task=self.prompt, mode=config.mode, mock=self.io.mock, control_hz=self.hz,
-            action_dt=self.session.arbiter.action_dt, layout_group_id=None,
-            split_role="mock" if self.io.mock else "eval" if config.mode == "eval" else None,
-            contract_sha=config.contract_sha, config=config.as_dict(), parameter_gaps=config.gaps(),
-            selector_schema=config.selector["schema"], selector_config_sha=config.selector_config_sha,
-            reward_fixed=config.reward is not None, behavior_manifest_ref=config.behavior_manifest_ref,
-            fk_model="i2rt/YAM/linear_4310", pose_ref="grasp_site", pose_frame="per_arm_base"))
-        try:
-            client = PartsClient(config, run_id=run_id, session_id=Path(self.recorder.path).name,
-                                 emit=journal.submit)
-        except Exception:
-            journal.close()
-            raise
-        return client, journal
+    def previous_command(self, observation_tick, observed_at):
+        """Exact previous tick, already submitted before the observation anchor."""
+        for tick, submitted_at, command in reversed(self._submitted_history):
+            if tick == observation_tick - 1 and submitted_at <= observed_at:
+                return command.copy(), dict(previous_command_tick=tick,
+                                            previous_command_submitted_at=submitted_at)
+        return None
 
-    def rotate_parts_session(self):
-        """Called by the data worker inside paused_data_session, not the SDK owner."""
-        if self.parts is not None:
-            from .parts.lifecycle import RunReplacement
-            client, journal = self._new_parts(self.parts.config.as_dict())
-            RunReplacement(self.parts, client, journal).install(self)
+    def _audit_pld(self, payload, *, event, session_path=None, now=None, tick=None):
+        """Nonblocking append to the existing recorder owner, including late replies."""
+        if not getattr(self.recorder, "record_policy_reply", lambda *a, **k: False)(
+            dict(event=event, time=time.monotonic() if now is None else now,
+                 tick=tick, details={"policy_reply": payload}),
+            session_path=session_path):
+            raise RuntimeError("PLD-Grasp 完整响应记录失败；已拒绝继续执行")
 
-    def mark_parts_grasp(self, *, arm, eligible=True, empty_hand=True, reset=False):
-        raise ValueError("RL 已使用自动抓取规则，不接受人工标记覆盖资格；请核对实际反馈与区域配置")
+    def _finish_pld_request(self):
+        """After physical HOLD only: retire a bounded in-flight reply, never act on it.
+
+        Stopping the control loop must not lose a reply already in the network
+        owner. Timeout records cancellation, not a fabricated model response.
+        """
+        if self._pld_pending is None:
+            return
+        timeout = min(4.0, max(.1, getattr(self.worker.client, "timeout", 1.5) + 1.1))
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            reply = self.worker.poll()
+            if reply is not None:
+                record = reply_record(reply, now=time.monotonic(), discarded=True)
+                record.update(cancelled=True, error=reply.error or "runtime_closed")
+                self._audit_pld(record, event="reply", session_path=reply.recording_session)
+                self._pld_pending = None
+                return
+            time.sleep(.01)
+        if not self._pld_pending.get("cancelled"):
+            self._audit_pld(dict(self._pld_pending, cancelled=True, discarded=True,
+                error="runtime_closed_without_reply"), event="cancelled",
+                session_path=self._pld_pending["recording_session"])
+        self._pld_pending = None
+
 
     def _plan_context(self):
         arbiter = self.session.arbiter
@@ -420,12 +452,10 @@ class Runtime:
             and a.hil_input == "keyboard" and a.phase == Phase.HOLD and a.intervention_pending)
         if not (starts or resumes or keyboard_resumes) or a.mode not in (Mode.HIL, Mode.INFERENCE):
             return True
-        if self.parts is not None and self.parts.config.mode in ("collect", "eval"):
-            from .parts.protocol import handshake
+        if self.pld.enabled:
             try:
-                if a.mode != Mode.INFERENCE or a.rtc_timeline is None:
-                    raise ValueError("RL collect/eval 需要模型推理的原生 RTC 路径")
-                handshake(getattr(self.worker.client, "metadata", None), self.parts.config)
+                self.pld.prepare(getattr(self.worker.client, "metadata", None),
+                                 rtc=a.rtc_timeline is not None)
             except (ValueError, TypeError, AttributeError) as exc:
                 self.operator_error = str(exc)
                 return False
@@ -445,7 +475,14 @@ class Runtime:
                 "streaming": a.streaming,
                 "action_dt": a.action_dt,
                 "rtc_delay_steps": a.rtc_timeline.delay_steps if a.rtc_timeline is not None else None,
+                "action_limits": getattr(self.io, "policy_limits", lambda: None)(),
             })
+            if self.pld.enabled:
+                self.recorder.metadata["policy_events"] = "../policy_events.jsonl"
+                self.recorder.metadata["pld"] = dict(schema="pld_sac_block_v2",
+                    mode=self.pld.config.mode, run_id=self.pld.run_id, **self.pld.identity)
+            else:
+                self.recorder.metadata["pld"] = {"mode": "off"}
             self.recorder.start_episode()
         if not self.recorder.recording or self.recorder.error:
             frozen = a._leader_frozen
@@ -462,6 +499,8 @@ class Runtime:
         self._queue_policy_command(("recording_mode", mode))
 
     def configure_policy(self, *, fusion: str, rtc_delay_steps: int | None = None):
+        if self.pld.enabled and fusion != "rtc":
+            raise ValueError("请先将 PLD-Grasp 设为 off，再切换同步/TDA")
         if fusion not in ("tda_smooth", "sync_hold", "rtc"):
             raise ValueError("推理动作块模式需为同步推理、TDA 或 RTC")
         if fusion == "rtc" and (
@@ -585,9 +624,6 @@ class Runtime:
                 if policy_command is not None and policy_command[0] == "recorder_replace":
                     policy_command[1].apply(self)
                     policy_command = None
-                if policy_command is not None and policy_command[0] == "parts_replace":
-                    policy_command[1].apply(self)
-                    policy_command = None
                 if policy_command is not None and policy_command[0] == "task_release":
                     self.task_switching = False
                     while not self.events.empty():
@@ -611,7 +647,7 @@ class Runtime:
                         command_receipt.update(state="rejected", error="请先暂停并结束本集")
                     else:
                         self.recording_mode = policy_command[1]
-                        self.io.grasp_diagnostics_enabled = self.parts is not None or self.recording_mode == "grasp_diagnostics"
+                        self.io.grasp_diagnostics_enabled = self.pld.enabled or self.recording_mode == "grasp_diagnostics"
                         command_receipt.update(state="accepted", applied_at=time.monotonic())
                     policy_command = None
                 if policy_command is not None and policy_command[0] == "hil_input":
@@ -628,6 +664,9 @@ class Runtime:
                     policy_command = None
                 if policy_command is not None:
                     if (a.phase != Phase.HOLD or getattr(self.recorder, "recording", False)
+                            or (policy_command[0] == "pld" and
+                                (a.intervention_pending or self.recorder.saving
+                                 or self.maintenance.latched or self.maintenance.state != "idle"))
                             or (policy_command[0] == "interaction" and
                                 (self.maintenance.latched or self.maintenance.state != "idle"))):
                         self.operator_error = "推理设置未应用：设备已离开保持状态"
@@ -638,7 +677,12 @@ class Runtime:
                         a._transition(Phase.HOLD, a._hold if policy_command[0] == "interaction" else q)
                         if frozen is not None:
                             a._leader_frozen = frozen
-                        if policy_command[0] == "interaction":
+                        if policy_command[0] == "pld":
+                            self.pld = policy_command[1]
+                            self.session.pld = self.pld
+                            self.io.grasp_diagnostics_enabled = self.pld.enabled or self.recording_mode == "grasp_diagnostics"
+                            self.operator_error = None
+                        elif policy_command[0] == "interaction":
                             candidate = policy_command[1]
                             a.interaction_rules = candidate
                             self.io.interaction_rules = candidate
@@ -830,27 +874,6 @@ class Runtime:
                 self.session.check_policy_recovery()
                 if not self._prepare_policy_recording(event, q):
                     event = None
-                if self.parts is not None:
-                    if a.rtc_timeline is not None:
-                        self.parts.preceding_target = a.rtc_timeline.final_target_at
-                        self.parts.committed_arms = a.rtc_timeline.pending_residual_arms
-                    else:
-                        self.parts.committed_arms = None
-                    # Policy ticks keep their original clock. Feedback rules run
-                    # AFTER acquisition, never against an earlier loop-start time.
-                    self.parts.observe(tick=tick, now=time.monotonic(), sampled_at=read_done,
-                        epoch=a.epoch, state=q,
-                        ages=[ages[0] + read_done - now, ages[2] + read_done - now],
-                        feedback=getattr(self.io, "gripper_feedback", [None, None]),
-                        recording=bool(getattr(self.recorder, "recording", False)),
-                        policy_active=a.mode == Mode.INFERENCE and a.phase in (Phase.POLICY, Phase.RESUME))
-                    if self.parts_journal.error or self.parts.error:
-                        self.parts.machine.cancel("recording_failure", tick, now)
-                        event = "hold"
-                        self.recording_error = self.parts_journal.error or self.parts.error
-                    if a.rtc_timeline is not None:
-                        a.rtc_timeline.edit_target = lambda target_tick, target, owner: self.parts.edit(
-                            target_tick, target, owner, limit_target=self.io.limit_policy_target)
                 decision = self.session.tick(
                     q,
                     leader,
@@ -864,6 +887,20 @@ class Runtime:
                     event=event,
                     policy_tick=tick,
                 )
+                reply = self.session.last_reply
+                if reply is not None and ((reply.get("pld_request") or {}).get("mode", "off") != "off"
+                                          or reply.get("pld") is not None):
+                    self._audit_pld(reply, event="reply", tick=tick, now=now,
+                                    session_path=reply.get("recording_session"))
+                    self._pld_pending = None
+                if (self._pld_pending is not None and not self._pld_pending.get("cancelled")
+                        and self._pld_pending["token"]["epoch"] != a.epoch):
+                    # The request event is already queued on the recorder. Do not
+                    # mutate that snapshot while its writer may be serializing it.
+                    self._pld_pending = dict(self._pld_pending, cancelled=True)
+                    self._audit_pld(dict(self._pld_pending, discarded=True, error="cancelled_by_epoch"),
+                        event="cancelled", tick=tick, now=now,
+                        session_path=self._pld_pending["recording_session"])
                 keyboard_active = (a.mode == Mode.HIL and a.hil_input == "keyboard"
                     and a.phase == Phase.HUMAN and event is None
                     and not self.emergency.is_set() and not self.maintenance.latched
@@ -927,12 +964,6 @@ class Runtime:
                     decision.action[[6, 13]] = self.maintenance.grippers
                     decision.selected_action = decision.action.copy()
                 decision_done = time.monotonic()
-                if self.parts is not None and a.rtc_timeline is None and decision.source == "policy":
-                    owner = decision.policy_selection or dict(request=None if decision.request is None
-                        else dataclasses.asdict(decision.request), model_index=decision.action_index, target_tick=tick)
-                    decision.action, decision.policy_selection = self.parts.edit(
-                        tick, decision.action, owner, limit_target=self.io.limit_policy_target)
-                    decision.selected_action = decision.action.copy()
                 submitted, stamps = self.io.apply(
                     decision,
                     q,
@@ -947,6 +978,7 @@ class Runtime:
                     **({"leader_homing": True} if leader_homing else {}),
                     **({"gravity": True} if self.maintenance.state == "gravity" else {}),
                 )
+                self._submitted_history.append((tick, time.monotonic(), submitted.copy()))
                 if a.rtc_timeline is not None:
                     try:
                         a.rtc_timeline.record_submitted(tick, submitted)
@@ -958,8 +990,6 @@ class Runtime:
                         )
                 if maintenance_action is None and jog_action is None:
                     self.session.submitted(decision)
-                if self.parts is not None:
-                    self.parts.submitted(tick, time.monotonic(), submitted, decision.policy_selection)
                 if a.rtc_timeline is not None:
                     if (
                         obs is not None and fresh and self.worker is not None
@@ -969,31 +999,37 @@ class Runtime:
                             policy_tick_times,
                             key=lambda item: abs(item[1] - observed_at),
                         )
-                        if abs(mapped_at - observed_at) <= period:
+                        previous = self.previous_command(observation_tick, observed_at)
+                        if abs(mapped_at - observed_at) <= period and (not self.pld.enabled or previous is not None):
                             try:
                                 prepared = a.request_rtc(
                                     obs_id, now, observed_at, observation_tick, tick,
                                     self.io.limit_policy_target,
                                 )
-                            except ValueError as exc:
+                            except ValueError:
                                 prepared = None  # Too old or missing exact action history.
-                                if self.parts is not None and str(exc).startswith("PARTS"):
-                                    self.parts.machine.cancel(str(exc), tick, now)
-                                    self.session.suspend_policy(q, leader, str(exc))
                             if prepared is not None:
                                 token, commitment = prepared
-                                parts_payload = None
-                                if self.parts is not None:
-                                    request_parts = self.parts.build_request(token,
-                                        observation_tick=observation_tick, commitment=commitment, observation=obs,
-                                        scheduler=dict(committed_sources=a.rtc_timeline.prefix_sources(
-                                            observation_tick, commitment.delay_steps),
-                                            **a.rtc_timeline.scheduler_snapshot(observation_tick),
-                                            no_active_attempt=self.parts.machine.attempt is None))
-                                    # Old servers receive exactly the existing RTC wire contract.
-                                    if (getattr(self.worker.client, "metadata", None) or {}).get("parts"):
-                                        parts_payload = request_parts
-                                if self.worker.submit(token, RtcJob(obs, commitment, parts_payload)):
+                                try:
+                                    payload = self.pld.build_request(token,
+                                        episode_id=getattr(self.recorder, "episode_id", None),
+                                        previous_command=None if previous is None else previous[0])
+                                    context = dict(previous[1] if previous is not None else {},
+                                        observation_reference_time=observed_at,
+                                        committed_actions=commitment.actions.copy(),
+                                        sync=quality, prefix_sources=a.rtc_timeline.prefix_sources(
+                                            observation_tick, commitment.delay_steps))
+                                    job = RtcJob(obs, commitment, payload if self.pld.enabled else None,
+                                        str(self.recorder.path), context)
+                                except ValueError as exc:
+                                    self.session.suspend_policy(q, leader, str(exc))
+                                    job = None
+                                if job is not None and self.worker.submit(token, job):
+                                    if self.pld.enabled:
+                                        self._pld_pending = dict(token=dataclasses.asdict(token),
+                                            pld_request=payload, recording_session=str(self.recorder.path),
+                                            request_context=context, cancelled=False)
+                                        self._audit_pld(self._pld_pending, event="request", tick=tick, now=now)
                                     a._last_request_at = now
                                 else:
                                     a.pending = None
@@ -1071,14 +1107,12 @@ class Runtime:
                     "action_index": decision.action_index,
                     "submitted_at": stamps,
                 }
-                if self.recording_mode == "grasp_diagnostics" or self.parts is not None:
+                if self.recording_mode == "grasp_diagnostics" or self.pld.enabled:
                     row["grasp_diagnostics"] = {
                         "schema_version": 1,
                         "sample_phase": "before_command",
                         "followers": getattr(self.io, "gripper_feedback", [None, None]),
                     }
-                if self.parts is not None:
-                    row["parts"] = self.parts.record()
                 if isinstance(self.recorder, RECORDING_SESSIONS):
                     # Snapshot the running policy, not the startup YAML. Mode
                     # changes are permitted in HOLD between recorded episodes.
@@ -1147,7 +1181,11 @@ class Runtime:
                     "hil_input": a.hil_input,
                     "cartesian": self.cartesian.snapshot(),
                     "epoch": a.epoch,
-                    "parts": None if self.parts is None else self.parts.record(),
+                    "episode_id": getattr(self.recorder, "episode_id", None),
+                    "action_limits": getattr(self.io, "policy_limits", lambda: None)(),
+                    "pld": self.pld.snapshot(
+                        getattr(self.worker.client, "metadata", None) if self.worker else None,
+                        rtc=a.rtc_timeline is not None),
                     "episode_elapsed_s": 0
                     if self._record_started is None
                     else now - self._record_started,
@@ -1277,8 +1315,6 @@ class Runtime:
                     self.stopping.wait(remaining)
         except Exception as exc:
             self.outcome = "aborted"
-            if self.parts is not None:
-                self.parts.machine.cancel("runtime_fault", tick, time.monotonic())
             self.status = dict(self.status, phase="fault", error=f"{type(exc).__name__}: {exc}")
         finally:
             self.cartesian.close()
@@ -1290,6 +1326,10 @@ class Runtime:
             ):
                 self.recorder.stop_episode("aborted")
             self.recorder.metadata["terminal_status"] = dict(self.status)
+            try:
+                self._finish_pld_request()
+            except RuntimeError as exc:
+                self.status["recording_error"] = str(exc)
             # A hardware fault keeps gravity/hold active until explicit quit.
             if self.status.get("phase") == "fault" and not self.io.mock:
                 print(
@@ -1299,10 +1339,6 @@ class Runtime:
                 while not self.stopping.wait(0.1):
                     pass
             self.status = dict(self.status, running=False)
-            if self.parts is not None:
-                self.parts.machine.cancel("runtime_closed", self.status.get("tick", 0), time.monotonic())
-                self.parts.cancel_pending("runtime_closed")
-                self.parts_journal.close()
         return self.status
 
 
@@ -1343,7 +1379,7 @@ def main(argv=None, *, service=None):
     p.add_argument("--mode", choices=[m.value for m in Mode], default="hil")
     p.add_argument("--url", help="Thor WebSocket URL on the local Ethernet link")
     p.add_argument("--output", type=Path)
-    p.add_argument("--parts-config", type=Path, help="run-locked PARTS JSON; default off")
+    p.add_argument("--pld-config", type=Path, help="PLD-Grasp mode/identity JSON; default off")
     p.add_argument("--raw-only", action="store_true", help="兼容旧命令；采集现在默认只保存原始数据")
     p.add_argument("--segment-seconds", type=float, default=60, help="采集文件分段时长，不拆逻辑集")
     p.add_argument("--min-free-gb", type=float, default=0.5, help="录制保留空间 GiB")
@@ -1437,8 +1473,8 @@ def main(argv=None, *, service=None):
     validate_station(cfg, mock=args.mock, check_cameras=service is None)
     hil_cfg = load_yaml(args.station).get("hil", {})
     hil_cfg = dict(hil_cfg)
-    if args.parts_config:
-        hil_cfg["parts"] = json.loads(args.parts_config.read_text())
+    if args.pld_config:
+        hil_cfg["pld"] = json.loads(args.pld_config.read_text())
     if args.action_dt is not None:
         hil_cfg["action_dt"] = args.action_dt
     action_dt = float(hil_cfg.get("action_dt", 1 / 30))
@@ -1465,13 +1501,13 @@ def main(argv=None, *, service=None):
         p.error("RTC requires the trained 30 Hz policy tick")
     for key, value in hil_cfg.items():
         if key == "parts":
-            from .parts import PartsConfig
+            p.error("旧 RL/PARTS 配置已移除，请改用 --pld-config")
+        if key == "pld":
             try:
-                parts_config = PartsConfig.from_dict(value)
-                parts_config.validate_execution()
-                if parts_config.mode in ("collect", "eval") and hil_cfg.get("policy_fusion") != "rtc":
-                    p.error("PARTS collect/eval requires trained RTC")
-            except (ValueError, TypeError, KeyError) as exc:
+                config = PldConfig.from_dict(value)
+                if config.mode != "off" and hil_cfg.get("policy_fusion") != "rtc":
+                    p.error("PLD-Grasp requires trained RTC")
+            except (ValueError, TypeError) as exc:
                 p.error(str(exc))
             continue
         if key == "policy_fusion":
@@ -1524,7 +1560,7 @@ def main(argv=None, *, service=None):
                     "mode": args.mode,
                     "action_dt": action_dt,
                     "policy_fusion": hil_cfg.get("policy_fusion", "tda_smooth"),
-                    "parts_mode": hil_cfg.get("parts", {}).get("mode", "off"),
+                    "pld_mode": hil_cfg.get("pld", {}).get("mode", "off"),
                     "factory_zero_home": bool(hil_cfg.get("factory_zero_home", False))
                     and not args.mock,
                     "hardware_checked": False,

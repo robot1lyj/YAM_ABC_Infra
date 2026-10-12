@@ -154,9 +154,9 @@ function text(id, value) {
 function operatorHint(message) {
   const raw = String(message || "");
   const rules = [
-    [/PARTS.*(?:queue|recording|write failure)/i, "RL 原始记录失败，策略已暂停。请检查存储与记录服务，保留失败数据；修复后建立新的 RL 数据会话，不需要重连机械臂。"],
-    [/PARTS.*(?:unsupported|handshake|context|contract|snapshot|candidate|feature|late reply)/i, "RL 服务协议或回复未通过核对。请保持暂停，检查服务合同、候选形状、快照和返回时效；不要通过重连机械臂解决协议问题。"],
-    [/PARTS.*(?:continuity|height boundary|combined target|inactive arm)/i, "RL 合成目标不符合执行边界，策略已暂停。请检查残差范围、桌面标定和连续性配置，保留请求记录；不要连续启动重试。"],
+    [/PLD.*(?:bundle is not loaded|actor.*mismatch)|probe-only deployment/i, "Thor 尚未加载匹配的正式 PLD-Grasp 专家。仅 probe 部署不能开启 shadow/collect/eval；请检查服务握手或先选择 off，不需要重连机械臂。"],
+    [/PLD.*(?:identity|handshake|checkpoint mismatch)|task differs from specialist|probe requires.*identit/i, "PLD-Grasp 的模型、任务或合同身份不匹配。请结束本集，核对 Thor 专家及任务指令，重载推理通信后重新应用模式；不要重连机械臂。"],
+    [/PLD.*(?:queue|recording|write failure)/i, "PLD-Grasp 完整记录失败。请保持暂停并检查录制服务和数据盘；保留诊断信息，不要连续启动重试。"],
     [/Ownership retained|SDK startup failed with uncertain cleanup/i, "机械臂SDK初始化失败，尚不能确认后台控制线程已清理。为避免两个进程同时控制，CAN所有权仍保留；请支撑机械臂、保留日志后受控重启设备持有进程，不要反复连接或Reset CAN。"],
     [/CAN .* is owned by/i, "CAN正被另一设备会话占用。请确认是哪一个控制进程，支撑机械臂后正常关闭原会话，再连接；不要直接重置正在使用的总线。"],
     [/fail to communicate with the motor/i, "电机通信失败。请检查提示中的CAN通道、控制器供电和USB-CAN状态；先暂停并支撑机械臂，不要连续重试。若同时提示SDK清理不确定，需要受控重启设备持有进程。"],
@@ -282,7 +282,7 @@ function render() {
       mode === "collect",
     canMaintain = connected && !latched && paused && !recording,
     idle = maint === "idle";
-  const rlView = page === "rl", parts = state.parts;
+  const rlView = page === "rl", pld = state.pld;
   text("environment", state.mock ? "模拟工作站" : "真实设备");
   $("environment").className = "pill" + (state.mock ? "" : " ok");
   const cNames = {
@@ -457,16 +457,14 @@ function render() {
   const intervening = mode === "hil" && (state.intervention_pending || ["takeover", "human"].includes(state.phase));
   $("start").disabled = !(canRun && paused && idle) || intervening;
   if (rlView) {
-    const shadow = (parts?.mode || state.parts_configuration?.mode) === "shadow";
-    text("start", shadow ? "开始基础策略采集" : "开始 RL 试验");
-    $("start").disabled ||= mode !== "inference" || !parts || !!parts.recording_error;
-    $("start").title = !parts ? "RL 未启用；请先核对启动配置" : mode !== "inference"
-      ? "请先暂停并点击使用推理控制" : "手动开始；不会因打开 RL 页面自动运动";
+    const pldMode = pld?.mode || state.pld_configuration?.mode || "off";
+    text("start", pldMode === "off" ? "开始原 Pi" : pldMode === "probe" || pldMode === "shadow" ? "开始基础策略记录" : "开始专家执行");
+    $("start").disabled ||= !["inference", "hil"].includes(mode) || (pldMode !== "off" && !pld?.ready);
   }
   $("start").title = ["inference", "hil"].includes(mode) && !state.policy_ready
     ? "推理通信尚未就绪；可在保持状态重载推理通信" : "";
   if (intervening) $("start").title = "介入期间只能暂停或明确交还模型";
-  renderRL({connected, idle, paused, latched, recording, policyEditable, mode, parts});
+  renderRL({connected, idle, paused, latched, recording, policyEditable, mode, pld});
   renderKeyboardHil(connected, idle, paused, latched, recording, mode);
   $("header-stop").disabled =
     online && state.connection === "disconnected";
@@ -960,64 +958,42 @@ function healthRow(label, value, ok) {
   row.append(a, b);
   $("health").append(row);
 }
-function renderRL({connected, idle, paused, latched, recording, policyEditable, mode, parts}) {
-  const labels = {off: "关闭", shadow: "影子 · 零残差", collect: "残差采集", eval: "评估"};
-  const stages = {READY: "等待接近", ACTIVE_DESCENT: "下降中", ACTIVE_CLOSURE: "闭合确认",
-    EXIT_PENDING: "等待交还", WAIT_REARM: "等待重新接近"};
-  const cfg = parts?.config || state.parts_configuration || {};
-  const runMode = parts?.mode || cfg.mode || "off";
-  const number = (v, scale, unit, missing = "—") =>
-    Number.isFinite(v) ? `${(v * scale).toFixed(1)} ${unit}` : missing;
-  text("rl-mode", labels[runMode] || "未识别");
-  document.querySelectorAll("[data-rl-mode]").forEach(el => {
-    el.classList.toggle("active", el.dataset.rlMode === runMode);
-    el.setAttribute("aria-current", el.dataset.rlMode === runMode ? "true" : "false");
-  });
-  text("rl-control-mode", `${names[mode] || "未连接"} · ${phases[state.phase] || "未就绪"}`);
-  text("rl-active-arm", parts?.active_arm === "left" ? "左臂活动" : parts?.active_arm === "right" ? "右臂活动" : "无活动臂");
-  text("rl-capability", parts?.capability === "supported" ? "已核对" : parts?.capability === "unsupported" ? "未支持 / 未核对" : "未验证");
-  text("rl-recording", parts?.recording_error ? "记录失败" : state.recording_saving ? "整理中" : recording ? "正在记录" : "未开始");
-  text("rl-run-id", parts?.run_id || "—");
-  text("rl-confirm-time", `${number(cfg.confirm_s, 1000, "ms", "未配置")} · 至少 ${cfg.force_confirm_samples ?? 1} 次新鲜反馈`);
-  text("rl-entry-height", ["left", "right"].map(a => `${a === "left" ? "左" : "右"} ${number(cfg[a]?.h_entry_m ?? .05, 1000, "mm")}`).join(" / "));
-  text("rl-parameter-gaps", (parts?.parameter_gaps || []).length ? `待配置：${parts.parameter_gaps.join("、")}` : "");
-  text("rl-readiness", parts?.recording_error ? operatorHint(parts.recording_error) : !parts
-    ? runMode === "shadow" ? "影子记录已配置，连接设备后生效；不施加 RL 残差。"
-      : "RL 未启用。可查看页面；启动配置不会由此页面自动开启。"
-    : runMode === "shadow" ? "影子模式：只记录候选和观测，机械臂仍执行基础模型动作。"
-    : parts.capability !== "supported" ? "等待 RL 服务协议核对；不会执行未经核对的残差。"
-    : "运行配置已固定，开始前确认现场与录制状态。");
-  $("rl-prepare").disabled = !policyEditable || mode === "inference" || !state.selected_task || state.intervention_pending;
-  $("rl-prepare").title = "只切换控制模式，不自动开始运动，不断开机械臂";
-  const selectorStages = {UNKNOWN: "等待同步", EMPTY_READY: "可抓取", HOLDING: "持物中", RELEASE_WAIT: "等待释放", REARM_WAIT: "等待回撤"};
-  const selectorReasons = {control_not_policy: "等待模型执行", epoch_changed: "等待新会话同步",
-    feedback_invalid_or_stale: "等待新鲜反馈", selector_parameters_unset: "自动规则未配置",
-    holding_object: "持物中，禁止下降介入", waiting_actual_release: "等待实际张开确认释放",
-    gripper_effort_high: "夹爪力矩较高，暂不判为空手",
-    waiting_actual_open: "等待实际张开", waiting_new_release_command: "等待新的张开动作",
-    waiting_retract: "等待回撤到入口上方",
-    attempt_active: "抓取尝试进行中", old_residual_committed: "等待旧残差执行结束"};
-  for (const [index, a] of ["left", "right"].entries()) {
-    const snap = parts?.arms?.[a];
-    text(`rl-${a}-height-label`, (snap?.height_reference || cfg[a]?.height_reference) === "base_z"
-      ? "基座 Z" : "离桌面高度");
-    const feedback = snap?.force_feedback;
-    const values = (parts?.physical_residual_rad || []).slice(index * 7, index * 7 + 6);
-    const magnitude = values.length === 6 && values.every(Number.isFinite) ? Math.max(...values.map(Math.abs)) : null;
-    text(`rl-${a}-phase`, ["ACTIVE_DESCENT", "ACTIVE_CLOSURE", "EXIT_PENDING"].includes(snap?.phase)
-      ? stages[snap.phase] : selectorStages[snap?.selector_state] || "未启用");
-    text(`rl-${a}-height`, snap?.height_valid ? number(snap.height_m, 1000, "mm") : "未标定 / 无效");
-    text(`rl-${a}-goal`, number(snap?.h_goal_m ?? cfg[a]?.h_goal_m, 1000, "mm", "未配置"));
-    text(`rl-${a}-effort`, connected && snap?.force_valid && Number.isFinite(feedback?.effort_nm)
-      ? `${Math.abs(feedback.effort_nm).toFixed(3)} Nm` : "待新鲜反馈");
-    text(`rl-${a}-residual`, connected ? number(magnitude, 1000, "mrad") : "—");
-    text(`rl-${a}-position`, connected && snap?.force_valid && Number.isFinite(feedback?.position)
-      ? `${(feedback.position * 100).toFixed(1)}%` : "待新鲜反馈");
-    text(`rl-${a}-reason`, (snap?.reason_codes || []).length
-      ? snap.reason_codes.map(r => selectorReasons[r] || "自动规则未就绪").join(" · ")
-      : snap?.eligible ? (snap.entry_armed ? "入口已武装 · 等待下降跨越" : "自动准备抓取") : "等待自动同步");
+let renderedPldMode = null;
+function renderRL({connected, paused, latched, recording, policyEditable, mode, pld}) {
+  const cfg = pld?.config || state.pld_configuration || {};
+  const runMode = pld?.mode || cfg.mode || "off";
+  text("rl-mode", runMode);
+  if (renderedPldMode !== runMode) {
+    $("pld-mode").value = runMode;
+    renderedPldMode = runMode;
   }
+  const supported = pld?.supported_modes || ["off"];
+  Array.from($("pld-mode").options).forEach(option => {
+    option.disabled = !supported.includes(option.value);
+  });
+  $("pld-apply").disabled = !policyEditable || state.intervention_pending;
+  text("rl-control-mode", `${names[mode] || "未连接"} · ${phases[state.phase] || "未就绪"}`);
+  text("rl-active-arm", pld?.arm === "left" ? "左臂活动" : pld?.arm === "right" ? "右臂活动" : "无活动臂");
+  text("rl-capability", pld?.server_phase === "probe_diagnostics_only" ? "仅 probe · 未加载 actor" :
+    runMode === "off" ? "原 Pi" : pld?.ready ? "PLD-Grasp · 已核对" : "未就绪");
+  text("rl-recording", state.recording_error ? "记录失败" : state.recording_saving ? "整理中" : recording ? "正在记录" : "未开始");
+  text("rl-run-id", pld?.run_id || "—");
+  text("pld-contract", pld?.contract_sha256 || "—");
+  text("pld-snapshot", pld?.snapshot_sha256 || "—");
+  text("pld-window", pld?.window_id || pld?.gate?.window_id || "—");
+  text("pld-decision", pld?.decision_id || "—");
+  text("pld-gate", pld?.gate ? pld.gate.active ? "Thor 窗口活动" : "Thor 未介入" : "等待 Thor");
+  text("rl-readiness", pld?.error || (runMode === "off" ? "off · 执行原 Pi" :
+    runMode === "probe" ? (pld?.replay_contract_ready === false ?
+      "probe · 仅链路诊断，执行原 Pi；本批不可用于 SAC 训练" : "probe · 执行原 Pi，完整记录专家链路") :
+    runMode === "shadow" ? "shadow · 计算修正但不执行" :
+    runMode === "collect" ? "collect · 执行有界随机修正；先完成 probe 核验" :
+    "eval · 执行无探索噪声的专家输出"));
+  $("rl-prepare").disabled = !policyEditable || mode === "inference" || !state.selected_task || state.intervention_pending;
+  $("pld-evaluation-apply").disabled = !connected || !paused || latched || recording ||
+    state.recording_saving || !state.episode_id;
 }
+
 async function poll() {
   if (busy) return;
   busy = true;
@@ -1081,6 +1057,17 @@ document
   }));
 $("rl-entry").onclick = () => switchPage("rl");
 $("rl-prepare").onclick = () => action("/event/mode:inference");
+$("pld-form").onsubmit = async (event) => {
+  event.preventDefault();
+  const payload = {mode: $("pld-mode").value};
+  if ($("pld-run-input").value.trim()) payload.run_id = $("pld-run-input").value.trim();
+  await action("/pld/settings", payload);
+};
+$("pld-evaluation-form").onsubmit = async (event) => {
+  event.preventDefault();
+  await action("/pld/evaluation", {episode_id: state.episode_id,
+    correct: Number($("pld-correct").value), total: Number($("pld-total").value)});
+};
 document
   .querySelectorAll("[data-event]")
   .forEach((b) => (b.onclick = () => action("/event/" + b.dataset.event)));

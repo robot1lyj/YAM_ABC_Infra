@@ -135,7 +135,25 @@ class StationIO:
         for i, limits in enumerate(self._limits):
             sl = slice(i * 7, i * 7 + 6)
             target[sl] = np.clip(target[sl], limits[:, 0], limits[:, 1])
+            limiter = getattr(self.units[i].robot, "limit_hil_target", None)
+            if callable(limiter):
+                target[i * 7:i * 7 + 7] = limiter(target[i * 7:i * 7 + 7])
         return target
+
+    def policy_limits(self):
+        """Report actual loaded SDK bounds; do not invent a per-tick slew limit."""
+        lower, upper = [], []
+        for unit, limits in zip(self.units, self._limits, strict=True):
+            margin = getattr(unit.robot, "_gripper_command_margin", 0.0)
+            lower.extend([*limits[:, 0], margin])
+            upper.extend([*limits[:, 1], 1.0 - margin])
+        return dict(lower=lower, upper=upper, joint_unit="radian",
+            gripper_motor_limits_rad=[getattr(unit.robot, "gripper_limits", lambda: None)()
+                                      for unit in self.units],
+            gripper_unit="0_closed_1_open", action_dt_s=1 / 30,
+            max_target_step=None, target_slew_limited=False,
+            range_implied_max_target_step=(np.asarray(upper) - lower).tolist(),
+            command_scope="normalized_SDK_input_not_internal_force_limiter_motor_target")
 
     def apply(
         self, decision, q, leader, *, dt, mirror=True, maintenance_leader=None, gravity=False,
@@ -222,11 +240,9 @@ class StationIO:
         return trace
 
     def _write_followers(self, target, *, gravity=False, timing=False):
-        target = vector(target).copy()
+        target = self.limit_policy_target(target)
         arm_stamps = {} if timing else None
-        for i, (u, limits) in enumerate(zip(self.units, self._limits, strict=True)):
-            sl = slice(i * 7, i * 7 + 6)
-            target[sl] = np.clip(target[sl], limits[:, 0], limits[:, 1])
+        for i, u in enumerate(self.units):
             started_at = time.monotonic() if timing else None
             if gravity and not self.mock:
                 u.robot.gravity_compensate(target[i * 7 : i * 7 + 7])

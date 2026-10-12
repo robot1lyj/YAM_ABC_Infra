@@ -38,7 +38,7 @@ def _serve(conn, url: str, timeout: float, rtc: bool):
                     result = client.infer_rtc(
                         observation[0], target_start_tick=observation[1],
                         committed_actions=observation[2],
-                        **({"parts": observation[3]} if len(observation) == 4 else {}),
+                        **({"pld": observation[3]} if len(observation) == 4 else {}),
                     )
                 else:
                     result = client.infer(observation)
@@ -47,7 +47,7 @@ def _serve(conn, url: str, timeout: float, rtc: bool):
                 if client is not None:
                     client.close()
                     client = None
-                conn.send((None, None, f"{type(exc).__name__}: {exc}"))
+                conn.send((getattr(exc, "response", None), None, f"{type(exc).__name__}: {exc}"))
     finally:
         if client is not None:
             client.close()
@@ -100,9 +100,9 @@ class ProcessPolicyClient:
     def infer(self, observation):
         return self._infer(observation)
 
-    def infer_rtc(self, observation, *, target_start_tick: int, committed_actions, parts=None):
-        return self._infer((observation, target_start_tick, committed_actions) if parts is None else
-                           (observation, target_start_tick, committed_actions, parts))
+    def infer_rtc(self, observation, *, target_start_tick: int, committed_actions, pld=None):
+        return self._infer((observation, target_start_tick, committed_actions) if pld is None else
+                           (observation, target_start_tick, committed_actions, pld))
 
     def _infer(self, observation):
         if self._process is None:
@@ -118,7 +118,8 @@ class ProcessPolicyClient:
                 if self._conn.poll(min(0.05, max(0, deadline - time.monotonic()))):
                     result, self.last_timing, error = self._conn.recv()
                     if error:
-                        raise RuntimeError(error)
+                        from .policy import PolicyResponseError
+                        raise PolicyResponseError(error, result)
                     return result
                 if not self._process.is_alive():
                     raise RuntimeError("policy process exited")

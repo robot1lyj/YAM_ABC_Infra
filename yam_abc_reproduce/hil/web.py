@@ -136,12 +136,19 @@ class PolicySettings(BaseModel):
     rtc_delay_steps: int | None = Field(default=None, strict=True, ge=1, le=10)
 
 
-class PartsMarker(BaseModel):
+class PldSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    arm: Literal["left", "right"]
-    eligible: bool = True
-    empty_hand: bool = True
-    reset: bool = False
+    mode: Literal["off", "shadow", "probe", "collect", "eval"]
+    run_id: str | None = Field(default=None, min_length=1, max_length=160)
+    contract_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    snapshot_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
+class PldEvaluation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    episode_id: str = Field(min_length=1, max_length=160)
+    correct: int = Field(strict=True, ge=0)
+    total: int = Field(strict=True, gt=0)
 
 
 class HilInput(BaseModel):
@@ -249,9 +256,15 @@ def create_app(runtime, *, control_access=False):
         invoke(runtime.configure_recording, **body.model_dump())
         return {"queued": "recording_settings"}
 
-    @app.post("/parts/grasp")
-    def parts_grasp(body: PartsMarker):
-        raise HTTPException(status_code=409, detail="RL 已使用自动抓取规则，不接受人工标记覆盖资格")
+    @app.post("/pld/settings")
+    def pld_settings(body: PldSettings):
+        invoke(runtime.configure_pld, **body.model_dump())
+        return {"queued": "pld_settings"}
+
+    @app.post("/pld/evaluation")
+    def pld_evaluation(body: PldEvaluation):
+        invoke(runtime.evaluate_pld_round, **body.model_dump())
+        return {"queued": "pld_evaluation"}
 
     @app.post("/policy/restart")
     def policy_restart():

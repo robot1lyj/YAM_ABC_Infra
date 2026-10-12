@@ -223,7 +223,7 @@ def test_real_frontend_initialization_recovery_gates():
 const fs = require('fs'), vm = require('vm'), assert = require('assert/strict');
 const nodes = new Map();
 function element() {
-  return {value:'', style:{}, dataset:{}, parentElement:{},
+  return {value:'', options:[], style:{}, dataset:{}, parentElement:{},
     classList:{toggle(){}, add(){}, remove(){}}, querySelector(){return element()},
     querySelectorAll(){return []}, append(){}, replaceChildren(){}, setAttribute(){}};
 }

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import queue
 import shutil
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -215,6 +217,7 @@ class RecordingSession:
         self.mode = mode
         self.outcome = "unknown"
         self.recording = False
+        self.episode_id = None
         self._abort_requested = threading.Event()
         self.episodes = []
         self._stop = threading.Event()
@@ -259,9 +262,17 @@ class RecordingSession:
             self.error = "episode queue full"
             return False
 
-    def start_episode(self):
-        if not self.recording and self._put(("start", self.mode, dict(self.metadata))):
+    def start_episode(self, episode_id=None):
+        identifier = episode_id or uuid.uuid4().hex
+        metadata = dict(self.metadata, episode_id=identifier)
+        if not self.recording and self._put(("start", self.mode, metadata)):
+            self.episode_id = identifier
             self.recording = True
+
+    def record_policy_reply(self, record, *, session_path=None):
+        # Independent of recording/wait filtering: late replies still belong to
+        # their original session/UUID, not a new episode or a fabricated video row.
+        return self._put(("policy_reply", Path(session_path or self.path), record))
 
     def stop_episode(self, outcome="unknown"):
         if self.recording and self._put(("stop", outcome, dict(self.metadata))):
@@ -339,6 +350,7 @@ class RecordingSession:
             raise
         self.path = target
         self.metadata = metadata
+        self.episode_id = None
 
     def submit(self, record, images):
         if not self.recording:
@@ -410,6 +422,7 @@ class RecordingSession:
                         if self.error:
                             raise RuntimeError(self.error)
                         self.path, self.metadata = target, metadata
+                        self.episode_id = None
                         self.episodes = []
                         self._completed_steps = count = self.queue_peak = 0
                         self.outcome = "unknown"
@@ -434,6 +447,10 @@ class RecordingSession:
                         result["error"] = str(exc)
                     finally:
                         result["done"].set()
+                elif item[0] == "policy_reply":
+                    with (item[1] / "policy_events.jsonl").open("a", encoding="utf-8") as stream:
+                        json.dump(item[2], stream, default=json_value, ensure_ascii=False, allow_nan=False)
+                        stream.write("\n")
                 elif item[0] == "start":
                     if active:
                         raise RuntimeError("episode already open")

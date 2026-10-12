@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .policy import PlainPolicyClient
+from .policy import PlainPolicyClient, PolicyResponseError
 
 
 def build_rtc_request(
@@ -17,7 +17,7 @@ def build_rtc_request(
     target_start_tick: int,
     committed_actions,
     max_delay_steps: int,
-    parts: dict | None = None,
+    pld: dict | None = None,
 ) -> dict:
     """Build the strict condapi trained-RTC envelope without guessing a tick.
 
@@ -61,8 +61,8 @@ def build_rtc_request(
             "committed_actions": prefix.copy(),
         },
     }
-    if parts is not None:
-        payload["parts"] = parts
+    if pld is not None:
+        payload["pld"] = pld
     return payload
 
 
@@ -86,25 +86,25 @@ class RtcPolicyClient(PlainPolicyClient):
             raise ValueError("Thor endpoint does not advertise trained RTC H50/14D")
         self.max_delay_steps = meta["rtc_max_delay_steps"]
 
-    def infer_rtc(self, observation: dict, *, target_start_tick: int, committed_actions, parts=None):
+    def infer_rtc(self, observation: dict, *, target_start_tick: int, committed_actions, pld=None):
         payload = build_rtc_request(
             observation,
             target_start_tick=target_start_tick,
             committed_actions=committed_actions,
             max_delay_steps=self.max_delay_steps,
-            parts=parts,
+            pld=pld,
         )
         result = super().infer(payload)
         timing = result.get("server_timing") if isinstance(result, dict) else None
         if not isinstance(timing, dict) or timing.get("rtc_used") is not True:
             self.close()
-            raise ValueError("Thor did not confirm trained RTC execution")
+            raise PolicyResponseError("Thor did not confirm trained RTC execution", result)
         actions = np.asarray(result.get("actions"), dtype=np.float64)
         prefix = payload["rtc"]["committed_actions"]
         if actions.shape != (50, 14) or not np.isfinite(actions).all():
             self.close()
-            raise ValueError("Thor RTC response must be finite (50,14)")
+            raise PolicyResponseError("Thor RTC response must be finite (50,14)", result)
         if not np.allclose(actions[:len(prefix)], prefix, rtol=0, atol=2e-6):
             self.close()
-            raise ValueError("Thor RTC response changed committed actions")
+            raise PolicyResponseError("Thor RTC response changed committed actions", result)
         return result

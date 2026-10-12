@@ -270,7 +270,7 @@ class SegmentWriter:
         self.samples = None
         self.written = self.local = 0
         self.error = None
-        self.episode_id = uuid.uuid4().hex
+        self.episode_id = self.metadata.get("episode_id") or uuid.uuid4().hex
         # Camera streams are independent. One worker per stream avoids serial software
         # encoding and prevents pipe writes from serializing the RKMPP subprocesses.
         self.encoder_pool = ThreadPoolExecutor(max_workers=len(ROLES), thread_name_prefix="video")

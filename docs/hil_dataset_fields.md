@@ -1,4 +1,4 @@
-# HIL 原始数据字段（按当前写入代码，2026-10-09）
+# HIL 原始数据字段（按当前写入代码，2026-10-12）
 
 原始格式为 `yam_hil_v2`：每集 manifest.json，每段 samples.h5 和 top/left/right.mp4；不是LeRobot导出格式。三路RGB视频独立存储，不在HDF5中存像素。下列字段可空，不能把空值当作0。
 
@@ -36,13 +36,13 @@
 | record_event | 采集模式的录制按键事件，仅该模式有 |
 | omitted_intervention_wait | 被删等待段之后第一条保留帧附带的区间摘要 |
 
-所有14D向量顺序：左J1–J6、左夹爪、右J1–J6、右夹爪。关节rad，夹爪名义0闭1开。submitted_action是训练动作候选；measured_state是反馈，两者不可混淆。
+所有14D向量顺序：左J1–J6、左夹爪、右J1–J6、右夹爪。关节rad，夹爪名义0闭1开。submitted_action是训练动作候选；measured_state是反馈，两者不可混淆。真实YAM下发夹爪沿用既有[0.02,0.98]端点余量，RTC承诺和记录使用同一限幅；其语义是归一化SDK入口目标，不含SDK内部受阻软限力再次调整后的电机目标。
 
 ### 请求与回复
 
 request及policy_reply.token：`epoch, request_id, observation_id, created_at, observed_at, queue_size_at_request, observation_policy_tick, rtc_delay_steps`；时间为IPC单调秒，TDA/RTC专属值可空。
 
-policy_reply：`token, received_at, discarded, error, worker_elapsed_ms, server_timing, client_timing, actions`；RTC额外`rtc_takeover_tick, rtc_reply_tick, rtc_slack_ticks`。actions为原始返回动作块（通常50×14），异常可空。server_timing按服务返回保留，非固定训练字段。client_timing可含`pack_ms, send_ms, wait_response_ms, unpack_ms, payload_bytes`。
+policy_reply：`token, received_at, discarded, error, worker_elapsed_ms, server_timing, client_timing, actions, pld, pld_request, recording_session, request_context`；RTC额外`rtc_takeover_tick, rtc_reply_tick, rtc_slack_ticks`。actions为原始返回动作块（通常50×14），异常可空。server_timing按服务返回保留，非固定训练字段。client_timing可含`pack_ms, send_ms, wait_response_ms, unpack_ms, payload_bytes`。
 
 sync：`age_s, arrival_skew_s, sync_warning, reference_time, state_bracket, cameras`。cameras按top/left/right含`device_timestamp_ms, timestamp_domain, device_frame_number, host_received_at, color_space, sequence`。无有效观测时sync可为空；沿用上一帧图像时observation_valid=false，应按标志过滤。
 
@@ -65,6 +65,26 @@ sync：`age_s, arrival_skew_s, sync_warning, reference_time, state_bracket, came
 只复用SDK发布状态，不新增CAN查询；常驻执行器向会话传递同一快照。缺少反馈（包括mock或旧执行器）写null/invalid，不用0冒充。全部原始字段保留，不在线判成功、不在线去噪改原值。检测器离线运行，见[使用手册](hil_quickstart.md#抓空排查记录)。
 
 RTC策略帧 `policy_selection` 新增明确来源：`fusion=rtc, request, target_tick, model_index, observation_policy_tick, rtc_delay_steps`。`model_index`为0起始块内索引，`target_tick=observation_policy_tick+model_index`。已承诺前缀保留原来生成该目标的旧请求来源，不误标成新请求；重置清除。`request`顶层旧RTC字段仍可能空，优先读取`policy_selection.request`；旧集缺字段不能补造。下发目标索引不等于物理接触索引，离线候选同时保留事件时刻和前一条已下发命令来源。
+
+### PLD-Grasp 完整链路（可选）
+
+新客户端完全替换旧PARTS，原始格式仍为yam_hil_v2。工作台的RL模式为off/shadow/probe/collect/eval，模式能力以Thor握手为准；与人工采集产品模式collect不是同一概念。客户端不切抓取、不编号、不判奖、不做残差合成；详见[PLD-Grasp合同](pld_client.md)。
+
+| 新增字段 | 含义 |
+|---|---|
+| policy_reply.pld | 服务返回完整字典，未知字段也保存；对应HDF5 details.policy_reply.pld |
+| policy_reply.pld_request | 外层pld请求的schema/mode/SHA/run_id/原episode_id/原token身份及14D previous_command |
+| policy_reply.request_context | previous_command_tick/submitted_at、observation_reference_time、sync、committed_actions和prefix_sources |
+| policy_reply.recording_session | 原请求录制session；晚到回复不可归入新任务 |
+| manifest.pld | 本集模式、run_id、contract_sha256/snapshot_sha256 |
+| manifest.action_limits | 实际SDK位置上下限、单位、夹爪电机映射；没有独立slew cap时max_target_step=null |
+| manifest.policy_events | 相对引用../policy_events.jsonl，复制数据必须一起保留 |
+
+previous_command是观测k−1 tick已成功提交SDK的14D命令，不是measured_state、policy_action或未提交目标。请求episode_id由原录制器start时分配，与manifest完全相同；换任务不复用旧UUID。
+
+session级policy_events.jsonl由原录制owner异步写入，event为request/reply/cancelled/evaluation；time为单调秒双精度，tick可空。请求/回复在details.policy_reply内，pld完整保留。收到但取消/错身份/前缀不匹配的回复按真实discarded/error保留；停止后尚未收到的只记取消，不伪造回复。它不受等待段过滤影响，允许停录后的迟到审计，不能为补充审计制造视频帧。Thor离线复核需同时读取HDF5和此sidecar。
+
+整轮评估事件包含原episode_id、details.evaluation={C,N,purpose:evaluation_only}，不作为SAC奖励。未加载actor的probe诊断会有replay_eligible=false，不能当带修正训练经验。三路视频、逐tick来源/有效位及float64字段均沿用原合同；已承诺前缀保持原请求来源。
 
 ### HDF5物理结构
 

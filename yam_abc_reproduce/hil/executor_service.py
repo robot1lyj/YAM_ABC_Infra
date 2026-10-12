@@ -52,6 +52,8 @@ class Executor:
                              ages=ages, sampled_at=time.monotonic(),
                              limits=[x.tolist() for x in self.io._limits],
                              gripper_limits=self.gripper_limits,
+                             gripper_command_margins=[getattr(u.robot, "_gripper_command_margin", 0.0)
+                                                      for u in self.io.units],
                              gripper_feedback=getattr(self.io, "gripper_feedback", [None, None]),
                              control=self.io.leader_control_status())
 

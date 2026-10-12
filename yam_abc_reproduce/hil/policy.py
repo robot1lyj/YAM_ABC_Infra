@@ -28,20 +28,38 @@ class Reply:
     client_timing: dict | None = None
     plan: dict | None = None
     planner_error: bool = False
-    parts: dict | None = None
+    pld: dict | None = None
+    pld_request: dict | None = None
+    recording_session: str | None = None
+    request_context: dict | None = None
 
 
 @dataclass(frozen=True)
 class RtcJob:
     observation: dict[str, Any]
     commitment: RtcCommitment
-    parts: dict | None = None
+    pld: dict | None = None
+    recording_session: str | None = None
+    request_context: dict | None = None
 
 
-@dataclass(frozen=True)
-class PolicyJob:
-    observation: dict[str, Any]
-    parts: dict
+def reply_record(reply, *, now, discarded):
+    """One representation for normal ticks and post-HOLD cancellation audit."""
+    return dict(token=reply.token.__dict__, received_at=now, discarded=discarded,
+        error=reply.error, worker_elapsed_ms=reply.worker_elapsed_ms,
+        server_timing=reply.server_timing, client_timing=reply.client_timing,
+        actions=reply.actions if reply.actions is not None and np.isfinite(reply.actions).all() else None,
+        pld=getattr(reply, "pld", None), pld_request=getattr(reply, "pld_request", None),
+        recording_session=getattr(reply, "recording_session", None),
+        request_context=getattr(reply, "request_context", None))
+
+
+class PolicyResponseError(ValueError):
+    """A rejected reply whose raw trace must survive transport validation."""
+
+    def __init__(self, message, response):
+        super().__init__(message)
+        self.response = response
 
 
 class PolicyWorker:
@@ -190,6 +208,11 @@ class PolicyWorker:
                 except queue.Empty:
                     continue
                 planning = False
+                response = None
+                request_pld = observation.pld if isinstance(observation, RtcJob) else None
+                audit = dict(pld_request=request_pld,
+                    recording_session=getattr(observation, "recording_session", None),
+                    request_context=getattr(observation, "request_context", None))
                 try:
                     started = time.monotonic()
                     if isinstance(observation, RtcJob):
@@ -197,16 +220,16 @@ class PolicyWorker:
                             observation.observation,
                             target_start_tick=observation.commitment.observation_tick,
                             committed_actions=observation.commitment.actions,
-                            **({"parts": observation.parts} if observation.parts is not None else {}),
+                            **({"pld": observation.pld} if observation.pld is not None else {}),
                         )
-                    elif isinstance(observation, PolicyJob):
-                        response = self.client.infer({"type": "infer", "obs": observation.observation,
-                                                     "parts": observation.parts})
                     else:
                         response = self.client.infer(observation)
                     actions = np.array(response["actions"], copy=True)
                     if actions.shape != (50, 14) or not np.isfinite(actions).all():
                         raise ValueError("policy response must be finite (50,14)")
+                    from .pld import validate_reply
+                    validate_reply(request_pld, response, token=token,
+                        observation=observation.observation if isinstance(observation, RtcJob) else observation)
                     server_timing = response.get("server_timing")
                     if server_timing is not None and not isinstance(server_timing, dict):
                         raise ValueError("policy server_timing must be a mapping")
@@ -231,12 +254,14 @@ class PolicyWorker:
                         server_timing=server_timing,
                         client_timing=getattr(self.client, "last_timing", None),
                         plan=plan,
-                        parts=response.get("parts"),
+                        pld=response.get("pld"), **audit,
                     )
                 except Exception as exc:
                     error = f"{type(exc).__name__}: {exc}"
                     self.mark_failed(error, planner=planning)
-                    reply = Reply(token, None, error, planner_error=planning)
+                    response = getattr(exc, "response", response)
+                    reply = Reply(token, None, error, planner_error=planning,
+                        pld=response.get("pld") if isinstance(response, dict) else None, **audit)
                 self._replies.put_nowait(reply)
         finally:
             close = getattr(self.client, "close", None)

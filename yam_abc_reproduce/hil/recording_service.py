@@ -11,6 +11,7 @@ import multiprocessing as mp
 import queue
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -45,9 +46,12 @@ def _serve_recording(connection, ready, progress, options):
                 if kind == "row":
                     if not recorder.submit(*args):
                         error = recorder.error or "recording receiver unavailable"
+                elif kind == "policy_reply":
+                    if not recorder.record_policy_reply(args[0], session_path=args[1]):
+                        error = recorder.error or "policy event recorder unavailable"
                 elif kind == "start":
                     recorder.metadata.update(args[0])
-                    recorder.start_episode()
+                    recorder.start_episode(args[1])
                 elif kind == "stop":
                     recorder.metadata.update(args[1])
                     recorder.stop_episode(args[0])
@@ -128,6 +132,7 @@ class RemoteRecordingSession:
         self.mode = mode
         self.metadata = metadata or {}
         self.recording = False
+        self.episode_id = None
         self.outcome = "unknown"
         self.written = 0
         self.episodes = []
@@ -303,8 +308,13 @@ class RemoteRecordingSession:
         return result
 
     def start_episode(self):
-        if not self.recording and self._enqueue("start", dict(self.metadata)):
+        identifier = uuid.uuid4().hex
+        if not self.recording and self._enqueue("start", dict(self.metadata), identifier):
+            self.episode_id = identifier
             self.recording = True
+
+    def record_policy_reply(self, record, *, session_path=None):
+        return self._enqueue("policy_reply", record, str(session_path or self.path))
 
     def stop_episode(self, outcome="unknown"):
         if self.recording and self._enqueue("stop", outcome, dict(self.metadata)):
@@ -328,10 +338,12 @@ class RemoteRecordingSession:
     def bind_task(self, path, metadata):
         self._request("bind", str(path), metadata)
         self.metadata = metadata
+        self.episode_id = None
 
     def rotate_task(self, path, metadata):
         self._request("rotate", str(path), metadata)
         self.metadata = metadata
+        self.episode_id = None
 
     def delete_saved_episode(self, task_root, task_id, expected_key):
         return self._request("delete", str(task_root), task_id, expected_key)["deleted"]

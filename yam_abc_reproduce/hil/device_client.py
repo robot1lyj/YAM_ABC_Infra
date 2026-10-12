@@ -84,8 +84,11 @@ class DeviceClient:
     def request_cartesian(self, **body):
         return self._request("POST", "/hil/cartesian", body)
 
-    def mark_parts_grasp(self, **body):
-        return self._request("POST", "/parts/grasp", body)
+    def configure_pld(self, **body):
+        return self._request("POST", "/pld/settings", body)
+
+    def evaluate_pld_round(self, **body):
+        return self._request("POST", "/pld/evaluation", body)
 
     def configure_policy(self, *, fusion, rtc_delay_steps=None):
         body = {"fusion": fusion}

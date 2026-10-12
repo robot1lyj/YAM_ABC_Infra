@@ -29,6 +29,11 @@ class RemoteStationIO(StationIO):
         self.cache = initial["snapshot"]
         units = []
         for index, name in enumerate(("left", "right")):
+            def limit_target(target, *, i=index):
+                target = np.asarray(target).copy()
+                margin = self.cache.get("gripper_command_margins", [0.0, 0.0])[i]
+                target[6] = np.clip(target[6], margin, 1 - margin)
+                return target
             def follower(target, *, i=index):
                 self.packet[f"follower_{i}"] = np.asarray(target).copy()
 
@@ -46,6 +51,8 @@ class RemoteStationIO(StationIO):
                 joint_limits=lambda i=index: np.asarray(self.cache["limits"][i]),
                 gripper_limits=lambda i=index: self.cache["gripper_limits"][i],
                 command_joint_pos=follower, gravity_compensate=gravity,
+                limit_hil_target=limit_target,
+                _gripper_command_margin=self.cache.get("gripper_command_margins", [0.0, 0.0])[index],
             )
             units.append(SimpleNamespace(name=name, robot=robot,
                                          agent=SimpleNamespace(hil_leader_command=leader)))

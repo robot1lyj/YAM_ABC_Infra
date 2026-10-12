@@ -28,7 +28,7 @@
 
 所有人工路径共用**绝对关节 1:1 映射**，不另设 HIL 相对位移实现。纯遥操作不要求任务或相机；正式录制与模型执行需要对应任务和有效观测。
 
-工作台另有同级 **RL 页面 · PLD-Grasp 抓取修正专家**：off / shadow / probe / collect / eval 五种模式，能力按 Thor 握手开放。客户端只扩展请求身份和完整录制，沿用原生 RTC 执行，不再保留旧 PARTS 抓取状态机、残差合成或奖励按键。先 probe 核对完整记录与来源，再启用有界修正；新代码尚未部署 IPC，见 [PLD-Grasp 客户端](docs/pld_client.md)。
+工作台另有同级 **RL 页面 · PLD-Grasp 抓取修正专家**：off / shadow / probe / collect / eval 五种模式，能力按 Thor 握手开放。客户端只扩展请求身份和完整录制，沿用原生 RTC 执行，不再保留旧 PARTS 抓取状态机、残差合成或奖励按键。2026-10-12已部署IPC，当前Thor仅支持off/probe诊断、未加载正式专家；先核对完整记录与来源，不把probe当作SAC训练经验，见 [PLD-Grasp 客户端](docs/pld_client.md)。
 
 ## 快速开始
 

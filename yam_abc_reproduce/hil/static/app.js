@@ -362,7 +362,7 @@ function render() {
   text("recording-restart", recoveringRecording ? "录制服务恢复中…" : "恢复录制服务");
   $("recording-restart").title = "保留故障数据并创建新数据会话，不断开机械臂、不自动开始运动";
   $("policy-panel").hidden = !["inference", "hil"].includes(mode);
-  text("policy-mode", state.policy_fusion === "sync_hold" ? (state.policy_url === "ws://127.0.0.1:8003" ? "XR-1 末端回放" : state.policy_waiting_for_reply ? "同步推理 · 保持" : "同步推理") : state.policy_fusion === "rtc" ? "RTC 推理" : "旧模式");
+  text("policy-mode", state.policy_fusion === "sync_hold" ? (state.policy_url === "ws://127.0.0.1:8003" ? "XR-1 末端回放" : state.policy_waiting_for_reply ? "同步推理 · 保持" : "同步推理") : state.policy_fusion === "rtc" ? "RTC 推理" : connected ? "模式待确认" : "未连接");
   text("policy-rtt", state.policy_observed_rtt_p95_s == null ? "—" : `${Math.round(state.policy_observed_rtt_p95_s * 1000)} ms`);
   text("policy-buffer", state.policy_buffer_seconds == null ? "—" : `${Math.max(0, state.policy_buffer_seconds).toFixed(2)} s`);
   text("policy-trim", state.policy_fusion === "rtc"

@@ -102,14 +102,28 @@ IPC SSH用户名为`linux`，不是开发机用户名`wuyan-lyj`；密码不入�
 
 `10.18.31.234:8767`是独立x86数据集服务器，不是设备IPC。新版Web的[start_ipc_web.sh](../scripts/start_ipc_web.sh)使用`0.0.0.0 --web-allow-local-addresses`，不再读取并固定启动时的wlan0地址，Wi-Fi临时失联也不挡住Web启动。HTTP Host只动态信任实际接收该请求的本机IPv4地址（由ASGI/socket提供，不读取转发头）；任意域名/非本机目标地址与跨站控制仍拒绝。DHCP换址后通过新地址访问，无需重启Web或设备；原来的浏览器地址不会自动变成新IP，也不能解决跨网段不通。此监听是局域网入口，不应映射到公网。2026-10-12该修复已只重启Web部署，设备进程未重启；测试与运行边界见[验收](acceptance.md)。
 
-办公Wi-Fi不互通时可复用Thor直连建立仅监听开发机回环的临时面板入口，不改办公网络：
+办公Wi-Fi不互通时，开发机使用独立用户服务[yam-ipc-panel-tunnel.service](../deploy/yam-ipc-panel-tunnel.service)复用Thor直连，入口固定为`http://127.0.0.1:8876/`。服务只安装在操作电脑，不安装到IPC/Thor，不依赖或控制`yam-device`、Web、SDK或CAN。复用本机已登记的`thor` SSH别名、主机密钥和`~/.ssh/id_ed25519_condapi_yam`私钥，不复制凭据、不依赖桌面SSH agent。首次安装前须验证两跳免交互认证；主机密钥变化时明确失败，不自动接受。
+
+```bash
+install -Dm644 deploy/yam-ipc-panel-tunnel.service \
+  "$HOME/.config/systemd/user/yam-ipc-panel-tunnel.service"
+systemctl --user daemon-reload
+systemctl --user enable --now yam-ipc-panel-tunnel.service
+systemctl --user status yam-ipc-panel-tunnel.service
+```
+
+该电脑目前`Linger=no`，自启指用户登录后启动，不承诺未登录时运行；无需为本机浏览器面板开启linger。SSH两跳均设置连接超时6秒、保活10秒/3次；服务退出后5秒重试，不因短期失败次数锁死。仅绑定`127.0.0.1:8876`，端口被占用则报错重试，不终止未知进程。IPC Wi-Fi换址不影响直连目标；Thor别名自身失效、密钥变化、IPC Web未运行仍需分别排查，重连不是网络发现或远程Web自启动。查看日志用`journalctl --user -u yam-ipc-panel-tunnel -n 30 --no-pager`；停用用`systemctl --user disable --now yam-ipc-panel-tunnel.service`。本机断网/退出登录时该入口不可用。
+
+隧道断线不重启IPC进程，但操作台失联仍按现有安全策略暂停，恢复通信不自动恢复运动。该服务不发送控制/心跳或清除SDK故障；用户仍需现场确认后显式开始。Web代码更新才单独重启Web，重新附着仅请求HOLD，不自动连接/运动。
+
+其他未安装用户服务的环境，可手动建立同样的临时转发；不要与用户服务同时占用8876：
 
 ```bash
 ssh -N -J thor -o ExitOnForwardFailure=yes \
   -L 127.0.0.1:8876:127.0.0.1:8766 linux@192.168.250.2
 ```
 
-保持该SSH进程运行，浏览器访问`http://127.0.0.1:8876/`；关闭SSH即关闭转发，不是IPC固定地址或独立后台服务。Web重启不关闭SDK，重新附着仅请求HOLD，不自动连接/恢复运动。它也不会清除机械臂供电中断等造成的SDK故障。
+手动方式需要保持SSH进程运行，关闭即停止转发；它不是IPC固定IP，也不提供自动重连。
 
 ### IPC进程与录制
 

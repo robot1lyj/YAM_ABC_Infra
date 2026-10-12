@@ -1,0 +1,25 @@
+# Install on the developer/operator PC, NOT on IPC or Thor.
+# Independent SSH transport: never starts/stops Web, SDK, CAN or motion.
+[Unit]
+Description=YAM IPC panel loopback tunnel via Thor
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -T -n \
+    -i %h/.ssh/id_ed25519_condapi_yam \
+    -o IdentitiesOnly=yes -o IdentityAgent=none -o ForwardAgent=no \
+    -o BatchMode=yes -o StrictHostKeyChecking=yes \
+    -o ConnectTimeout=6 -o ConnectionAttempts=1 \
+    -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+    -o ExitOnForwardFailure=yes -o ControlMaster=no -o ControlPath=none \
+    -o "ProxyCommand=/usr/bin/ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o ForwardAgent=no -o ConnectTimeout=6 -o ConnectionAttempts=1 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ControlMaster=no -o ControlPath=none -W %%h:%%p thor" \
+    -L 127.0.0.1:8876:127.0.0.1:8766 linux@192.168.250.2
+Restart=always
+RestartSec=5
+# Kill the service's jump-SSH child too; never touch unrelated SSH connections.
+KillMode=control-group
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

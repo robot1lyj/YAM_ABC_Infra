@@ -4,6 +4,8 @@
 
 ## 当前现场状态与历史基线
 
+2026-10-12本机自动隧道：`1325b40`新增独立`yam-ipc-panel-tunnel.service`，已安装到操作电脑用户unit目录并enable，`Linger=no`，因此自启指登录后启动。本地19项相关测试及systemd语法校验通过；明确指定现有密钥、两跳严格主机校验和无agent免交互认证已通过。用独立8877端口运行同一unit副本，终止测试SSH主进程后systemd自动重启（PID350571→350655，NRestarts=1），页面恢复200；原8876入口始终200，IPC device/Web PID340093/471406及启动时间未变。测试unit已停止并移除，仅测试复制文件待随隔离目录清理。**正式服务当前enabled但inactive：用户正在推理录制，未打断临时8876隧道PID345053；待用户暂停、保存完成后接管8876，再验证正式服务自动重连。不能把“已安装/隔离验证”当成“正式端口已交接”。**未改IPC服务、机械臂、Wi-Fi或数据；断线后的操作台失联暂停仍保留，重连不自动恢复运动。使用/停用说明归[环境](environment.md#ipc连接与地址)。
+
 2026-10-12 Web换址修复已部署`0c60068`的8个文件，保留IPC原Git基线和现场增量；备份`/data/YAM/data/deployment_backups/web-dhcp.2UEHDv/before.tgz`。启动脚本改为IPv4通配监听，显式启用实际socket目标地址的Host校验，不使用任意Host通配、不从转发头获取受信地址。隔离开发机80 passed；IPC隔离目录79 passed、1 skipped（Node浏览器项本地通过）。同一进程在两个loopback目标地址下验证新地址可用、旧Host拒绝，不修改现场网卡或DHCP；不能称为真实断网/换租约故障注入。部署仅停启`yam-workstation`，从340094变为471406；`yam-device` PID340093、10月10日15:21启动时间均未变。现场回环、Wi-Fi和直连网口`/status`均200，伪造/旧Host均400、跨站POST403；浏览器经仅本机回环的Thor跳板转发显示正式任务、相机和状态。临时入口随SSH进程结束失效，不是IPC固定IP；恢复方法归[环境](environment.md#ipc连接与地址)。没有改Wi-Fi、连接设备、发送运动或改录制数据。设备仍保留`SDK state update stale`故障，用户说明曾关闭机械臂电源且现已供电；本轮不自动清锁、重连或宣称硬件故障已修复。
 
 2026-10-10夹爪限力已部署：用户明确授权后，在HOLD、无录制/保存、维护空闲及编码队列为空时，仅增量应用`2dc6035`的9个限力相关文件及SDK `0005`参数补丁，保留IPC `76b6834`＋既有现场改动。备份`/data/YAM/data/deployment_backups/gripper-10n.UyWLc3/before.tgz`。两侧Follower配置10 N，复用官方 `GripperForceLimiter`；对应约0.446 Nm受阻目标，不是瞬时力矩硬上限，官方约0.5 Nm均值/低速触发及0.3 Nm摩擦项未改。9文件及SDK工厂与验证版逐项一致；原算法、PD配置、重力计算及PARTS shadow配置未变。原0.65 Nm诊断/PARTS判据需用低力实测重新验证，说明见[硬件限力](hardware.md#夹爪受阻软限力)。当次仅停止/启动设备服务一次；恢复后device/Web active、四臂/相机断开、四CAN DOWN、初始化清单读回两侧10 N，无自动重连或运动。连接时才加载到SDK，真实冲击、夹持和防损伤效果尚未验收。停服务时子进程收到SIGINT的退出诊断不作为新版本运行故障；恢复后未见启动错误。当前任务清单仍可读，13个有效已保存集共31457帧。

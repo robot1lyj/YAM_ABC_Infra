@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-
 UNIT = Path(__file__).resolve().parents[1] / "deploy/yam-ipc-panel-tunnel.service"
 
 

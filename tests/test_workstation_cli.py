@@ -62,3 +62,17 @@ def test_wildcard_web_host_requires_explicit_host_allowlist(monkeypatch, tmp_pat
         )
     assert exc.value.code == 2
     assert "web-allowed-host" in capsys.readouterr().err
+
+
+def test_wildcard_web_host_accepts_explicit_local_address_policy(monkeypatch, tmp_path):
+    invoke(
+        monkeypatch, tmp_path, "--mock", "--web-port", "8766",
+        "--web-host", "0.0.0.0", "--web-allow-local-addresses",
+    )
+
+
+def test_local_address_policy_requires_wildcard_listener(monkeypatch, tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        invoke(monkeypatch, tmp_path, "--mock", "--web-port", "8766", "--web-allow-local-addresses")
+    assert exc.value.code == 2
+    assert "requires --web-host 0.0.0.0" in capsys.readouterr().err

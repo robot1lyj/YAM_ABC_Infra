@@ -6,7 +6,7 @@
 
 交付时系统记录会话、操作者动作请求、设备/配置身份、关键状态变化和操作结果/错误，用户可在页面查看或导出；维护/调试记录与训练episode区分，不能把回位/调试动作混成训练示范。已有页面功能、自动记录覆盖和需要补齐的部分须按实际实现检查，用户说已有界面不等于完整记录链已验收。
 
-正式部署通过 IPC 当前 Wi-Fi 地址和8766（可配置）直接访问；地址由 DHCP 分配，使用前按[环境](environment.md#ipc连接与地址)核对。默认仍绑定127.0.0.1用于开发；正式服务由 [启动脚本](../scripts/start_ipc_web.sh) 读取当前地址，Host与Origin检查保持启用。数据平台8767及完整跨平台验证边界归
+正式部署通过 IPC 当前 Wi-Fi 地址和8766（可配置）直接访问；地址由 DHCP 分配，使用前按[环境](environment.md#ipc连接与地址)核对。默认仍绑定127.0.0.1用于开发；正式服务由 [启动脚本](../scripts/start_ipc_web.sh) 通配监听，动态校验请求实际到达的本机IPv4地址，Host与Origin保护保持启用，DHCP换址不需重启服务。跨网段不通时可按环境文档使用临时SSH转发。数据平台8767及完整跨平台验证边界归
 [局域网交付](dagger_architecture.md#局域网访问与跨平台交付)。
 
 本版入口为 `uv run --no-sync yam-workstation`，使用独立的四模式界面与统一执行循环。
@@ -36,17 +36,16 @@ uv run --no-sync yam-workstation --device-daemon \
   --mode collect --url ws://192.168.250.1:8000
 
 # 生产：可独立重启的Web/API
-ipc_web_host=$(ip -4 -o addr show dev wlan0 | awk '{split($4, a, "/"); print a[1]; exit}')
 uv run --no-sync yam-workstation --web-only \
   --device-socket /run/user/$(id -u)/yam-device.sock \
-  --web-port 8766 --web-host "$ipc_web_host"
+  --web-port 8766 --web-host 0.0.0.0 --web-allow-local-addresses
 
 # 兼容开发：旧单进程入口
 uv run --no-sync yam-workstation --mode collect --web-port 8766 \
-  --web-host "$ipc_web_host"
+  --web-host 127.0.0.1
 ```
 
-systemd正式部署直接使用`deploy/yam-device.service`和`deploy/yam-workstation.service`；日常页面更新只执行`systemctl --user restart yam-workstation.service`。首次从旧单进程迁移或重启`yam-device`会释放力矩，必须先支撑机械臂。通配监听`0.0.0.0`不会隐式信任所有Host，必须至少补一个`--web-allowed-host <IP或主机名>`。
+systemd正式部署直接使用`deploy/yam-device.service`和`deploy/yam-workstation.service`；日常页面更新只执行`systemctl --user restart yam-workstation.service`。首次从旧单进程迁移或重启`yam-device`会释放力矩，必须先支撑机械臂。通配监听`0.0.0.0`必须显式选择`--web-allow-local-addresses`或`--web-allowed-host <IP或主机名>`，不是放开任意Host；前者适用于动态IPv4直访，后者可用于明确配置的主机名。
 
 自动模拟策略→人工→恢复，并录制一个短episode：
 

@@ -10,8 +10,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .http_hosts import LocalAddressTrustedHostMiddleware
 from .storage import read_rows
 
 STATIC = Path(__file__).with_name("static")
@@ -170,7 +170,9 @@ def create_app(runtime, *, control_access=False):
         allowed_hosts.append(listen_host)
     allowed_hosts.extend(getattr(owner_args, "web_allowed_host", []) or [])
     app.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=list(dict.fromkeys(allowed_hosts))
+        LocalAddressTrustedHostMiddleware,
+        allowed_hosts=list(dict.fromkeys(allowed_hosts)),
+        allow_local_addresses=getattr(owner_args, "web_allow_local_addresses", False),
     )
     app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 

@@ -1380,13 +1380,18 @@ def main(argv=None, *, service=None):
     p.add_argument(
         "--web-host",
         default="127.0.0.1",
-        help="dashboard listen address; use the IPC LAN address for direct workstation access",
+        help="dashboard listen address; 0.0.0.0 requires an explicit Host policy",
     )
     p.add_argument(
         "--web-allowed-host",
         action="append",
         default=[],
         help="additional HTTP Host name accepted by the dashboard (repeatable)",
+    )
+    p.add_argument(
+        "--web-allow-local-addresses",
+        action="store_true",
+        help="with 0.0.0.0, accept the actual local IPv4 socket destination as HTTP Host",
     )
     args = p.parse_args(argv)
     if args.device_daemon and args.web_only:
@@ -1401,8 +1406,12 @@ def main(argv=None, *, service=None):
         p.error("web-port must be between 1 and 65535")
     if args.web_host != "127.0.0.1" and args.web_port is None and not args.device_daemon:
         p.error("web-host requires web-port")
-    if args.web_host == "0.0.0.0" and not args.web_allowed_host:
-        p.error("0.0.0.0 requires at least one explicit --web-allowed-host")
+    if args.web_allow_local_addresses and args.web_host != "0.0.0.0":
+        p.error("--web-allow-local-addresses requires --web-host 0.0.0.0")
+    if args.web_host == "0.0.0.0" and not (
+        args.web_allowed_host or args.web_allow_local_addresses
+    ):
+        p.error("0.0.0.0 requires --web-allowed-host or --web-allow-local-addresses")
     if not args.check and not args.demo and service is None:
         if args.web_only:
             if args.web_port is None:

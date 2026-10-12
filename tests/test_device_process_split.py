@@ -67,10 +67,10 @@ def test_unix_proxy_restart_holds_without_closing_device_owner(tmp_path):
         assert second_web.preview("top") == b"jpeg"
         second_web.heartbeat()
         assert owner.heartbeats == 1
-        second_web.configure_policy(fusion="tda_smooth")
+        second_web.configure_policy(fusion="sync_hold")
         second_web.configure_policy(fusion="rtc", rtc_delay_steps=7)
         second_web.restart_policy()
-        assert owner.policy_settings == [{"fusion": "tda_smooth"}, {"fusion": "rtc", "rtc_delay_steps": 7}]
+        assert owner.policy_settings == [{"fusion": "sync_hold"}, {"fusion": "rtc", "rtc_delay_steps": 7}]
         assert owner.policy_restarts == 1
         second_web.configure_recording(mode="grasp_diagnostics")
         assert owner.recording_settings == [{"mode": "grasp_diagnostics"}]

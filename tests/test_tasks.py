@@ -35,8 +35,6 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
             station="configs/station_hil.yaml",
             output=tmp_path / "sessions",
             task_root=tmp_path / "tasks",
-            baseline=False,
-            raw_only=True,
         )
     )
     service.preview_enabled = False
@@ -131,8 +129,6 @@ def test_taskless_teleop_can_run_but_never_record(tmp_path):
             station="configs/station_hil.yaml",
             output=tmp_path / "sessions",
             task_root=tmp_path / "tasks",
-            baseline=False,
-            raw_only=True,
         )
     )
     service.preview_enabled = False
@@ -183,8 +179,6 @@ def test_taskless_teleop_can_bind_collection_task_without_reconnecting_arms(tmp_
             station="configs/station_hil.yaml",
             output=tmp_path / "sessions",
             task_root=tmp_path / "tasks",
-            baseline=False,
-            raw_only=True,
         )
     )
     service.preview_enabled = False
@@ -255,8 +249,6 @@ def test_teleop_mode_never_records_even_with_a_selected_task(tmp_path):
             station="configs/station_hil.yaml",
             output=tmp_path / "sessions",
             task_root=tmp_path / "tasks",
-            baseline=False,
-            raw_only=True,
         )
     )
     service.preview_enabled = False

@@ -108,8 +108,8 @@ def test_manual_and_policy_targets_are_not_feedback_slew_clipped():
     np.testing.assert_allclose(policy.action, policy.selected_action)
 
 
-def test_normal_chunks_do_not_prefetch():
-    a = Arbiter(Mode.INFERENCE, execute_steps=2)
+def test_sync_chunks_execute_fifty_before_requesting_again():
+    a = Arbiter(Mode.INFERENCE, )
     q = pose()
     a.start(q)
     token = a.request(1, 0)
@@ -117,10 +117,10 @@ def test_normal_chunks_do_not_prefetch():
     actions[:, 0] = 0.5
     assert a.accept(token, actions, 0.01)
     assert a.request(2, 0.02) is None
-    for t in (0.03, 0.06):
+    for t in (.03 + n / 30 for n in range(50)):
         d = a.step(q, q, now=t, dt=0.03, leader_ready=True)
         assert d.action[0] == pytest.approx(0.5)
-    assert a.request(3, 0.07) is not None
+    assert a.request(3, 1.7) is not None
 
 
 @pytest.mark.parametrize("reason", ["timeout", "stale", "missed_tick"])

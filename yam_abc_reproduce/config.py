@@ -1,8 +1,8 @@
 """Configuration dataclasses and a minimal YAML loader.
 
 Deliberately plain: no ``_target_`` reflection magic. Configs are dataclasses;
-the loader fills them from YAML dicts, ignoring unknown keys so a config file
-can carry extra documentation fields without breaking.
+the loader validates field names at the hardware boundary. Unknown keys must
+not silently restore defaults (in particular, a misspelled gripper force limit).
 """
 
 from __future__ import annotations
@@ -135,9 +135,14 @@ def robot_channel(robot_type: str) -> str:
     return _ROBOT_CHANNELS.get(robot_type, "can_left")
 
 
-def _from_dict(cls, data: dict[str, Any]):
-    """Build a dataclass from a dict, ignoring keys that aren't fields."""
+def _from_dict(cls, data: dict[str, Any], *, sections=()):
+    """Reject typos; only explicitly owned sibling sections may be excluded."""
+    if not isinstance(data, dict):
+        raise ValueError(f"{cls.__name__} 必须是配置对象")
     known = {f.name for f in fields(cls)}
+    unknown = set(data) - known - set(sections)
+    if unknown:
+        raise ValueError(f"{cls.__name__} 未知配置字段：{', '.join(sorted(unknown))}")
     return cls(**{k: v for k, v in data.items() if k in known})
 
 
@@ -231,12 +236,11 @@ class RobotConfig:
         return self.robots[0] if self.robots else RobotUnitConfig()
 
     def controller_for(self, robot: RobotUnitConfig) -> ControllerConfig:
-        """The controller that drives ``robot`` (matched by robot type), falling
-        back to the first controller if the binding can't be resolved."""
-        for c in self.controllers:
-            if c.controls == robot.type:
-                return c
-        return self.controllers[0] if self.controllers else ControllerConfig()
+        """Require one explicit binding; never silently command a different Leader."""
+        matches = [c for c in self.controllers if c.controls == robot.type]
+        if len(matches) != 1:
+            raise ValueError(f"机械臂 {robot.type} 必须且只能绑定一个 Leader，当前为 {len(matches)} 个")
+        return matches[0]
 
 
 @dataclass
@@ -302,7 +306,7 @@ def build_station_config(
             cam_dicts = []
     cameras = [_from_dict(CameraConfig, c) for c in cam_dicts]
 
-    station = _from_dict(StationConfig, raw)
+    station = _from_dict(StationConfig, raw, sections=("hil", "cameras_config"))
     station.robot = robot
     station.cameras = cameras
     return station

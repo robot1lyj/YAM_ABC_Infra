@@ -29,24 +29,21 @@ from ..config import (
 from ..resource_qos import place_on_cpus
 from ..robot.can_bus import bring_up_can_buses, check_can_up, stop_can_buses
 from ..runtime import build_arm_units, build_cameras_from_config
-from .action_buffer import ActionBuffer
 from .buttons import HandleButtons
 from .core import Arbiter, Mode, Phase
 from .jog import Jog
 from .maintenance import Maintenance
 from .metrics import Latencies
 from .observation import Observations
-from .planned_buffer import PlannedActionBuffer
 from .planner_process import ProcessActionPlanner
 from .pld import PldClient, PldConfig
 from .policy import PolicyWorker, RtcJob, reply_record
 from .policy_process import ProcessPolicyClient
 from .recording import RecordingSession
 from .recording_service import RemoteRecordingSession
-from .rtc_timeline import RtcTimeline
+from .rtc_timeline import POLICY_MODES, create_policy_timeline
 from .session import Session
 from .station import StationIO
-from .tda_buffer import TdaActionBuffer
 
 
 class MockPolicy:
@@ -67,6 +64,24 @@ class MockPolicy:
 
 
 RECORDING_SESSIONS = (RecordingSession, RemoteRecordingSession)
+
+HIL_SETTINGS = frozenset({
+    "action_dt", "action_timeout", "expected_policy_latency", "factory_zero_home",
+    "handover_error", "leader_gain", "leader_speed", "max_frame_age", "max_frame_skew",
+    "max_state_age", "mirror_error", "pld", "policy_fusion", "policy_joint_acceleration",
+    "policy_natural_frequency", "policy_trajectory_hz", "policy_trajectory_joint_speed",
+    "prefetch_margin", "replan_period", "request_timeout", "rtc_delay_steps",
+    "tick_timeout", "warn_frame_skew",
+})
+
+
+def validate_hil_keys(settings):
+    """Reject retired or misspelled settings before constructing any SDK owner."""
+    if not isinstance(settings, dict):
+        raise ValueError("hil 必须是配置对象")
+    unknown = set(settings) - HIL_SETTINGS
+    if unknown:
+        raise ValueError("未知或已移除的 hil 配置：" + ", ".join(sorted(unknown)))
 
 
 def station_can_channels(cfg) -> list[str]:
@@ -106,13 +121,13 @@ class Runtime:
         mode="hil",
         hz=30,
         action_dt=1 / 30,
-        streaming=True,
         prompt="pick and place",
         settings=None,
     ):
         self.io, self.cameras, self.worker, self.recorder = io, cameras, worker, recorder
         self.hz, self.prompt = hz, prompt
-        settings = settings or {}
+        settings = {} if settings is None else settings
+        validate_hil_keys(settings)
         self.rtc_delay_steps = settings.get("rtc_delay_steps", 9)
         if type(self.rtc_delay_steps) is not int or not 1 <= self.rtc_delay_steps <= 10:
             raise ValueError("RTC delay must be an integer from 1 to 10 policy ticks")
@@ -128,7 +143,6 @@ class Runtime:
         self.session = Session(
             Arbiter(
                 Mode(mode),
-                streaming=streaming,
                 action_dt=action_dt,
                 max_request_age=settings.get("request_timeout", 1.5),
                 max_action_age=settings.get("action_timeout", 1.5),
@@ -137,7 +151,7 @@ class Runtime:
                 replan_period=settings.get("replan_period", 0.2),
                 expected_policy_latency=settings.get("expected_policy_latency", 0.2),
                 prefetch_margin=settings.get("prefetch_margin", 2 / 30),
-                policy_fusion=settings.get("policy_fusion", "tda_smooth"),
+                policy_fusion=settings.get("policy_fusion", "sync_hold"),
                 external_planner=worker is not None and worker.planner is not None,
                 rtc_delay_steps=self.rtc_delay_steps,
             ),
@@ -178,8 +192,6 @@ class Runtime:
         self.recording_error = None
         self._record_started = None
         self.recording_allowed = True
-        if "parts" in settings:
-            raise ValueError("旧 RL/PARTS 配置已移除，请使用 PLD-Grasp 的 pld 配置")
         self.pld = PldClient(settings.get("pld"))
         self.session.pld = self.pld
         self._submitted_history = deque(maxlen=128)
@@ -264,8 +276,8 @@ class Runtime:
     def _plan_context(self):
         arbiter = self.session.arbiter
         return (
-            arbiter.action_buffer.fusion,
-            arbiter.action_buffer.snapshot(),
+            arbiter.policy_fusion,
+            None,
             arbiter.action_dt,
             arbiter.max_action_age,
         )
@@ -471,7 +483,7 @@ class Runtime:
                 "recording_mode": self.recording_mode,
                 "hil_input": a.hil_input if a.mode == Mode.HIL else None,
                 "rtc": a.rtc_timeline is not None,
-                "policy_fusion": a.action_buffer.fusion,
+                "policy_fusion": a.policy_fusion,
                 "streaming": a.streaming,
                 "action_dt": a.action_dt,
                 "rtc_delay_steps": a.rtc_timeline.delay_steps if a.rtc_timeline is not None else None,
@@ -500,9 +512,9 @@ class Runtime:
 
     def configure_policy(self, *, fusion: str, rtc_delay_steps: int | None = None):
         if self.pld.enabled and fusion != "rtc":
-            raise ValueError("请先将 PLD-Grasp 设为 off，再切换同步/TDA")
-        if fusion not in ("tda_smooth", "sync_hold", "rtc"):
-            raise ValueError("推理动作块模式需为同步推理、TDA 或 RTC")
+            raise ValueError("请先将 PLD-Grasp 设为 off，再切换同步推理")
+        if fusion not in POLICY_MODES:
+            raise ValueError("推理动作块模式需为同步推理或 RTC")
         if fusion == "rtc" and (
             getattr(self.io, "policy_trajectory_hz", 0) > 0
             or self.hz != 30 or abs(self.session.arbiter.action_dt - 1 / 30) > 1e-6
@@ -689,29 +701,10 @@ class Runtime:
                             self.handle_buttons.interaction_rules = candidate
                             self.operator_error = None
                         elif policy_command[0] == "configure":
-                            old_fusion = a.action_buffer.fusion
-                            a.streaming = policy_command[1] != "sync_hold"
-                            a.execute_steps = (
-                                50 if policy_command[1] == "sync_hold"
-                                else a.default_execute_steps
-                            )
-                            a.action_buffer = (
-                                PlannedActionBuffer(
-                                    a.action_dt, max_action_age=a.max_action_age,
-                                    fusion=policy_command[1],
-                                ) if a.external_planner else
-                                TdaActionBuffer(a.action_dt)
-                                if policy_command[1] == "tda_smooth"
-                                else ActionBuffer(a.action_dt, max_action_age=a.max_action_age)
-                            )
-                            if not a.streaming:
-                                a.action_buffer.fusion = "sync_hold"
-                            elif policy_command[1] == "rtc" and not a.external_planner:
-                                a.action_buffer.fusion = "rtc"
-                            a.rtc_timeline = (
-                                RtcTimeline(delay_steps=policy_command[2])
-                                if policy_command[1] == "rtc" else None
-                            )
+                            old_fusion = a.policy_fusion
+                            a.policy_fusion = policy_command[1]
+                            a.rtc_timeline = create_policy_timeline(
+                                policy_command[1], delay_steps=policy_command[2])
                             if policy_command[1] == "rtc":
                                 self.rtc_delay_steps = policy_command[2]
                             if (old_fusion == "rtc") != (policy_command[1] == "rtc"):
@@ -1080,7 +1073,7 @@ class Runtime:
                     "expert_valid": decision.source == "human" and snapshot is not None
                         and (a.hil_input != "keyboard" or a.mode != Mode.HIL or self.cartesian.applied is not None),
                     "policy_valid": decision.policy_valid,
-                    "policy_fusion": a.action_buffer.fusion,
+                    "policy_fusion": a.policy_fusion,
                     "policy_action": decision.policy_action,
                     "human_action": (decision.selected_action if a.mode == Mode.HIL
                         and a.hil_input == "keyboard" else leader) if decision.source == "human" else None,
@@ -1120,7 +1113,7 @@ class Runtime:
                         self.recorder.metadata.update({
                             "recording_mode": self.recording_mode,
                             "rtc": a.rtc_timeline is not None,
-                            "policy_fusion": a.action_buffer.fusion,
+                            "policy_fusion": a.policy_fusion,
                             "streaming": a.streaming,
                             "action_dt": a.action_dt,
                             "rtc_delay_steps": (
@@ -1174,7 +1167,6 @@ class Runtime:
                     self._record_started = None
                 policy_remaining = (
                     a.rtc_timeline.remaining(tick) if a.rtc_timeline is not None
-                    else a.action_buffer.remaining(now) if a.streaming
                     else max(0, len(a._chunk) - a._index) if a._chunk is not None else 0
                 )
                 self.status = {
@@ -1222,7 +1214,7 @@ class Runtime:
                     "mode": a.mode.value,
                     "phase": a.phase.value,
                     "source": decision.source,
-                    "policy_fusion": a.action_buffer.fusion,
+                    "policy_fusion": a.policy_fusion,
                     "policy_ready": self.worker.ready if self.worker else False,
                     "policy_error": self.session.policy_error,
                     "planner_ready": (
@@ -1243,18 +1235,13 @@ class Runtime:
                         bool(f and f.get("valid")) for f in
                         getattr(self.io, "gripper_feedback", [None, None])
                     ],
-                    "policy_tda_drop_max": getattr(a.action_buffer, "drop_max", None),
                     "policy_joint_speed_rad_s": (
                         self.io.policy_joint_speed
                         if getattr(self.io, "policy_trajectory_hz", 0) > 0 else None
                     ),
                     "policy_replan_period_s": a.replan_period,
                     "policy_buffer_remaining": policy_remaining,
-                    "policy_buffer_seconds": (
-                        policy_remaining * a.action_dt if a.rtc_timeline is not None
-                        else a.action_buffer.seconds_to_expiry(now) if a.streaming
-                        else policy_remaining * a.action_dt
-                    ),
+                    "policy_buffer_seconds": policy_remaining * a.action_dt,
                     "rtc_delay_steps": (
                         a.rtc_timeline.delay_steps if a.rtc_timeline is not None else None
                     ),
@@ -1277,8 +1264,6 @@ class Runtime:
                         and a.pending is not None
                     ),
                     "policy_action_index": decision.action_index,
-                    "policy_trimmed_steps": a.action_buffer.last_trimmed_steps,
-                    "policy_seam_max_rad": a.action_buffer.last_seam_max_rad,
                     "policy_constraint_active": bool(
                         np.any(constraint_mask[[0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]])
                     ),
@@ -1380,16 +1365,14 @@ def main(argv=None, *, service=None):
     p.add_argument("--url", help="Thor WebSocket URL on the local Ethernet link")
     p.add_argument("--output", type=Path)
     p.add_argument("--pld-config", type=Path, help="PLD-Grasp mode/identity JSON; default off")
-    p.add_argument("--raw-only", action="store_true", help="兼容旧命令；采集现在默认只保存原始数据")
     p.add_argument("--segment-seconds", type=float, default=60, help="采集文件分段时长，不拆逻辑集")
     p.add_argument("--min-free-gb", type=float, default=0.5, help="录制保留空间 GiB")
     p.add_argument("--duration", type=float)
     p.add_argument("--demo", action="store_true", help="mock only: automated takeover/resume")
-    p.add_argument("--baseline", action="store_true", help="ordinary non-prefetch baseline")
     p.add_argument(
         "--policy-fusion",
-        choices=("tda_smooth", "sync_hold", "rtc"),
-        help="ordinary policy chunk handling; trained RTC never uses TDA",
+        choices=POLICY_MODES,
+        help="full H50 synchronous execution or trained RTC",
     )
     p.add_argument("--action-dt", type=float, help="model action target spacing in seconds")
     p.add_argument(
@@ -1472,6 +1455,10 @@ def main(argv=None, *, service=None):
     cfg = build_station_config(args.station)
     validate_station(cfg, mock=args.mock, check_cameras=service is None)
     hil_cfg = load_yaml(args.station).get("hil", {})
+    try:
+        validate_hil_keys(hil_cfg)
+    except ValueError as exc:
+        p.error(str(exc))
     hil_cfg = dict(hil_cfg)
     if args.pld_config:
         hil_cfg["pld"] = json.loads(args.pld_config.read_text())
@@ -1489,10 +1476,8 @@ def main(argv=None, *, service=None):
     ):
         if option is not None:
             hil_cfg[key] = option
-    if args.baseline:
-        hil_cfg["policy_fusion"] = "sync_hold"
-    if hil_cfg.get("policy_fusion", "tda_smooth") not in ("tda_smooth", "sync_hold", "rtc"):
-        p.error("policy_fusion must be tda_smooth, sync_hold or rtc")
+    if hil_cfg.get("policy_fusion", "sync_hold") not in POLICY_MODES:
+        p.error("policy_fusion must be sync_hold or rtc")
     if hil_cfg.get("policy_fusion") == "rtc" and hil_cfg.get("policy_trajectory_hz", 0):
         p.error("RTC requires direct 30 Hz SDK target writes; disable 100 Hz trajectory")
     if hil_cfg.get("policy_fusion") == "rtc" and (
@@ -1500,8 +1485,6 @@ def main(argv=None, *, service=None):
     ):
         p.error("RTC requires the trained 30 Hz policy tick")
     for key, value in hil_cfg.items():
-        if key == "parts":
-            p.error("旧 RL/PARTS 配置已移除，请改用 --pld-config")
         if key == "pld":
             try:
                 config = PldConfig.from_dict(value)
@@ -1527,10 +1510,8 @@ def main(argv=None, *, service=None):
         if not isinstance(value, (float, int)) or not np.isfinite(value) or value <= 0:
             p.error(f"invalid hil setting: {key}")
     try:
-        if hil_cfg.get("policy_fusion", "tda_smooth") == "tda_smooth":
-            TdaActionBuffer(action_dt)
-        else:
-            ActionBuffer(action_dt)
+        create_policy_timeline(hil_cfg.get("policy_fusion", "sync_hold"),
+                               delay_steps=hil_cfg.get("rtc_delay_steps", 9))
     except ValueError as exc:
         p.error(str(exc))
     # Check before constructing cameras, motors, sockets or recording threads.
@@ -1559,7 +1540,7 @@ def main(argv=None, *, service=None):
                     "mock": args.mock,
                     "mode": args.mode,
                     "action_dt": action_dt,
-                    "policy_fusion": hil_cfg.get("policy_fusion", "tda_smooth"),
+                    "policy_fusion": hil_cfg.get("policy_fusion", "sync_hold"),
                     "pld_mode": hil_cfg.get("pld", {}).get("mode", "off"),
                     "factory_zero_home": bool(hil_cfg.get("factory_zero_home", False))
                     and not args.mock,
@@ -1586,9 +1567,9 @@ def main(argv=None, *, service=None):
             "station": dataclasses.asdict(cfg),
             "mock": args.mock,
             "rtc": hil_cfg.get("policy_fusion") == "rtc",
-            "streaming": not args.baseline and hil_cfg.get("policy_fusion") != "sync_hold",
+            "streaming": hil_cfg.get("policy_fusion", "sync_hold") != "sync_hold",
             "action_dt": action_dt,
-            "policy_fusion": hil_cfg.get("policy_fusion", "tda_smooth"),
+            "policy_fusion": hil_cfg.get("policy_fusion", "sync_hold"),
             "expected_policy_latency": hil_cfg.get("expected_policy_latency", 0.2),
             "prefetch_margin": hil_cfg.get("prefetch_margin", 2 / 30),
         },
@@ -1651,7 +1632,6 @@ def main(argv=None, *, service=None):
             mode=args.mode,
             hz=cfg.control_hz,
             action_dt=action_dt,
-            streaming=not args.baseline,
             prompt=cfg.task_name,
             settings=hil_cfg,
         )

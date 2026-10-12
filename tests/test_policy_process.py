@@ -110,7 +110,7 @@ def test_policy_settings_api_validates_and_forwards_without_motor_calls():
     headers = {"X-YAM-Control": "1"}
     with TestClient(create_app(owner)) as client:
         assert client.post("/policy/settings", headers=headers, json={
-            "fusion": "tda_smooth",
+            "fusion": "sync_hold",
         }).status_code == 200
         assert client.post("/policy/settings", headers=headers, json={
             "fusion": "rtc",
@@ -133,7 +133,7 @@ def test_policy_settings_api_validates_and_forwards_without_motor_calls():
         assert client.post("/policy/source", headers=headers,
                            json={"url": "ws://127.0.0.1:8002"}).status_code == 200
     assert configured == [
-        {"fusion": "tda_smooth"},
+        {"fusion": "sync_hold"},
         {"fusion": "rtc", "rtc_delay_steps": 9},
     ]
     assert reloaded == [True]

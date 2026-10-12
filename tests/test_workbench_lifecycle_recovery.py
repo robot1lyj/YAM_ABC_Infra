@@ -13,7 +13,7 @@ from yam_abc_reproduce.hil.workbench import Workbench
 def service(tmp_path):
     owner = Workbench.__new__(Workbench)
     owner.args = SimpleNamespace(
-        mock=True, station="unused.yaml", url=None, baseline=False, output=str(tmp_path)
+        mock=True, station="unused.yaml", url=None, output=str(tmp_path)
     )
     owner.mode = "collect"
     owner._lock = threading.Lock()

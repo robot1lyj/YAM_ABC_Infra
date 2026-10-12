@@ -144,8 +144,7 @@ def test_session_pause_resume_replays_next_unsubmitted_frame():
             self.reply = Reply(token, result["actions"], server_timing=result["server_timing"])
             return True
 
-    session = Session(Arbiter(Mode.INFERENCE, streaming=False, execute_steps=50,
-                              policy_fusion="sync_hold"), Worker())
+    session = Session(Arbiter(Mode.INFERENCE, policy_fusion="sync_hold"), Worker())
     q = np.zeros(14)
     def tick(n, event=None):
         nonlocal q
@@ -223,7 +222,7 @@ def test_replay_preserves_grippers_through_worker_and_real_planner_process():
     targets[:, 13] = 0.25
     q = targets[0].copy()
     arbiter = Arbiter(
-        Mode.INFERENCE, streaming=True, policy_fusion="sync_hold",
+        Mode.INFERENCE, policy_fusion="sync_hold",
         external_planner=True, max_request_age=3,
     )
     worker = PolicyWorker(ReplayPolicy(targets), planner=ProcessActionPlanner())

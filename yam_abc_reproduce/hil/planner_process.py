@@ -20,8 +20,8 @@ def build_plan(
     mode, token, actions, previous, now, action_dt, max_action_age, action_source="model",
 ):
     """Plan model chunks or already submitted replay targets without mixing their transforms."""
-    from .action_buffer import ActionBuffer, TimedChunk
-    from .tda_buffer import TdaActionBuffer
+    if mode != "sync_hold":
+        raise ValueError("unknown policy plan mode; RTC uses its own committed-tick queue")
 
     rows = np.asarray(actions, dtype=np.float64)
     if rows.shape != (50, 14) or not np.isfinite(rows).all():
@@ -32,41 +32,6 @@ def build_plan(
         raise ValueError("unknown planner action source")
     if action_source == "recorded_replay" and mode != "sync_hold":
         raise ValueError("recorded replay requires sync_hold")
-    origin = token.observed_at if token.observed_at is not None else token.created_at
-    if mode == "raw":
-        buffer = ActionBuffer(action_dt, max_action_age=max_action_age)
-        if previous is not None and previous["kind"] == "clock":
-            buffer.chunk = TimedChunk(
-                previous["token"], previous["origin"], previous["first_index"],
-                previous["actions"],
-            )
-        if not buffer.integrate(token, rows, origin, now):
-            raise ValueError("policy action horizon already expired")
-        return {
-            "kind": "clock", "origin": origin,
-            "first_index": buffer.chunk.first_index,
-            "actions": buffer.chunk.actions,
-            "trimmed_steps": buffer.last_trimmed_steps,
-            "seam_max_rad": buffer.last_seam_max_rad,
-            "seam_gripper_max": buffer.last_seam_gripper_max,
-        }
-    if mode == "tda_smooth":
-        buffer = TdaActionBuffer(action_dt)
-        if previous is not None and previous["kind"] == "queue":
-            buffer._queue = [row.copy() for row in previous["actions"]]
-            buffer._meta = list(previous["meta"])
-        if not buffer.integrate(token, rows, origin, now) or not buffer._queue:
-            raise ValueError("policy action queue is empty")
-        return {
-            "kind": "queue", "origin": origin, "first_index": 0,
-            "actions": _snap_close_grippers(np.stack(buffer._queue)),
-            "meta": buffer._meta,
-            "based_on_consumed": (
-                0 if previous is None else previous["consumed_total"]
-            ),
-            "trimmed_steps": buffer.last_trimmed_steps,
-            "seam_max_rad": buffer.last_seam_max_rad,
-        }
     if mode == "sync_hold":
         return {
             "kind": "queue", "origin": now, "first_index": 0,

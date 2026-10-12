@@ -746,8 +746,6 @@ class Workbench:
             argv.append("--mock")
         if self.args.url:
             argv.extend(("--url", self.args.url))
-        if self.args.baseline:
-            argv.append("--baseline")
         if getattr(self.args, "executor_socket", None):
             argv.extend(("--executor-socket", self.args.executor_socket))
         for option, value in (

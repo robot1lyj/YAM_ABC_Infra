@@ -427,7 +427,6 @@ def test_initialization_connect_does_not_require_collection_task(tmp_path, monke
             station=str(station),
             task_root=tmp_path / "tasks",
             output=None,
-            baseline=False,
             segment_seconds=60,
             min_free_gb=0.01,
         )

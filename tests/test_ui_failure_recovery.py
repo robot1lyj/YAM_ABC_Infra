@@ -187,7 +187,7 @@ def test_initialization_failure_allows_explicit_backend_retry(monkeypatch, tmp_p
 
     service = Workbench.__new__(Workbench)
     service.args = SimpleNamespace(
-        mock=True, station="unused.yaml", url=None, baseline=False, output=str(tmp_path)
+        mock=True, station="unused.yaml", url=None, output=str(tmp_path)
     )
     service.mode = "collect"
     service._lock = threading.Lock()

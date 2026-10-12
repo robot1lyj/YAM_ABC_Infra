@@ -16,13 +16,13 @@ def chunk(value):
     return rows
 
 
-@pytest.mark.parametrize("mode", ["tda_smooth", "sync_hold"])
+@pytest.mark.parametrize("mode", ["sync_hold"])
 def test_policy_plan_target_reaches_device_arbiter_without_feedback_slew(mode):
     q = np.zeros(14)
     rows = chunk(1.25)
     rows[:, 6] = 1.0
     arbiter = Arbiter(
-        Mode.INFERENCE, streaming=True, external_planner=True,
+        Mode.INFERENCE, external_planner=True,
         policy_fusion=mode, action_dt=0.1, max_action_age=3,
     )
     arbiter.start(q)
@@ -36,10 +36,10 @@ def test_policy_plan_target_reaches_device_arbiter_without_feedback_slew(mode):
     np.testing.assert_allclose(decision.action, expected)
 
 
-@pytest.mark.parametrize("mode", ["tda_smooth", "sync_hold"])
+@pytest.mark.parametrize("mode", ["sync_hold"])
 def test_inference_close_trick_only_changes_grippers_below_threshold(mode):
     arbiter = Arbiter(
-        Mode.INFERENCE, streaming=True, external_planner=True,
+        Mode.INFERENCE, external_planner=True,
         policy_fusion=mode, action_dt=0.1, max_action_age=3,
     )
     arbiter.start(np.zeros(14))
@@ -59,15 +59,14 @@ def test_planner_process_restart_keeps_device_arbiter_and_discards_old_plan():
     planner = ProcessActionPlanner()
     q = np.zeros(14)
     arbiter = Arbiter(
-        Mode.INFERENCE, streaming=True, external_planner=True,
-        action_dt=0.1, max_action_age=3,
-    )
+        Mode.INFERENCE, external_planner=True,
+        action_dt=0.1, max_action_age=3, policy_fusion="sync_hold")
     try:
         planner.restart()
         first_pid = planner._process.pid
         arbiter.start(q)
         token = arbiter.request(1, 1.0, 1.0)
-        plan = planner.plan("raw", token, chunk(0.1), None, 1.1, 0.1, 3)
+        plan = planner.plan("sync_hold", token, chunk(0.1), None, 1.1, 0.1, 3)
         assert arbiter.accept_plan(token, plan, 1.1)
         assert arbiter.step(q, q, now=1.1, dt=0.1, leader_ready=True).source == "policy"
         arbiter.hold(q)
@@ -78,46 +77,6 @@ def test_planner_process_restart_keeps_device_arbiter_and_discards_old_plan():
         assert arbiter.step(q, q, now=1.2, dt=0.1).source == "hold"
     finally:
         planner.close()
-
-
-def test_planner_raw_and_tda_match_existing_buffer_on_overlapping_chunks():
-    from yam_abc_reproduce.hil.action_buffer import ActionBuffer
-    from yam_abc_reproduce.hil.tda_buffer import TdaActionBuffer
-
-    for mode, reference in (
-        ("raw", ActionBuffer(0.1, max_action_age=3)),
-        ("tda_smooth", TdaActionBuffer(0.1)),
-    ):
-        arbiter = Arbiter(Mode.INFERENCE, streaming=True, external_planner=True,
-                          policy_fusion=mode, action_dt=0.1, max_action_age=3)
-        q = np.zeros(14)
-        arbiter.start(q)
-        first = arbiter.request(1, 1.0, 1.0)
-        assert reference.integrate(first, chunk(0.1), 1.0, 1.12)
-        plan = build_plan(mode, first, chunk(0.1), None, 1.12, 0.1, 3)
-        assert arbiter.accept_plan(first, plan, 1.12)
-        for now in (1.12, 1.22, 1.32):
-            actual = arbiter.action_buffer.current(now)
-            expected = reference.current(now)
-            assert actual is not None and expected is not None
-            if mode == "tda_smooth":
-                expected[0][[6, 13]] = 0.1
-            np.testing.assert_allclose(actual[0], expected[0])
-            assert actual[1] == expected[1]
-        second = arbiter.request(2, 1.35, 1.35)
-        assert second is not None
-        previous = arbiter.action_buffer.snapshot()
-        assert reference.integrate(second, chunk(0.4), 1.35, 1.48)
-        next_plan = build_plan(mode, second, chunk(0.4), previous, 1.48, 0.1, 3)
-        assert arbiter.accept_plan(second, next_plan, 1.48)
-        for now in (1.52, 1.62, 1.72):
-            actual = arbiter.action_buffer.current(now)
-            expected = reference.current(now)
-            assert actual is not None and expected is not None
-            if mode == "tda_smooth":
-                expected[0][[6, 13]] = 0.1
-            np.testing.assert_allclose(actual[0], expected[0])
-            assert actual[1] == expected[1]
 
 
 def test_slow_network_and_planner_never_block_device_ticks():
@@ -141,10 +100,10 @@ def test_slow_network_and_planner_never_block_device_ticks():
             pass
 
     worker = PolicyWorker(SlowThor(), planner=InProcessPlanner())
-    arbiter = Arbiter(Mode.INFERENCE, streaming=True, external_planner=True,
-                      action_dt=0.1, max_request_age=2, max_action_age=3)
+    arbiter = Arbiter(Mode.INFERENCE, external_planner=True,
+                      action_dt=0.1, max_request_age=2, max_action_age=3, policy_fusion="sync_hold")
     worker.plan_context = lambda: (
-        arbiter.action_buffer.fusion, arbiter.action_buffer.snapshot(), 0.1, 3,
+        arbiter.policy_fusion, None, 0.1, 3,
     )
     session = Session(arbiter, worker)
     q = np.zeros(14)
@@ -181,8 +140,7 @@ def test_slow_network_and_planner_never_block_device_ticks():
 
 def test_sync_hold_external_plan_executes_all_fifty_then_holds():
     q = np.zeros(14)
-    arbiter = Arbiter(Mode.INFERENCE, policy_fusion="sync_hold", streaming=True,
-                      external_planner=True, action_dt=1 / 30, max_action_age=1.5)
+    arbiter = Arbiter(Mode.INFERENCE, policy_fusion="sync_hold", external_planner=True, action_dt=1 / 30, max_action_age=1.5)
     arbiter.start(q)
     token = arbiter.request(1, 1.0, 1.0)
     plan = build_plan("sync_hold", token, chunk(0.1), None, 1.17, 1 / 30, 1.5)
@@ -199,11 +157,11 @@ def test_sync_hold_external_plan_executes_all_fifty_then_holds():
 
 def test_old_plan_rejected_after_takeover():
     q = np.zeros(14)
-    arbiter = Arbiter(Mode.HIL, streaming=True, external_planner=True,
-                      action_dt=0.1, max_action_age=3)
+    arbiter = Arbiter(Mode.HIL, external_planner=True,
+                      action_dt=0.1, max_action_age=3, policy_fusion="sync_hold")
     arbiter.start(q)
     token = arbiter.request(1, 1.0, 1.0)
-    plan = build_plan("raw", token, chunk(0.1), None, 1.1, 0.1, 3)
+    plan = build_plan("sync_hold", token, chunk(0.1), None, 1.1, 0.1, 3)
     arbiter.takeover(q, q)
     assert not arbiter.accept_plan(token, plan, 1.1)
 
@@ -224,20 +182,19 @@ def test_planner_loss_holds_without_waiting_for_network():
 
     planner = Planner()
     worker = PolicyWorker(Thor(), planner=planner)
-    arbiter = Arbiter(Mode.INFERENCE, external_planner=True, streaming=True,
-                      action_dt=0.1, max_action_age=3)
+    arbiter = Arbiter(Mode.INFERENCE, external_planner=True, action_dt=0.1, max_action_age=3, policy_fusion="sync_hold")
     session = Session(arbiter, worker)
     q = np.zeros(14)
     try:
         arbiter.start(q)
         token = arbiter.request(1, 1.0, 1.0)
-        plan = build_plan("raw", token, chunk(0.1), None, 1.1, 0.1, 3)
+        plan = build_plan("sync_hold", token, chunk(0.1), None, 1.1, 0.1, 3)
         assert arbiter.accept_plan(token, plan, 1.1)
         assert session.tick(q, q, now=1.2, dt=0.1, observation_id=2,
                             fresh=False, leader_ready=True).phase == Phase.HOLD
         arbiter.start(q)
         token = arbiter.request(3, 2.0, 2.0)
-        plan = build_plan("raw", token, chunk(0.1), None, 2.1, 0.1, 3)
+        plan = build_plan("sync_hold", token, chunk(0.1), None, 2.1, 0.1, 3)
         assert arbiter.accept_plan(token, plan, 2.1)
         planner.alive = False
         decision = session.tick(q, q, now=2.2, dt=0.1, observation_id=4,
@@ -245,28 +202,6 @@ def test_planner_loss_holds_without_waiting_for_network():
         assert decision.phase == Phase.HOLD and decision.source == "hold"
     finally:
         worker.close()
-
-
-def test_tda_plan_drops_targets_consumed_while_child_was_planning():
-    q = np.zeros(14)
-    arbiter = Arbiter(Mode.INFERENCE, streaming=True, external_planner=True,
-                      policy_fusion="tda_smooth", action_dt=0.1, max_action_age=3)
-    arbiter.start(q)
-    first = arbiter.request(1, 1.0, 1.0)
-    first_plan = build_plan("tda_smooth", first, chunk(0.1), None, 1.1, 0.1, 3)
-    assert arbiter.accept_plan(first, first_plan, 1.1)
-    for now in (1.1, 1.2):
-        assert arbiter.action_buffer.current(now) is not None
-    second = arbiter.request(2, 1.25, 1.25)
-    snapshot = arbiter.action_buffer.snapshot()
-    new_plan = build_plan("tda_smooth", second, chunk(0.4), snapshot, 1.35, 0.1, 3)
-    planned_before = new_plan["actions"].copy()
-    # The control loop continues to execute while the child prepares its reply.
-    for now in (1.3, 1.4):
-        assert arbiter.action_buffer.current(now) is not None
-    assert arbiter.accept_plan(second, new_plan, 1.45)
-    selected = arbiter.action_buffer.current(1.5)
-    np.testing.assert_allclose(selected[0], planned_before[2])
 
 
 def _delayed_planner_response(conn):
@@ -306,7 +241,7 @@ def test_planner_timeout_closes_old_pipe_before_explicit_restart():
         planner.close()
 
 
-@pytest.mark.parametrize("mode", ["raw", "tda_smooth", "sync_hold"])
+@pytest.mark.parametrize("mode", ["sync_hold"])
 @pytest.mark.parametrize("received_at", [1.1, 2.8, 4.0, 4.1])
 def test_local_and_process_plans_share_reply_deadlines(mode, received_at):
     """Transport placement must not change the selected algorithm's clock contract."""
@@ -314,7 +249,7 @@ def test_local_and_process_plans_share_reply_deadlines(mode, received_at):
     results = []
     for external in (False, True):
         arbiter = Arbiter(
-            Mode.INFERENCE, streaming=True, external_planner=external,
+            Mode.INFERENCE, external_planner=external,
             policy_fusion=mode, action_dt=1 / 30, max_request_age=3, max_action_age=3,
         )
         arbiter.start(q)
@@ -336,7 +271,7 @@ def test_local_and_process_plans_share_reply_deadlines(mode, received_at):
                     decision = arbiter.step(q, q, now=received_at + index / 30, dt=1 / 30)
                     assert decision.source == "policy" and decision.action_index == index
     assert results[0] == results[1]
-    deadline = {"raw": 1 + 50 / 30, "tda_smooth": 4.0, "sync_hold": 4.0}[mode]
+    deadline = 4.0
     expected = received_at <= deadline if mode == "sync_hold" else received_at < deadline
     assert results[0][0] is expected
 
@@ -397,3 +332,38 @@ def test_worker_failure_latches_readiness_until_its_boundary_restarts(failure):
         assert worker.ready and worker.restart_error is None
     finally:
         worker.close()
+
+
+@pytest.mark.parametrize("mode", ["raw", "ensemble", "naive_async", "sync", "tda_smooth"])
+def test_removed_modes_cannot_enter_core_or_planner(mode):
+    with pytest.raises(ValueError, match="policy fusion"):
+        Arbiter(Mode.INFERENCE, policy_fusion=mode)
+    with pytest.raises(ValueError, match="unknown policy plan mode"):
+        build_plan(mode, None, chunk(.2), None, 1, 1/30, 1.5)
+
+
+@pytest.mark.parametrize("mode", ["sync_hold", "rtc"])
+def test_one_explicit_mode_controls_streaming_and_full_sync_horizon(mode):
+    a = Arbiter(Mode.INFERENCE, policy_fusion=mode)
+    assert a.streaming is (mode != "sync_hold")
+    assert a.policy_fusion == mode
+    assert (a.rtc_timeline is not None) is (mode == "rtc")
+    assert a.execute_steps == 50
+    with pytest.raises(TypeError):
+        Arbiter(Mode.INFERENCE, policy_fusion=mode, streaming=False)
+
+
+@pytest.mark.parametrize("key", ["parts", "execute_steps", "streaming", "policy_spped"])
+def test_unknown_or_retired_hil_settings_fail_before_device_start(key):
+    from yam_abc_reproduce.hil.run import validate_hil_keys
+
+    with pytest.raises(ValueError, match="未知或已移除"):
+        validate_hil_keys({key: 1})
+
+
+@pytest.mark.parametrize("flag", ["--raw-only", "--baseline"])
+def test_retired_cli_aliases_are_not_silently_accepted(flag):
+    from yam_abc_reproduce.hil.run import main
+
+    with pytest.raises(SystemExit):
+        main(["--mock", "--check", flag])

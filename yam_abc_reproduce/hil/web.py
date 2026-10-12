@@ -132,7 +132,7 @@ class DeleteEpisode(BaseModel):
 
 class PolicySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    fusion: Literal["sync_hold", "tda_smooth", "rtc"]
+    fusion: Literal["sync_hold", "rtc"]
     rtc_delay_steps: int | None = Field(default=None, strict=True, ge=1, le=10)
 
 

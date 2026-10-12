@@ -415,7 +415,7 @@ def test_singular_jump_and_expired_solution_are_never_applied():
 def test_keyboard_takeover_invalidates_policy_and_never_aligns_or_reads_leader():
     q, leader = np.zeros(14), np.zeros(14)
     leader[:6] = .5
-    a = Arbiter(Mode.HIL, streaming=True)
+    a = Arbiter(Mode.HIL, policy_fusion="sync_hold")
     a.hil_input = "keyboard"
     a.start(q)
     old = a.request(1, 0)
@@ -471,7 +471,7 @@ def test_runtime_records_dual_arm_keyboard_actions_and_preserves_leaders(tmp_pat
     rec = Recorder(tmp_path / "keyboard")
     cams = [CameraWorker(MockCamera(r, r, width=32, height=32)) for r in ("top", "left", "right")]
     worker = PolicyWorker(MockPolicy(), auto_connect=True)
-    runtime = Runtime(io, cams, worker, rec, mode="hil", settings={"policy_fusion": "raw"})
+    runtime = Runtime(io, cams, worker, rec, mode="hil", settings={"policy_fusion": "sync_hold"})
     runtime.cartesian.factory = fake_kinematics
     runtime.cartesian.prepare()
     runtime.session.arbiter.hil_input = "keyboard"

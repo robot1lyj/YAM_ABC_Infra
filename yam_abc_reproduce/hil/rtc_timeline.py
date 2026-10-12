@@ -192,3 +192,13 @@ class RtcTimeline:
         return [dict(target_tick=tick, selection=copy.deepcopy(
                     self._owners.get(tick, self._submitted_owners.get(tick))))
                 for tick in range(observation_tick, observation_tick+delay_steps)]
+
+
+POLICY_MODES = ("sync_hold", "rtc")
+
+
+def create_policy_timeline(fusion, *, delay_steps=9):
+    """Only explicit full-block synchronous execution or native trained RTC."""
+    if fusion not in POLICY_MODES:
+        raise ValueError("policy fusion must be sync_hold or rtc")
+    return RtcTimeline(delay_steps=delay_steps) if fusion == "rtc" else None

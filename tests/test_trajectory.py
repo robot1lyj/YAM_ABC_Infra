@@ -6,6 +6,25 @@ import pytest
 from yam_abc_reproduce.hil.trajectory import JOINTS, TrajectoryExecutor, TrajectoryFilter
 
 
+def test_offline_filter_evaluates_recorded_selection_without_replanning(tmp_path):
+    import h5py
+
+    from scripts.evaluate_trajectory_filter import evaluate
+
+    path = tmp_path / "samples.h5"
+    target = np.zeros((10, 14))
+    target[3:, 0] = 0.2
+    with h5py.File(path, "w") as out:
+        out["time"] = np.arange(10, dtype=np.float64) / 30
+        out["selected_action"] = target
+        out["submitted_action"] = np.zeros((10, 14))
+    result = evaluate(path, hz=100, speed=3, acceleration=30, frequency=10)
+    assert result["input_rows"] == 10
+    assert result["output_samples"] == 31
+    assert result["absolute_target_lag_rad"]["p100"] > 0
+    assert result["absolute_joint_velocity_rad_s"]["p100"] <= 3 + 1e-10
+
+
 def test_trajectory_bounds_joint_velocity_and_acceleration():
     follower = TrajectoryFilter(
         np.zeros(14),

@@ -11,8 +11,8 @@ robot:
     # User override (2026-09-22): closed=6.9 rad; open retains each official sample minimum.
     # Closed exceeds measured contact extrema (~6.54); this is NOT a new calibration.
     # User-selected low-force trial: official stalled-contact soft target, NOT a peak torque cap.
-    - {type: yam_left, gripper: linear_4310, gripper_limits: [6.9, 1.2289234760051873], channel: can_left, gripper_force_limit_n: 10.0}
-    - {type: yam_right, gripper: linear_4310, gripper_limits: [6.9, 1.2434195468070488], channel: can_right, gripper_force_limit_n: 10.0}
+    - {type: yam_left, gripper: linear_4310, gripper_limits: [6.9, 1.2289234760051873], channel: can_left, gripper_force_limit_n: 3.0}
+    - {type: yam_right, gripper: linear_4310, gripper_limits: [6.9, 1.2434195468070488], channel: can_right, gripper_force_limit_n: 3.0}
   controllers:
     - {type: yam_lead_left, controls: yam_left, channel: can_lead_l}
     - {type: yam_lead_right, controls: yam_right, channel: can_lead_r}
@@ -29,7 +29,7 @@ hil:
   # Follower factory home is six zero arm joints, not encoder recalibration.
   # Leaders stay manual; retain both follower grippers.
   factory_zero_home: true
-  # Ordinary 10w checkpoint uses TDA; trained RTC is a separate protocol.
+  # Trained RTC keeps an explicit committed prefix; ordinary checkpoints use sync_hold.
   policy_fusion: rtc
   rtc_delay_steps: 9
   max_frame_age: 0.5
@@ -50,8 +50,7 @@ hil:
   handover_error: 0.2
   mirror_error: 0.5
   # Normal replanning cadence: execute about ten 30Hz targets between requests.
-  # The adaptive deadline may request earlier if the measured observation-to-ready
-  # p95 plus reserve approaches the end of the usable action plan.
+  # RTC keeps this request cadence; latency estimates below are diagnostics only.
   replan_period: 0.3333333333333333
   expected_policy_latency: 0.2 # seed for total round trip; replaced by accepted-reply p95
   prefetch_margin: 0.067 # two 30Hz control periods of reserve

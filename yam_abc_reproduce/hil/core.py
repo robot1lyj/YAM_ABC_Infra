@@ -14,10 +14,7 @@ from enum import StrEnum
 import numpy as np
 
 from . import interaction_rules
-from .action_buffer import ActionBuffer
-from .planned_buffer import PlannedActionBuffer
-from .rtc_timeline import RtcTimeline
-from .tda_buffer import TdaActionBuffer
+from .rtc_timeline import create_policy_timeline
 
 
 class Mode(StrEnum):
@@ -43,7 +40,7 @@ class Request:
     observation_id: int
     created_at: float  # controller monotonic seconds, never Thor wall time
     observed_at: float | None = None
-    queue_size_at_request: int | None = None  # TDA: unconsumed old actions at request time
+    queue_size_at_request: int | None = None  # Retained token field for historical recordings.
     observation_policy_tick: int | None = None
     rtc_delay_steps: int | None = None
 
@@ -78,7 +75,7 @@ def vector(value) -> np.ndarray:
 
 
 class Arbiter:
-    """Whole-station handover with baseline, TDA, or trained-RTC chunks.
+    """Whole-station handover with complete H50 synchronous or trained-RTC chunks.
 
     Startup is HOLD. start(), takeover() and resume_policy() are explicit local events. Every
     transition invalidates pending requests/chunks. A network worker must use
@@ -91,16 +88,14 @@ class Arbiter:
         self,
         mode: Mode,
         *,
-        execute_steps: int = 10,
         max_request_age: float = 0.5,
         max_action_age: float = 1.0,
         handover_error: float = 0.15,
         pickup_tolerance: float = 0.05,
-        streaming: bool = False,
         action_dt: float = 1 / 30,
         replan_period: float = 0.2,
         tick_timeout: float = 0.1,
-        policy_fusion: str = "raw",
+        policy_fusion: str = "sync_hold",
         expected_policy_latency: float = 0.2,
         prefetch_margin: float = 2 / 30,
         external_planner: bool = False,
@@ -117,13 +112,9 @@ class Arbiter:
             expected_policy_latency,
             prefetch_margin,
         )
-        if (
-            not isinstance(execute_steps, int)
-            or not 1 <= execute_steps <= 50
-            or not all(np.isfinite(v) and v > 0 for v in values)
-        ):
+        if not all(np.isfinite(v) and v > 0 for v in values):
             raise ValueError("invalid limits")
-        self.streaming = streaming and policy_fusion != "sync_hold"
+        self.policy_fusion = policy_fusion
         self.action_dt = action_dt
         self.replan_period = replan_period
         # The seed is a total IPC-to-Thor round-trip estimate, not model-only latency.
@@ -137,25 +128,10 @@ class Arbiter:
         self._last_request_at = -float("inf")
         self._active_request = None
         self.external_planner = external_planner
-        if policy_fusion not in ("raw", "tda_smooth", "sync_hold", "rtc"):
-            raise ValueError("policy fusion must be raw, tda_smooth, sync_hold or rtc")
-        self.rtc_timeline = (
-            RtcTimeline(delay_steps=rtc_delay_steps) if policy_fusion == "rtc" else None
-        )
-        self.action_buffer = (
-            PlannedActionBuffer(action_dt, max_action_age=max_action_age, fusion=policy_fusion)
-            if external_planner else
-            TdaActionBuffer(action_dt) if self.streaming and policy_fusion == "tda_smooth" else
-            ActionBuffer(action_dt, max_action_age=max_action_age)
-        )
-        if self.rtc_timeline is not None:
-            self.action_buffer.fusion = "rtc"
-        if not self.streaming:
-            self.action_buffer.fusion = "sync_hold"
+        self.rtc_timeline = create_policy_timeline(policy_fusion, delay_steps=rtc_delay_steps)
         self.mode = Mode(mode)
         self.phase = Phase.HOLD
-        self.default_execute_steps = execute_steps
-        self.execute_steps = 50 if policy_fusion == "sync_hold" else execute_steps
+        self.execute_steps = 50
         self.max_request_age = max_request_age
         self.max_action_age = max_action_age
         self.handover_error = handover_error
@@ -191,7 +167,6 @@ class Arbiter:
         self._chunk = None
         self._index = 0
         self._chunk_deadline = 0.0
-        self.action_buffer.clear()
         if self.rtc_timeline is not None:
             self.rtc_timeline.clear()
         self._hold = vector(state)
@@ -261,21 +236,16 @@ class Arbiter:
             raise ValueError("finite monotonic time required")
         if self.phase not in (Phase.POLICY, Phase.RESUME) or self.pending is not None:
             return None
-        if self.streaming:
-            horizon = self.action_buffer.seconds_to_expiry(now)
-            deadline_due = horizon <= self.policy_latency_budget
-            cadence_due = now - self._last_request_at >= self.replan_period
-            if not deadline_due and not cadence_due:
-                return None
-            self.last_request_reason = "deadline" if deadline_due else "freshness"
-        elif self._chunk is not None and self._index < len(self._chunk):
+        if self.rtc_timeline is not None:
+            raise RuntimeError("RTC requires request_rtc with explicit committed ticks")
+        if self._chunk is not None and self._index < len(self._chunk):
             return None
         self._serial += 1
         if observed_at is not None and (not np.isfinite(observed_at) or observed_at > now):
             raise ValueError("invalid observation time")
         self.pending = Request(
             self.epoch, self._serial, observation_id, now, observed_at,
-            self.action_buffer.remaining(now) if self.streaming else None,
+            None,
         )
         return self.pending
 
@@ -321,6 +291,10 @@ class Arbiter:
         return accepted
 
     @property
+    def streaming(self):
+        return self.rtc_timeline is not None
+
+    @property
     def observed_policy_rtt_p95(self) -> float | None:
         if not self._policy_rtts:
             return None
@@ -341,10 +315,7 @@ class Arbiter:
     def _reply_timing(self, token: Request, now: float) -> tuple[float, float] | None:
         """One epoch/time gate for local, process-planned and RTC replies.
 
-        Raw targets are indexed on the observation clock, so their 50-step
-        horizon is also a deadline. TDA consumes a queue and drops the prefix
-        using the number of executed targets; only the configured observation
-        age bounds that queue. Sync executes its full block after receipt. RTC
+        Sync executes its full block after receipt. RTC
         checks its committed tick deadline in RtcTimeline.install().
         """
         if token != self.pending or token.epoch != self.epoch:
@@ -356,11 +327,6 @@ class Arbiter:
             np.isfinite(age) and 0 <= age <= self.max_request_age
             and np.isfinite(observation_age) and observation_age >= 0
         )
-        if self.streaming and self.rtc_timeline is None:
-            deadline = self.max_action_age
-            if self.action_buffer.fusion == "raw":
-                deadline = min(deadline, 50 * self.action_dt)
-            valid = valid and observation_age < deadline
         if not valid:
             self._transition(Phase.HOLD, self._hold)
             return None
@@ -372,13 +338,14 @@ class Arbiter:
         self._active_request = token
         self._origin_time = origin
         self._index = 0
-        if not self.streaming:
-            # A synchronous block's wall-clock budget starts with its reply,
-            # not its observation. It must fit the complete ordered block.
+        if self.rtc_timeline is None:
+            # Sync H50 starts its execution budget after the bounded reply arrives.
             self._chunk_deadline = now + (len(self._chunk) + 1) * self.action_dt
         self.pending = None
 
     def accept(self, token: Request, actions, now: float) -> bool:
+        if self.rtc_timeline is not None:
+            raise RuntimeError("RTC requires accept_rtc")
         if self.external_planner:
             raise RuntimeError("external planner requires accept_plan")
         timing = self._reply_timing(token, now)
@@ -396,15 +363,14 @@ class Arbiter:
         rows[:, [6, 13]] = np.clip(rows[:, [6, 13]], 0.0, 1.0)
         for row in rows:
             vector(row)
-        if self.streaming and not self.action_buffer.integrate(token, rows, origin, now):
-            self._transition(Phase.HOLD, self._hold)
-            return False
-        self._chunk = None if self.streaming else rows[: self.execute_steps].copy()
+        self._chunk = rows.copy()
         self._accepted_reply(token, now, age, origin)
         return True
 
     def accept_plan(self, token: Request, plan: dict, now: float) -> bool:
         """Install an asynchronously prepared plan after rechecking device epoch/time."""
+        if self.rtc_timeline is not None:
+            raise RuntimeError("RTC requires accept_rtc")
         if not self.external_planner:
             raise RuntimeError("external planner is not enabled")
         timing = self._reply_timing(token, now)
@@ -414,11 +380,7 @@ class Arbiter:
         rows = np.asarray(plan["actions"])
         if rows.ndim != 2 or rows.shape[1] != 14 or not 1 <= len(rows) <= 100:
             raise ValueError("planner returned invalid action count")
-        expected_kind = "clock" if self.action_buffer.fusion == "raw" else "queue"
-        if plan["kind"] != expected_kind or (
-            self.action_buffer.fusion == "raw" and
-            abs(float(plan["origin"]) - origin) > 1e-6
-        ):
+        if plan["kind"] != "queue":
             raise ValueError("planner returned an incompatible timeline")
         if plan["kind"] == "queue":
             meta = plan.get("meta")
@@ -431,19 +393,11 @@ class Arbiter:
                 for source, index in meta
             ):
                 raise ValueError("planner returned invalid action provenance")
-        if self.streaming:
-            if not self.action_buffer.install(plan, token) or (
-                self.action_buffer.remaining(now) == 0
-            ):
-                self._transition(Phase.HOLD, self._hold)
-                return False
-            self._chunk = None
-        else:
-            rows = np.asarray(plan["actions"], dtype=np.float64)
-            if rows.shape != (50, 14) or not np.isfinite(rows).all():
-                raise ValueError("synchronous plan must be finite (50,14)")
-            self._chunk = rows.copy()
-            self._chunk[:, [6, 13]] = np.clip(self._chunk[:, [6, 13]], 0.0, 1.0)
+        rows = np.asarray(plan["actions"], dtype=np.float64)
+        if rows.shape != (50, 14) or not np.isfinite(rows).all():
+            raise ValueError("synchronous plan must be finite (50,14)")
+        self._chunk = rows.copy()
+        self._chunk[:, [6, 13]] = np.clip(self._chunk[:, [6, 13]], 0.0, 1.0)
         self._accepted_reply(token, now, age, origin)
         return True
 
@@ -509,36 +463,17 @@ class Arbiter:
                     source = "policy"
                     self.phase = Phase.POLICY
                     action_index = policy_tick
-        elif self.phase in (Phase.RESUME, Phase.POLICY) and (
-            (self.action_buffer.chunk is not None) if self.streaming else (self._chunk is not None)
-        ):
-            if (
-                (self.streaming and now - self._origin_time > self.max_action_age)
-                or (
-                    not self.streaming and self._index < len(self._chunk)
-                    and now > self._chunk_deadline
-                )
-            ):
+        elif self.phase in (Phase.RESUME, Phase.POLICY) and self._chunk is not None:
+            if self._index < len(self._chunk) and now > self._chunk_deadline:
                 self._transition(Phase.HOLD, q)
                 selected = q.copy()
-            else:
-                current = self.action_buffer.current(now) if self.streaming else None
-                if self.streaming and current is None:
-                    self._transition(Phase.HOLD, q)
-                    selected = q.copy()
-                    current = None
-                if self.streaming:
-                    if current is not None:
-                        policy, action_index, token = current
-                        self._active_request = token
-                elif self._index < len(self._chunk):
-                    action_index = self._index
-                    policy = self._chunk[self._index].copy()
-                    self._index += 1
-                if policy is not None:
-                    selected = policy.copy()
-                    source = "policy"
-                    self.phase = Phase.POLICY
+            elif self._index < len(self._chunk):
+                action_index = self._index
+                policy = self._chunk[self._index].copy()
+                self._index += 1
+                selected = policy.copy()
+                source = "policy"
+                self.phase = Phase.POLICY
         # Preserve the selected policy/manual target. Hardware joint limits and
         # gripper semantic bounds are applied at their respective interfaces.
         action = selected.copy()
@@ -557,8 +492,10 @@ class Arbiter:
             self._active_request if policy is not None else None,
             action_index,
             self._leader_frozen is not None,
-            (self.rtc_timeline.last_selection if self.rtc_timeline is not None
-             else self.action_buffer.last_selection) if policy is not None and self.streaming else None,
+            (self.rtc_timeline.last_selection if self.rtc_timeline is not None else {
+                "fusion": "sync_hold", "request": vars(self._active_request),
+                "model_index": action_index, "target_tick": policy_tick,
+            }) if policy is not None else None,
             self._leader_frozen.copy() if self._leader_frozen is not None else None,
             self.mode == Mode.HIL and self.hil_input == "keyboard",
         )

@@ -71,17 +71,17 @@ shadow/probe 顶层 actions 必须与回复 base 完全相同；核对身份、�
 
 **30 Hz RTC 直达路径没有独立的每 tick 目标增量/速度上限。** 状态报告 `max_target_step=null,target_slew_limited=false`。仅由位置范围推得的极端相邻目标差，每臂为 [6.05958,3.96519,3.44159,3.56377,3.44160,4.48880,0.96]；这不是推荐的安全步长。备用 100 Hz 二阶路径的 3 rad/s 不在当前 RTC 路径生效，不能回报为 0.1 rad/tick。Thor 正式合同需要正数 max_target_step，须双方明确设置专家边界，不得凭空把它说成客户端已有限制。
 
-submitted_action/previous_command 表示归一化 SDK 入口目标，不是 SDK 内部软限力后电机 PD 最终目标，也不是反馈。两侧现有 10 N 官方受阻软限力保留；它不保证接触瞬间峰值。没有关闭硬限位或底层保护，见 [硬件](hardware.md#夹爪受阻软限力)。
+submitted_action/previous_command 表示归一化 SDK 入口目标，不是 SDK 内部软限力后电机 PD 最终目标，也不是反馈。本站仓库配置改为两侧3 N官方受阻软限力，现场生效状态另查验收；它不保证接触瞬间峰值。没有关闭硬限位或底层保护，见 [硬件](hardware.md#夹爪受阻软限力)。
 
 ## 接口、检查和部署
 
 - `POST /pld/settings`：mode，以及可选 run_id/contract_sha256/snapshot_sha256。
 - `POST /pld/evaluation`：episode_id/correct/total，0≤C≤N 且 N>0，只记整轮评估。
 - 旧 `/parts/grasp`、`--parts-config`、`hil.parts` 已移除；旧启动参数须显式迁移，不能带着旧 RL 同时运行。
-- 新 CLI：`--pld-config configs/pld_client.json`。non-off 仅支持训练式 RTC、30 Hz 直达 SDK；不启用 TDA 或本站 100 Hz 二阶。
+- 新 CLI：`--pld-config configs/pld_client.json`。non-off 仅支持训练式 RTC、30 Hz 直达 SDK；TDA已移除，不启用本站100 Hz二阶。
 
 离线测试覆盖原 token、真正上一提交目标、五模式、probe-only 能力、缺专家/错身份、未知字段、取消/拒收、真实子进程 WebSocket、原 UUID/HDF5/视频/晚到审计和 mock Runtime。mock 结果不等于硬件复验成功，也不代表现在状态。
 
-上线须按 [部署边界](deploy.md) 核对当前 unit/drop-in（移除旧 --parts-config，换成新配置），集中部署一次；本轮没有获准重启设备或执行运动。双方先两轮 probe，核对三路视频/有效位、原输入与 token、完整 trace、前缀来源、提交值、取消与误介入；再 shadow 测全链路尾延迟。正式 actor/物理合同确认后才由用户开启 collect。不得从诊断 probe 推导修正效果或训练就绪。
+上线须按 [部署边界](deploy.md) 核对当前 unit/drop-in（移除旧 --parts-config，换成新配置），集中部署一次；用户已确认支撑并授权本次重启，不授权自动连接或运动。双方先两轮 probe，核对三路视频/有效位、原输入与 token、完整 trace、前缀来源、提交值、取消与误介入；正式 actor 加载并支持 shadow 后再测全链路尾延迟。正式 actor/物理合同确认后才由用户开启 collect。不得从诊断 probe 推导修正效果或训练就绪。
 
 服务端依据：用户提供的 condapi `docs/reports/rl/pld-sac-block-v2/README.md`、`packages/pld-rl/src/yam_pld_rl/{runtime,probe_runtime}.py`，本轮只读，未修改或部署 Thor。

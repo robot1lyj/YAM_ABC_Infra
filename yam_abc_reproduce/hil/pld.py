@@ -81,7 +81,7 @@ class PldClient:
             return
         try:
             if not rtc:
-                raise ValueError("PLD-Grasp 仅使用原生 RTC 队列，不支持同步/TDA执行")
+                raise ValueError("PLD-Grasp 仅使用原生 RTC 队列，不支持同步执行")
             identity = handshake(metadata, self.config.mode)
             expected = {key: getattr(self.config, key) for key in identity}
             if any(value is not None and value != identity[key] for key, value in expected.items()):

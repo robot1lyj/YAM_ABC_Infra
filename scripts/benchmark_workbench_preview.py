@@ -21,8 +21,6 @@ def measure(root, enabled, duration):
             station="configs/station_hil.yaml",
             output=root,
             task_root=root / ("tasks-preview-on" if enabled else "tasks-preview-off"),
-            baseline=False,
-            raw_only=True,
         )
     )
     service.preview_enabled = enabled

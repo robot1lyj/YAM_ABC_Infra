@@ -96,7 +96,7 @@ def test_handback_locks_until_explicit_resume_and_reload_preserves_state():
 
 
 def test_replay_refusal_holds_without_fault_or_consumption():
-    a = Arbiter(Mode.HIL, streaming=False)
+    a = Arbiter(Mode.HIL, )
     q = np.zeros(14)
     a.start(q)
     token = a.request(1, 0)

@@ -151,7 +151,7 @@ def test_patched_sdk_force_validation_and_gripper_only_forwarding_before_can(mon
     assert built[0]["limit_gripper_force"] == 30
 
 
-@pytest.mark.parametrize("force_n", [10, 20, 50])
+@pytest.mark.parametrize("force_n", [3, 10, 20, 50])
 def test_official_limiter_force_conversion_and_opening_release(force_n):
     from i2rt.robots.utils import ArmType, GripperForceLimiter, GripperType
 
@@ -176,11 +176,48 @@ def test_official_limiter_does_not_claim_to_cap_fast_or_precontact_commands():
     assert limiter.update(state) == 6.9  # Not stalled: no false hard-limit guarantee.
 
 
-def test_station_selects_ten_newtons_without_changing_calibration():
+def test_station_selects_three_newtons_without_changing_calibration():
     from pathlib import Path
 
     cfg = build_station_config(Path(__file__).resolve().parents[1] / "configs/station_hil.yaml")
     left, right = cfg.robot.robots
-    assert left.gripper_force_limit_n == right.gripper_force_limit_n == 10.0
+    assert left.gripper_force_limit_n == right.gripper_force_limit_n == 3.0
     assert left.gripper_limits == [6.9, 1.2289234760051873]
     assert right.gripper_limits == [6.9, 1.2434195468070488]
+
+
+@pytest.mark.parametrize("section,key", [("follower", "gripper_force_limit"),
+    ("robot", "leader_griper_type"), ("station", "control_hzz")])
+def test_hardware_config_typos_cannot_silently_restore_force_defaults(tmp_path, section, key):
+    value = {"robot": {"robots": [{"type": "yam_left", "gripper_force_limit_n": 3}]}}
+    target = value["robot"]["robots"][0] if section == "follower" else value["robot"] if section == "robot" else value
+    target[key] = 3
+    path = tmp_path / "typo.yaml"
+    path.write_text(yaml.safe_dump(value))
+    with pytest.raises(ValueError, match="未知配置字段"):
+        build_station_config(path)
+
+
+@pytest.mark.parametrize("controllers", [[], [
+    dict(type="yam_lead_left", controls="yam_right")], [
+    dict(type="yam_lead_left", controls="yam_left"),
+    dict(type="yam_lead_right", controls="yam_left")]])
+def test_missing_or_ambiguous_leader_binding_cannot_fall_back_to_first_arm(controllers):
+    from yam_abc_reproduce.config import ControllerConfig
+
+    config = RobotConfig(controllers=[ControllerConfig(**c) for c in controllers])
+    with pytest.raises(ValueError, match="只能绑定一个 Leader"):
+        config.controller_for(RobotUnitConfig("yam_left"))
+
+
+def test_three_newtons_changes_stalled_target_not_first_contact_detection():
+    from i2rt.robots.utils import ArmType, GripperForceLimiter, GripperType
+
+    contact = dict(target_qpos=6.9, current_qpos=4., current_qvel=0., current_eff=.1,
+                   current_normalized_qpos=.5, target_normalized_qpos=.1, last_command_qpos=4.04)
+    for force_n in (3, 10):
+        limiter = GripperForceLimiter(force_n, GripperType.LINEAR_4310, ArmType.YAM, kp=20.)
+        assert limiter.update(contact) == 6.9  # Not yet detected as stalled.
+        assert limiter.compute_target_gripper_torque(contact) is None
+        assert limiter.update({**contact, "current_eff": 2.0}) < 6.9
+        assert limiter.compute_target_gripper_torque(contact) == pytest.approx(force_n*.096/6.57 + .3)

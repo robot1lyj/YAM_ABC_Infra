@@ -167,15 +167,6 @@ class Session:
                                 reply.token, int(timing["replay_start_frame"]),
                                 int(timing["replay_source_frames"]),
                             )
-                        if accepted and self.arbiter.action_buffer.fusion == "raw":
-                            buffer = self.arbiter.action_buffer
-                            self.last_reply["trimmed_steps"] = buffer.last_trimmed_steps
-                            self.last_reply["new_vs_old_target_joint_max_rad"] = (
-                                buffer.last_seam_max_rad
-                            )
-                            self.last_reply["new_vs_old_target_gripper_max"] = (
-                                buffer.last_seam_gripper_max
-                            )
                     except (ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
                         self.last_reply["discarded"] = True
                         reason = f"invalid policy response: {exc}"

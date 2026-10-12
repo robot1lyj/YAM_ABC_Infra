@@ -164,7 +164,7 @@ def test_writer_can_delete_latest_from_a_previous_closed_session(tmp_path, sessi
 def test_connected_delete_uses_barrier_without_reconnecting_devices(tmp_path):
     service = Workbench(SimpleNamespace(mode="collect", mock=True, url=None,
         station="configs/station_hil.yaml", output=tmp_path / "episodes",
-        task_root=tmp_path / "tasks", baseline=False, raw_only=True))
+        task_root=tmp_path / "tasks"))
     service.preview_enabled = False
 
     def check(predicate):

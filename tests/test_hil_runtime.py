@@ -55,34 +55,6 @@ def test_leader_home_uses_native_gain_without_changing_manual_or_hold():
         io.close()
 
 
-def test_async_chunks_align_to_observation_time_and_replan_during_execution():
-    q = np.zeros(14)
-    a = Arbiter(Mode.HIL, streaming=True, action_dt=0.1, max_action_age=5)
-    a.start(q)
-    t = a.request(1, 0.1, observed_at=0)
-    rows = np.zeros((50, 14))
-    rows[:, 0] = np.arange(50) * 0.01
-    assert a.accept(t, rows, 0.21)
-    d = a.step(q, q, now=0.21, dt=0.03, leader_ready=True)
-    assert d.action_index == 2 and d.policy_action[0] == 0.02
-    assert a.request(2, 0.3, observed_at=0.29) is not None
-    a.takeover(q, q)
-    assert a.pending is None and a.phase == Phase.TAKEOVER
-
-
-def test_model_interval_does_not_accelerate_with_control_ticks():
-    q = np.zeros(14)
-    a = Arbiter(Mode.INFERENCE, streaming=True, action_dt=0.1)
-    a.start(q)
-    t = a.request(1, 0)
-    a.accept(t, np.zeros((50, 14)), 0.01)
-    indices = [
-        a.step(q, q, now=n, dt=0.02, leader_ready=True).action_index
-        for n in (0.02, 0.04, 0.06, 0.12)
-    ]
-    assert indices == [0, 0, 0, 1]
-
-
 def test_mode_switch_rejects_old_reply_and_stays_held():
     q = np.zeros(14)
     a = Arbiter(Mode.HIL)
@@ -177,7 +149,7 @@ def test_recording_backpressure_is_explicit(tmp_path, monkeypatch):
     assert json.loads((r.path / "manifest.json").read_text())["outcome"] == "aborted"
 
 
-@pytest.mark.parametrize("fusion", ["raw", "rtc"])
+@pytest.mark.parametrize("fusion", ["sync_hold", "rtc"])
 def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path, fusion):
     cfg = StationConfig()
     io = StationIO(build_arm_units(cfg, mock=True), mock=True,
@@ -187,7 +159,7 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path, fusion):
         for role in ("top", "left", "right")
     ]
     rec = (RecordingSession(tmp_path / "session", mode="hil",
-                            metadata={"rtc": False, "policy_fusion": "tda_smooth"})
+                            metadata={"rtc": False, "policy_fusion": "sync_hold"})
            if fusion == "rtc" else Recorder(tmp_path / "episode"))
     worker = PolicyWorker(MockPolicy())
     try:
@@ -239,7 +211,7 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path, fusion):
             rec.close("aborted")
 
 
-@pytest.mark.parametrize("fusion", ("tda_smooth", "sync_hold"))
+@pytest.mark.parametrize("fusion", ("sync_hold", "rtc"))
 def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path, fusion):
     cfg = StationConfig()
     io = StationIO(build_arm_units(cfg, mock=True), mock=True)
@@ -247,23 +219,23 @@ def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path, 
     worker = PolicyWorker(MockPolicy())
     cameras = [CameraWorker(MockCamera(role, role, width=32, height=32))
                for role in ("top", "left", "right")]
-    runtime = Runtime(io, cameras, worker, recorder, mode="inference", settings={"policy_fusion": "raw"})
+    runtime = Runtime(io, cameras, worker, recorder, mode="inference", settings={"policy_fusion": "sync_hold"})
     try:
         for camera in cameras:
             camera.start()
         old_epoch = runtime.session.arbiter.epoch
         runtime.configure_policy(fusion=fusion)
-        with pytest.raises(ValueError, match="同步推理、TDA 或 RTC"):
+        with pytest.raises(ValueError, match="同步推理或 RTC"):
             runtime.configure_policy(fusion="smooth")
         result = runtime.run(duration=0.15)
         assert result["policy_fusion"] == fusion
-        assert result["policy_tda_drop_max"] == (25 if fusion == "tda_smooth" else None)
+        assert "policy_tda_drop_max" not in result
         assert result["policy_trajectory_mode"] == "second_order"
         assert runtime.session.arbiter.epoch > old_epoch
         runtime.status["phase"] = "policy"
         with pytest.raises(ValueError, match="暂停"):
             runtime.configure_policy(
-                fusion="sync_hold" if fusion == "tda_smooth" else "tda_smooth"
+                fusion="rtc" if fusion == "sync_hold" else "sync_hold"
             )
     finally:
         for camera in cameras:

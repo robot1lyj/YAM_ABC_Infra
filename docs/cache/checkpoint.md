@@ -2,5 +2,5 @@
 
 - 架构与健康检查`50ed746`已部署IPC，部署未自动连接/运动；现场状态实时查询。831项验证归[验收](../acceptance.md)，职责归[架构](../dagger_architecture.md)。SDK/力矩不改，未迁移executor。
 - 左Follower J6未跟随且红灯；USB重插后一次重连因CAN未UP失败，硬件根因未明，不连续重试。新健康门禁/10°持续1秒且位移小于1°的告警归[手册](../hil_quickstart.md#开始前与运行中的设备检查)。静止检查不证明运动恢复，历史许可不授权新动作。
-- RTC/PLD与C/N归[PLD](../pld_client.md)；面板经USB→Thor直连IPC，入口归[环境](../environment.md#ipc连接与地址)。旧记录不代表现在状态；离线通过不等于硬件复验成功。
+- RTC/PLD与C/N归[PLD](../pld_client.md)；动态地址与恢复边界归[环境](../environment.md#ipc连接与地址)，USB仅排障备用。旧记录不代表现在状态；离线通过不等于硬件复验成功。
 - 两侧3 N、行程映射及接触峰值边界归[硬件](../hardware.md#夹爪受阻软限力)。后续开发继续隔离，不在正式源码上边改边运行。

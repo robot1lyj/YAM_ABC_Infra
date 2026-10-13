@@ -2,15 +2,17 @@
 
 最近部署核对：2026-10-13。这里区分现场运行状态与带日期的历史测试；旧失败和测量归 [历史验收快照](archive/acceptance_20260922.md) 及原始证据，不把旧“最新一集”当成现在。
 
-## Follower默认连接、Leader独立启停（2026-10-13，本地完成，未部署IPC）
+## Follower默认连接、Leader独立启停（2026-10-13，已部署IPC，运动待现场验收）
 
 所有日常GUI模式默认复用`build_arm_units(followers_only=True)`，只打开两台Follower；DAgger/HIL、遥操作和采集提供独立Leader按钮。启停需HOLD、无介入/维护且保存完成，并明确确认支撑。后台线程只构造/关闭Leader，部分失败保留诊断及未关闭owner；控制tick仅在读取新反馈前接入，禁止拿连接前占位反馈下发新Leader。Follower SDK对象及其CAN不重建、不失能，连接期间仍执行HOLD。模式切换不要求整机重连，不暗中启停Leader；普通推理不能启用Leader，已启用则保持自身位置并可单独停用。
 
 任何模式未启用Leader时`leader_state=null`、HDF5有效位false、原四槽SDK年龄的Leader槽null；按帧记录`leaders_connected`及生命周期状态。回Follower准备位不等待未启用Leader。遥操作/采集启动及Leader介入要求已启用Leader，键盘HIL不要求；HIL策略镜像、人工绝对映射、Follower目标、RTC前缀和3 N配置均未改。已启用但未使用的Leader保持自身位置，不再因不镜像而进入零增益补偿。无页面CLI可显式`--enable-leaders`，初始化向导保留四臂；可选旧执行器仍固定四臂、不支持独立启停。
 
-独立8899模拟页面验证了默认两台Follower、启用Leader、切普通推理、独立停用Leader及Follower持续连接，未访问正式控制接口。IPC仍使用之前的代码，本轮未部署、未重启或改变真机增益；首次应用需在保存完成、机械臂支撑并获当次许可后安排设备服务更新。运行中硬件故障仍按既有安全暂停处理，不承诺所有故障无重连恢复。
+独立8899模拟页面验证了默认两台Follower、启用Leader、切普通推理、独立停用Leader及Follower持续连接。用户随后授权上线/重启并确认四臂支撑、夹爪未持物、行程清空且有人照看；16:23:59部署源码`4ff5939`的28个文件，逐个Git blob校验一致。IPC仍为`76b6834`基线加增量，不将其Git HEAD冒充发布版本。备份`/data/YAM/data/deployment_backups/leader-lifecycle.x4cqfs/`含before/release包、原unit、配置/SDK校验值和隔离测试记录；站点、相机、PLD配置及三项SDK文件前后相同，未覆盖现场标定/3 N参数。
 
-最终全套850 passed、4 skipped、21 subtests通过；Ruff、JavaScript语法、文档链接/预算及diff检查通过。回归覆盖Follower-only工厂/CAN/反馈/回位、独立启停/重启用、构造与关闭失败、迟到取消、原生增益自身姿态保持、慢构造不阻塞控制tick、排队事件复查、接入读取时序和Web/Unix接口一致。RTC与PLD probe录制回读保留动作来源和前缀断言。使用隔离工作树及其已安装安全补丁的SDK（`PYTHONPATH=.:third_party/i2rt`），未修改SDK或物理标定。结果不代替真机运动验收。
+device/Web各受控停启一次：PID520684/520685→536856/536857，active且NRestarts=0；四CAN DOWN、机械臂/相机disconnected、无自动连接或运动。本机面板隧道未重启，正式页面已刷新并恢复原PLD第一轮collect任务与普通推理模式；任务数据集仍13集/51086帧，未改录制原件。真实配置只读检查确认Follower-only、RTC与probe配置；它不验证现场跟随或夹持。独立Leader按钮已在正式DOM确认；真机启用/停用及Follower持续保持由操作员下一步验收，未替用户点击。运行中硬件故障仍按既有安全暂停处理，不承诺所有故障无重连恢复。
+
+最终本地全套850 passed、4 skipped、21 subtests通过；IPC隔离候选251 passed、3 skipped（Node页面项本地已测）。Ruff、JavaScript语法、文档链接/预算及diff检查通过。回归覆盖Follower-only工厂/CAN/反馈/回位、独立启停/重启用、构造与关闭失败、迟到取消、原生增益自身姿态保持、慢构造不阻塞控制tick、排队事件复查、接入读取时序和Web/Unix接口一致。RTC与PLD probe录制回读保留动作来源和前缀断言。使用隔离工作树及其已安装安全补丁的SDK（`PYTHONPATH=.:third_party/i2rt`），未修改SDK或物理标定。结果不代替真机运动验收。
 
 新路径RTC模拟负载：195 ms模型、30 Hz、每组8秒，无视频/有录制/录制加预览的控制耗时P95为1.77/1.72/1.77 ms，均无控制超期；两组录制各251帧，三路视频逐路对齐，累计484个策略tick原输出与提交关节最大差0。来源`scripts/benchmark_workbench_preview.py`与本地`output/performance/independent-leaders.json`。仅为开发机短时mock，不能外推RK3588/CAN实机性能或声称与上次不同机器负载形成严格A/B。
 

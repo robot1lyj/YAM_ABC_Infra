@@ -272,6 +272,13 @@ class Workbench:
         live = dict(runtime.status) if runtime else {}
         updated = live.get("updated_at")
         age = None if updated is None else max(0, time.monotonic() - updated)
+        device_health = dict(live.get("device_health") or {})
+        if self.state != "connected" or live.get("phase") == "fault":
+            device_health.update(ok=False, reason=self.error or live.get("error")
+                                 or "机械臂未连接，无法检查电机反馈；连接后保持，不会自动运动")
+        elif age is None or age > .25:
+            device_health.update(ok=False, reason="控制状态已过期，不能据此判断设备正常")
+        device_health.setdefault("arms", [])
         health = dict(self._snapshot)
         sampled = health.get("health_sample_at", 0)
         if time.monotonic() - sampled > 1:
@@ -281,6 +288,7 @@ class Workbench:
         return {
             **health,
             **live,
+            "device_health": device_health,
             "connection": self.state,
             "camera_connection": self.camera_state,
             "camera_error": self.camera_error,
@@ -874,17 +882,7 @@ class Workbench:
 
     def check_device_health(self):
         """Read the owner's latest check; never constructs SDKs or moves motors."""
-        status = self.status
-        result = dict(status.get("device_health") or {})
-        if self.state != "connected" or status.get("phase") == "fault":
-            result.update(ok=False, reason=status.get("connection_error") or status.get("error")
-                          or "机械臂未连接，无法检查电机反馈；连接后保持，不会自动运动")
-        elif status.get("control_age_s") is None or status["control_age_s"] > .25:
-            result.update(ok=False, reason="控制状态已过期，不能据此判断设备正常")
-        elif self.runtime is not None:
-            result = self.runtime.check_device_health()
-        result.setdefault("arms", [])
-        return result
+        return self.status["device_health"]
 
     def request_jog(self, arm, joint, delta=None, *, target=None):
         self._require_runtime(heartbeat=True, allow_initialization=True).request_jog(

@@ -139,6 +139,24 @@ def test_health_api_is_read_only_and_available_without_connection():
     assert calls == []
 
 
+@pytest.mark.parametrize("connection,phase,age", [("disconnected","hold",0),
+                                                  ("connected","fault",0),
+                                                  ("connected","hold",1)])
+def test_page_never_reuses_green_health_after_disconnect_fault_or_stall(tmp_path, connection, phase, age):
+    from yam_abc_reproduce.hil.workbench import Workbench
+    owner = Workbench(NS(mode="collect", mock=True, url=None, task_root=tmp_path / "tasks"))
+    try:
+        owner.state = connection
+        owner.runtime = NS(status={"updated_at": time.monotonic()-age, "phase": phase,
+                                  "device_health": {"ok": True}},
+                           maintenance=NS(factory_zero=False), task_switching=False)
+        assert not owner.status["device_health"]["ok"]
+        assert owner.check_device_health()["reason"]
+    finally:
+        owner.runtime = None
+        owner.close()
+
+
 def test_following_fault_never_downgrades_emergency_stop_to_ordinary_hold(tmp_path):
     from yam_abc_reproduce.hil.recording import RecordingSession
     io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)

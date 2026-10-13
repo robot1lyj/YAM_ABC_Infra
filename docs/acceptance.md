@@ -1,8 +1,10 @@
 # 验收状态与证据入口
 
-最近部署核对：2026-10-12。这里区分现场运行状态与带日期的历史测试；旧失败和测量归 [历史验收快照](archive/acceptance_20260922.md) 及原始证据，不把旧“最新一集”当成现在。
+最近部署核对：2026-10-13。这里区分现场运行状态与带日期的历史测试；旧失败和测量归 [历史验收快照](archive/acceptance_20260922.md) 及原始证据，不把旧“最新一集”当成现在。
 
 ## 当前现场状态与历史基线
+
+2026-10-13：`51a66a1`为RL页补齐与推理/DAgger共用的模式、前缀步数及重载按钮，复用同一个DOM表单、草稿、接口和通信子进程，不改Runtime/RTC或SDK。修复数字输入草稿被轮询覆盖；设置排队时禁用，accepted/rejected后可继续操作，不把历史回执当永久忙碌。73项相关测试、Node语法、Ruff及diff通过；隔离mock验证跨页保留未应用7步、应用后当前值变7且仍HOLD。IPC只更新三份静态资源及对应文档/测试，备份`/data/YAM/data/deployment_backups/rl-inference-controls.uFdFgN/before.tgz`；资源字节与main一致，设备/Web仍PID485689/485691、NRestarts=0。正式DOM验证RL页新控件可见、实际仍RTC d=9；四臂/相机连接、HOLD、无录制。未点击重载/应用/开始，保留用户collect草稿但生效模式仍probe。Thor当前声明五模式且actor_loaded/replay_contract_ready=true，新身份与旧probe启动SHA不同，故开始仍按原保护拒绝；应重载后由用户显式应用模式建立新run，不能把昨日诊断probe验收当新专家collect验收。页面设置不持久改写启动文件。
 
 2026-10-12本机自动隧道已上线：`1325b40`新增独立`yam-ipc-panel-tunnel.service`，已安装到操作电脑用户unit目录，正式服务enabled/active；`Linger=no`，自启指登录后启动。本地19项相关测试及systemd语法校验通过，两跳严格主机校验、现有密钥无agent免交互认证通过。先用独立8877端口验证自动重连，未打断用户推理录制；测试unit和副本均已清理。用户确认可交接后，重新读取HOLD、无录制/保存、维护空闲，才停止旧手动隧道PID345053并启动正式8876服务。正式端口终止SSH主进程后，systemd按5秒重试自动恢复（PID354774→354816，NRestarts=1），HTTP200，浏览器恢复设备已连接，设备仍HOLD、无报错、未自动开始运动。IPC device/Web PID340093/471406及启动时间始终未变；未重启任何IPC服务、改Wi-Fi、操作机械臂或改录制数据。此测试是终止转发进程，不是真实断网/设备重启注入。操作台失联安全暂停保留，恢复连接不自动恢复运动。固定本机入口、启动/停用及Thor别名失效等边界归[环境](environment.md#ipc连接与地址)。
 

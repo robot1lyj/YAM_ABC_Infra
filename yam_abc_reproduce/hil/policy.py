@@ -11,11 +11,19 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 import numpy as np
 
 from .core import Request
 from .rtc_timeline import RtcCommitment
+
+
+def validate_policy_url(url):
+    """Shared by initial connection and both live source-switch entry points."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("ws", "wss") or not parsed.hostname:
+        raise ValueError("来源地址需为 ws:// 或 wss://")
 
 
 @dataclass
@@ -72,7 +80,6 @@ class PolicyWorker:
     def __init__(self, client, *, planner=None, auto_connect=True):
         self.client = client
         self.planner = planner
-        self.plan_context = None
         self._requests = queue.Queue(maxsize=1)
         self._replies = queue.Queue(maxsize=1)
         self._busy = threading.Event()
@@ -88,7 +95,7 @@ class PolicyWorker:
         self._planner_ready = planner is None
         if not self._client_ready and auto_connect:
             self._restart.set()
-        if not self._planner_ready:
+        if not self._planner_ready and not getattr(client, "rtc", False):
             self._restart_planner.set()
         self._update_ready()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -189,6 +196,14 @@ class PolicyWorker:
                             self.client.restart()
                         else:
                             self.client.set_rtc(requested_rtc)
+                        if self.planner is not None:
+                            if getattr(self.client, "rtc", False):
+                                self.planner.close()
+                                self._planner_ready = False
+                                self.planner_restart_error = None
+                                self._restart_planner.clear()
+                            elif not self.planner_alive:
+                                self._restart_planner.set()
                         self.transport_error = None
                         self._client_ready = True
                     except Exception as exc:
@@ -197,9 +212,12 @@ class PolicyWorker:
                 if self._restart_planner.is_set():
                     self._restart_planner.clear()
                     try:
-                        self.planner.restart()
+                        if getattr(self.client, "rtc", False):
+                            self.planner.close()
+                        else:
+                            self.planner.restart()
                         self.planner_restart_error = None
-                        self._planner_ready = True
+                        self._planner_ready = not getattr(self.client, "rtc", False)
                     except Exception as exc:
                         self.planner_restart_error = str(exc)
                     self._update_ready()
@@ -236,17 +254,13 @@ class PolicyWorker:
                     plan = None
                     if self.planner is not None and not isinstance(observation, RtcJob):
                         planning = True
-                        if self.plan_context is None:
-                            raise RuntimeError("action planner context is not attached")
-                        mode, previous, action_dt, max_action_age = self.plan_context()
                         action_source = (
                             "recorded_replay"
                             if (server_timing or {}).get("source") == "recorded_replay"
                             else "model"
                         )
                         plan = self.planner.plan(
-                            mode, token, actions, previous, time.monotonic(),
-                            action_dt, max_action_age, action_source,
+                            "sync_hold", token, actions, action_source,
                         )
                     reply = Reply(
                         token, actions,

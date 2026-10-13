@@ -123,6 +123,8 @@ class Arbiter:
         self.prefetch_margin = prefetch_margin
         self._policy_rtts = deque(maxlen=16)
         self._observation_to_ready = deque(maxlen=16)
+        self._rtt_p95 = None
+        self._observation_p95 = None
         self.last_request_reason: str | None = None
         self.tick_timeout = tick_timeout
         self._last_request_at = -float("inf")
@@ -286,8 +288,7 @@ class Arbiter:
             request=vars(token),
         )
         self.pending = None
-        self._policy_rtts.append(age)
-        self._observation_to_ready.append(now - origin)
+        self._record_reply_timing(age, now - origin)
         return accepted
 
     @property
@@ -296,9 +297,7 @@ class Arbiter:
 
     @property
     def observed_policy_rtt_p95(self) -> float | None:
-        if not self._policy_rtts:
-            return None
-        return float(np.percentile(self._policy_rtts, 95))
+        return self._rtt_p95
 
     @property
     def policy_latency_budget(self) -> float:
@@ -308,9 +307,15 @@ class Arbiter:
     @property
     def observed_observation_to_ready_p95(self) -> float | None:
         """End-to-end age of the observation when its actions become usable."""
-        if not self._observation_to_ready:
-            return None
-        return float(np.percentile(self._observation_to_ready, 95))
+        return self._observation_p95
+
+    def _record_reply_timing(self, rtt, observation_age):
+        """New replies change these windows; publishing each control tick does not."""
+        self._policy_rtts.append(rtt)
+        self._observation_to_ready.append(observation_age)
+        self._rtt_p95, self._observation_p95 = np.percentile(
+            [self._policy_rtts, self._observation_to_ready], 95, axis=1,
+        ).tolist()
 
     def _reply_timing(self, token: Request, now: float) -> tuple[float, float] | None:
         """One epoch/time gate for local, process-planned and RTC replies.
@@ -333,8 +338,7 @@ class Arbiter:
         return age, origin
 
     def _accepted_reply(self, token: Request, now: float, age: float, origin: float):
-        self._policy_rtts.append(age)
-        self._observation_to_ready.append(now - origin)
+        self._record_reply_timing(age, now - origin)
         self._active_request = token
         self._origin_time = origin
         self._index = 0
@@ -361,9 +365,7 @@ class Arbiter:
         # the semantic range. The control side owns gripper saturation.
         rows = rows.copy()
         rows[:, [6, 13]] = np.clip(rows[:, [6, 13]], 0.0, 1.0)
-        for row in rows:
-            vector(row)
-        self._chunk = rows.copy()
+        self._chunk = rows
         self._accepted_reply(token, now, age, origin)
         return True
 
@@ -377,25 +379,17 @@ class Arbiter:
         if timing is None:
             return False
         age, origin = timing
-        rows = np.asarray(plan["actions"])
-        if rows.ndim != 2 or rows.shape[1] != 14 or not 1 <= len(rows) <= 100:
-            raise ValueError("planner returned invalid action count")
-        if plan["kind"] != "queue":
-            raise ValueError("planner returned an incompatible timeline")
-        if plan["kind"] == "queue":
-            meta = plan.get("meta")
-            if meta is None or len(meta) != len(rows) or any(
-                not isinstance(source, Request)
-                or source.epoch != self.epoch
-                or source.request_id > token.request_id
-                or not isinstance(index, int)
-                or not 0 <= index < 50
-                for source, index in meta
-            ):
-                raise ValueError("planner returned invalid action provenance")
         rows = np.asarray(plan["actions"], dtype=np.float64)
         if rows.shape != (50, 14) or not np.isfinite(rows).all():
             raise ValueError("synchronous plan must be finite (50,14)")
+        if plan["kind"] != "queue":
+            raise ValueError("planner returned an incompatible timeline")
+        meta = plan.get("meta")
+        if meta is None or len(meta) != 50 or any(
+            source != token or type(index) is not int or index != expected
+            for expected, (source, index) in enumerate(meta)
+        ):
+            raise ValueError("planner returned invalid action provenance")
         self._chunk = rows.copy()
         self._chunk[:, [6, 13]] = np.clip(self._chunk[:, [6, 13]], 0.0, 1.0)
         self._accepted_reply(token, now, age, origin)

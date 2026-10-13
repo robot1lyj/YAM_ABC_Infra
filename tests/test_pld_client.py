@@ -373,8 +373,10 @@ def test_gripper_submission_prefix_and_record_share_existing_adapter_margin():
 
 def test_pld_mode_changes_reject_active_episode_and_wrong_control_path():
     runtime = Runtime.__new__(Runtime)
+    runtime.task_switching = False
     runtime.session = SimpleNamespace(arbiter=SimpleNamespace(
-        phase=SimpleNamespace(value="policy"), intervention_pending=False, rtc_timeline=None))
+        phase=SimpleNamespace(value="policy"), intervention_pending=False, rtc_timeline=object()))
+    runtime.worker = SimpleNamespace(client=SimpleNamespace(metadata=metadata()))
     runtime.recorder = SimpleNamespace(recording=True, saving=False)
     runtime.maintenance = SimpleNamespace(state="idle", latched=False)
     with pytest.raises(ValueError, match="暂停"):
@@ -382,29 +384,33 @@ def test_pld_mode_changes_reject_active_episode_and_wrong_control_path():
 
 
 def test_explicit_apply_adopts_new_handshake_without_silently_rebinding_old_run():
+    import queue
+
     from yam_abc_reproduce.hil.core import Phase
 
     runtime = Runtime.__new__(Runtime)
+    runtime.task_switching = False
+    runtime.emergency = threading.Event()
     runtime.pld = PldClient(dict(mode="probe", snapshot_sha256="c" * 64))
     runtime.session = SimpleNamespace(arbiter=SimpleNamespace(
         phase=Phase.HOLD, intervention_pending=False, rtc_timeline=object()))
     runtime.recorder = SimpleNamespace(recording=False, saving=False)
     runtime.maintenance = SimpleNamespace(state="idle", latched=False)
     runtime.worker = SimpleNamespace(client=SimpleNamespace(metadata=metadata()))
-    queued = []
-    runtime._queue_policy_command = queued.append
+    runtime.policy_commands = queue.Queue()
     assert not runtime.pld.snapshot(metadata())["ready"]
     # The operator's Apply creates a new run from the fresh handshake. Reload
     # alone must never mutate the old pin or enable motion.
     runtime.configure_pld(mode="collect")
-    operation, candidate = queued.pop()
+    _, (operation, candidate), receipt = runtime.policy_commands.get_nowait()
+    assert receipt["state"] == "queued"
     assert operation == "pld" and candidate.config.mode == "collect"
     assert candidate.identity["snapshot_sha256"] == "b" * 64
     assert candidate.run_id != runtime.pld.run_id
     assert runtime.pld.config.snapshot_sha256 == "c" * 64
     with pytest.raises(ValueError, match="不匹配"):
         runtime.configure_pld(mode="collect", snapshot_sha256="c" * 64)
-    assert not queued
+    assert runtime.policy_commands.empty()
 
 
 def test_round_c_n_is_evaluation_only_and_checks_episode_identity():
@@ -518,6 +524,9 @@ assert.equal(policySettingsEditable(context), true);
 for (const key of ['initializing','task_switching','recording_saving','intervention_pending']) {
   state[key]=true; assert.equal(policySettingsEditable(context), false); state[key]=false;
 }
+for (const key of ['recording_saving','intervention_pending']) {
+  state[key]=true; assert.equal(policySettingsEditable({...context,recovery:true}), true); state[key]=false;
+}
 state.policy_command={state:'queued'}; assert.equal(policySettingsEditable(context), false);
 for (const status of ['accepted','rejected']) {
   state.policy_command={state:status}; assert.equal(policySettingsEditable(context), true);
@@ -552,6 +561,8 @@ def test_cli_accepts_new_config_and_rejects_legacy_without_hardware(tmp_path, ca
     with pytest.raises(SystemExit):
         main(["--mock", "--check", "--parts-config", str(config)])
     runtime = Runtime.__new__(Runtime)
+    runtime.task_switching = False
+    runtime.emergency = threading.Event()
     runtime.session = SimpleNamespace(arbiter=SimpleNamespace(
         phase=Phase.HOLD, intervention_pending=False, rtc_timeline=None))
     runtime.recorder = SimpleNamespace(recording=False, saving=False)

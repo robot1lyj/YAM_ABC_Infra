@@ -37,7 +37,7 @@ from .metrics import Latencies
 from .observation import Observations
 from .planner_process import ProcessActionPlanner
 from .pld import PldClient, PldConfig
-from .policy import PolicyWorker, RtcJob, reply_record
+from .policy import PolicyWorker, RtcJob, reply_record, validate_policy_url
 from .policy_process import ProcessPolicyClient
 from .recording import RecordingSession
 from .recording_service import RemoteRecordingSession
@@ -47,6 +47,9 @@ from .station import StationIO
 
 
 class MockPolicy:
+    def __init__(self, *, rtc=False):
+        self.rtc = rtc
+
     def set_rtc(self, enabled):
         self.rtc = bool(enabled)
 
@@ -164,8 +167,6 @@ class Runtime:
             or hz != 30 or abs(action_dt - 1 / 30) > 1e-6
         ):
             raise ValueError("RTC requires 30 Hz direct SDK writes and shared hard limits")
-        if worker is not None and worker.planner is not None:
-            worker.plan_context = self._plan_context
         self.events = queue.Queue(maxsize=16)
         self.policy_commands = queue.Queue(maxsize=4)
         self.task_releases = queue.SimpleQueue()
@@ -207,10 +208,6 @@ class Runtime:
     def configure_pld(self, **settings):
         candidate = PldConfig.from_dict(settings)
         a = self.session.arbiter
-        if (a.phase != Phase.HOLD or a.intervention_pending or self.recorder.recording
-                or self.recorder.saving or self.maintenance.state != "idle"
-                or self.maintenance.latched):
-            raise ValueError("请先暂停、结束介入并等待保存完成，再切换 PLD-Grasp 模式")
         if candidate.mode != "off" and a.rtc_timeline is None:
             raise ValueError("PLD-Grasp 需要原生 RTC；请先在推理设置选择 RTC")
         client = PldClient(candidate.as_dict())
@@ -272,15 +269,6 @@ class Runtime:
                 session_path=self._pld_pending["recording_session"])
         self._pld_pending = None
 
-
-    def _plan_context(self):
-        arbiter = self.session.arbiter
-        return (
-            arbiter.policy_fusion,
-            None,
-            arbiter.action_dt,
-            arbiter.max_action_age,
-        )
 
     def _recording_failed(self, state, reason):
         """Abort the episode and signal HOLD without latching a motor fault."""
@@ -414,10 +402,8 @@ class Runtime:
         if input not in ("leader", "keyboard"):
             raise ValueError("请选择 Leader 或键盘末端微调")
         a = self.session.arbiter
-        if (a.mode != Mode.HIL or a.phase != Phase.HOLD or a.intervention_pending
-                or getattr(self.recorder, "recording", False)
-                or self.maintenance.latched or self.maintenance.state != "idle"):
-            raise ValueError("请在 HIL 保持、结束介入与录制后切换输入方式")
+        if a.mode != Mode.HIL:
+            raise ValueError("请先切换到 HIL，再选择输入方式")
         self._queue_policy_command(("hil_input", input))
         if input == "keyboard":
             self.cartesian.prepare()
@@ -434,12 +420,92 @@ class Runtime:
         self.cartesian_commands.put_nowait(dict(arm=arm, axis=axis, delta=delta,
             epoch=epoch, command_id=command_id, requested_at=time.monotonic()))
 
-    def _queue_policy_command(self, command):
+    def _settings_error(self, kind):
+        """Same authority at HTTP admission and again at the applying tick.
+
+        Reloads may repair a locked intervention or run during background save;
+        changing experiment/input/recording settings requires a settled episode.
+        """
         if self.task_switching:
-            raise ValueError("任务切换中，设置未提交；完成后可重试")
+            return "任务切换中，设置未提交；完成后可重试"
+        a = self.session.arbiter
+        if a.phase != Phase.HOLD or getattr(self.recorder, "recording", False):
+            return "请先暂停运动并结束本集，再修改设置"
+        if self.maintenance.latched or self.emergency.is_set():
+            return "紧急暂停已锁存，请先检查现场并解除锁存"
+        if self.maintenance.state != "idle":
+            return "请先结束当前维护操作，再修改设置"
+        if kind not in ("restart", "restart_planner", "interaction"):
+            if getattr(self.recorder, "saving", False):
+                return "请等待本集保存完成，再修改设置"
+            if a.intervention_pending:
+                return "请先交还或结束介入，再修改设置"
+        return None
+
+    def _queue_policy_command(self, command):
+        reason = self._settings_error(command[0])
+        if reason:
+            raise ValueError(reason)
         receipt = {"kind": command[0], "state": "queued", "submitted_at": time.monotonic()}
         self.policy_commands.put_nowait(("command", command, receipt))
         self.policy_command_status = receipt
+
+    def _apply_settings_command(self, command, q, leader, receipt):
+        """Control-owner-only application; enqueueing never changes live settings."""
+        kind = command[0]
+        a = self.session.arbiter
+        reason = self._settings_error(kind)
+        if kind == "hil_input" and a.mode != Mode.HIL:
+            reason = "状态已变化，介入方式未切换"
+        if kind not in {"recording_mode", "hil_input", "pld", "interaction", "configure",
+                        "restart_planner", "source", "restart"}:
+            reason = "未知设置请求，未应用"
+        if reason:
+            self.operator_error = reason
+            receipt.update(state="rejected", error=reason)
+            return
+        if kind == "recording_mode":
+            # Recording settings do not invalidate RTC epochs, targets or plans.
+            self.recording_mode = command[1]
+            self.io.grasp_diagnostics_enabled = self.pld.enabled or self.recording_mode == "grasp_diagnostics"
+        elif kind == "hil_input":
+            a.hil_input = command[1]
+            a._transition(Phase.HOLD, q)
+            a._leader_frozen = leader.copy() if a.hil_input == "keyboard" else None
+            self.cartesian.cancel()
+        else:
+            frozen = a._leader_frozen
+            a._transition(Phase.HOLD, a._hold if kind == "interaction" else q)
+            if frozen is not None:
+                a._leader_frozen = frozen
+            if kind == "pld":
+                self.pld = command[1]
+                self.session.pld = self.pld
+                self.io.grasp_diagnostics_enabled = self.pld.enabled or self.recording_mode == "grasp_diagnostics"
+            elif kind == "interaction":
+                a.interaction_rules = self.io.interaction_rules = command[1]
+                self.handle_buttons.interaction_rules = command[1]
+            elif kind == "configure":
+                old_fusion = a.policy_fusion
+                a.policy_fusion = command[1]
+                a.rtc_timeline = create_policy_timeline(command[1], delay_steps=command[2])
+                if command[1] == "rtc":
+                    self.rtc_delay_steps = command[2]
+                if (old_fusion == "rtc") != (command[1] == "rtc"):
+                    self.worker.request_transport_mode(command[1] == "rtc")
+                    self.session.begin_policy_recovery()
+            elif kind == "restart_planner":
+                self.worker.request_planner_restart()
+                self.session.begin_policy_recovery()
+            elif kind == "source":
+                self.session.rewind_replay()
+                self.worker.request_source(command[1])
+                self.session.begin_policy_recovery()
+            elif kind == "restart":
+                self.worker.request_restart()
+                self.session.begin_policy_recovery()
+        self.operator_error = None
+        receipt.update(state="accepted", applied_at=time.monotonic())
 
     def _prepare_policy_recording(self, event, state):
         """Admit the ordered start marker before allowing policy execution.
@@ -506,8 +572,6 @@ class Runtime:
     def configure_recording(self, *, mode: str):
         if mode not in ("standard", "grasp_diagnostics"):
             raise ValueError("记录模式需为普通记录或抓取诊断")
-        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
-            raise ValueError("请先暂停运动并结束本集，再切换记录模式")
         self._queue_policy_command(("recording_mode", mode))
 
     def configure_policy(self, *, fusion: str, rtc_delay_steps: int | None = None):
@@ -527,44 +591,28 @@ class Runtime:
             or not 1 <= rtc_delay_steps <= 10
         ):
             raise ValueError("RTC 前缀步数只可在RTC模式设置为1–10")
-        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
-            raise ValueError("请先暂停模型并结束本集录制")
         self._queue_policy_command((
             "configure", fusion,
             self.rtc_delay_steps if rtc_delay_steps is None else rtc_delay_steps,
         ))
 
     def restart_policy(self):
-        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
-            raise ValueError("请先暂停模型并结束本集录制")
         if self.worker is None or not hasattr(self.worker.client, "restart"):
             raise ValueError("当前策略不支持独立重载")
         self._queue_policy_command(("restart",))
 
     def reload_interaction(self):
-        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
-            raise ValueError("请先暂停并结束录制，再重载交互规则")
-        if self.maintenance.latched or self.maintenance.state != "idle":
-            raise ValueError("请先结束维护并解除紧急暂停锁存")
         from .interaction_rules import load_rules
         candidate = load_rules()  # File IO/compilation outside control tick.
         self._queue_policy_command(("interaction", candidate))
 
     def change_policy_source(self, *, url):
-        from urllib.parse import urlparse
-
-        parsed = urlparse(url)
-        if parsed.scheme not in ("ws", "wss") or not parsed.hostname:
-            raise ValueError("来源地址需为 ws:// 或 wss://")
-        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
-            raise ValueError("请先暂停并结束录制再切换来源")
+        validate_policy_url(url)
         if self.worker is None or not hasattr(self.worker.client, "url"):
             raise ValueError("当前会话未创建模型通信客户端")
         self._queue_policy_command(("source", url))
 
     def restart_planner(self):
-        if self.status.get("phase") != "hold" or getattr(self.recorder, "recording", False):
-            raise ValueError("请先暂停模型并结束本集录制")
         if self.worker is None or self.worker.planner is None:
             raise ValueError("当前会话未启用独立动作规划进程")
         self._queue_policy_command(("restart_planner",))
@@ -652,79 +700,8 @@ class Runtime:
                     if command_receipt is not None:
                         command_receipt.update(state="rejected", error="任务切换中，设置未应用")
                     policy_command = None
-                if policy_command is not None and policy_command[0] == "recording_mode":
-                    # Recording configuration must NOT reset control epochs, RTC
-                    # commitments, targets, or any device/policy process.
-                    if a.phase != Phase.HOLD or getattr(self.recorder, "recording", False):
-                        command_receipt.update(state="rejected", error="请先暂停并结束本集")
-                    else:
-                        self.recording_mode = policy_command[1]
-                        self.io.grasp_diagnostics_enabled = self.pld.enabled or self.recording_mode == "grasp_diagnostics"
-                        command_receipt.update(state="accepted", applied_at=time.monotonic())
-                    policy_command = None
-                if policy_command is not None and policy_command[0] == "hil_input":
-                    if (a.mode != Mode.HIL or a.phase != Phase.HOLD or a.intervention_pending
-                            or getattr(self.recorder, "recording", False)
-                            or self.maintenance.latched or self.maintenance.state != "idle"):
-                        command_receipt.update(state="rejected", error="状态已变化，介入方式未切换")
-                    else:
-                        a.hil_input = policy_command[1]
-                        a._transition(Phase.HOLD, q)
-                        a._leader_frozen = leader.copy() if a.hil_input == "keyboard" else None
-                        self.cartesian.cancel()
-                        command_receipt.update(state="accepted", applied_at=time.monotonic())
-                    policy_command = None
                 if policy_command is not None:
-                    if (a.phase != Phase.HOLD or getattr(self.recorder, "recording", False)
-                            or (policy_command[0] == "pld" and
-                                (a.intervention_pending or self.recorder.saving
-                                 or self.maintenance.latched or self.maintenance.state != "idle"))
-                            or (policy_command[0] == "interaction" and
-                                (self.maintenance.latched or self.maintenance.state != "idle"))):
-                        self.operator_error = "推理设置未应用：设备已离开保持状态"
-                        if command_receipt is not None:
-                            command_receipt.update(state="rejected", error=self.operator_error)
-                    else:
-                        frozen = a._leader_frozen
-                        a._transition(Phase.HOLD, a._hold if policy_command[0] == "interaction" else q)
-                        if frozen is not None:
-                            a._leader_frozen = frozen
-                        if policy_command[0] == "pld":
-                            self.pld = policy_command[1]
-                            self.session.pld = self.pld
-                            self.io.grasp_diagnostics_enabled = self.pld.enabled or self.recording_mode == "grasp_diagnostics"
-                            self.operator_error = None
-                        elif policy_command[0] == "interaction":
-                            candidate = policy_command[1]
-                            a.interaction_rules = candidate
-                            self.io.interaction_rules = candidate
-                            self.handle_buttons.interaction_rules = candidate
-                            self.operator_error = None
-                        elif policy_command[0] == "configure":
-                            old_fusion = a.policy_fusion
-                            a.policy_fusion = policy_command[1]
-                            a.rtc_timeline = create_policy_timeline(
-                                policy_command[1], delay_steps=policy_command[2])
-                            if policy_command[1] == "rtc":
-                                self.rtc_delay_steps = policy_command[2]
-                            if (old_fusion == "rtc") != (policy_command[1] == "rtc"):
-                                self.worker.request_transport_mode(policy_command[1] == "rtc")
-                            self.operator_error = None
-                        elif policy_command[0] == "restart_planner":
-                            self.worker.request_planner_restart()
-                            self.session.begin_policy_recovery()
-                            self.operator_error = None
-                        elif policy_command[0] == "source":
-                            self.session.rewind_replay()
-                            self.worker.request_source(policy_command[1])
-                            self.session.begin_policy_recovery()
-                            self.operator_error = None
-                        else:
-                            self.worker.request_restart()
-                            self.session.begin_policy_recovery()
-                            self.operator_error = None
-                        if command_receipt is not None:
-                            command_receipt.update(state="accepted", applied_at=time.monotonic())
+                    self._apply_settings_command(policy_command, q, leader, command_receipt)
                 button_event = self.handle_buttons.read(
                     buttons, now=now, mode=a.mode, phase=a.phase
                 )
@@ -1613,7 +1590,7 @@ def main(argv=None, *, service=None):
             policy_natural_frequency=hil_cfg.get("policy_natural_frequency", 10.0),
         )
         client = (
-            MockPolicy()
+            MockPolicy(rtc=hil_cfg.get("policy_fusion") == "rtc")
             if args.mock
             else ProcessPolicyClient(
                 args.url or "", timeout=hil_cfg.get("request_timeout", 1.5),

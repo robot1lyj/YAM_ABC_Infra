@@ -1,4 +1,5 @@
 import threading
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -7,6 +8,98 @@ from fastapi.testclient import TestClient
 
 from yam_abc_reproduce.hil.policy_process import ProcessPolicyClient
 from yam_abc_reproduce.hil.web import create_app
+
+
+def _late_policy_reply(conn):
+    conn.send(("ready", {}, None))
+    conn.recv()
+    time.sleep(1.4)
+    conn.send(({"actions": np.zeros((50, 14))}, None, None))
+
+
+def _ignore_termination(conn):
+    import signal
+
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    conn.send("ready")
+    while True:
+        time.sleep(1)
+
+
+def test_policy_timeout_reaps_old_child_and_requires_explicit_restart():
+    client = ProcessPolicyClient("ws://unused", timeout=.02)
+    parent, child = client._context.Pipe()
+    process = client._context.Process(target=_late_policy_reply, args=(child,))
+    process.start()
+    child.close()
+    assert parent.poll(5) and parent.recv()[0] == "ready"
+    client._conn, client._process = parent, process
+    try:
+        with pytest.raises(TimeoutError, match="response timeout"):
+            client.infer({})
+        assert parent.closed and not process.is_alive()
+        assert client._process is None and client.metadata is None
+        with pytest.raises(RuntimeError, match="restart.*HOLD"):
+            client.infer({})
+    finally:
+        client.close()
+
+
+def test_shared_process_reaper_kills_unresponsive_child():
+    import multiprocessing as mp
+
+    from yam_abc_reproduce.hil.process_pipe import close_pipe_process, start_pipe_process
+
+    process, conn = start_pipe_process(mp.get_context("spawn"), _ignore_termination, name="test-stubborn")
+    try:
+        assert conn.poll(5) and conn.recv() == "ready"
+        close_pipe_process(process, conn, timeout=.1)
+        assert conn.closed and not process.is_alive()
+        close_pipe_process(process, conn, timeout=.1)  # Repeated shutdown is harmless.
+    finally:
+        if process.is_alive():
+            process.kill()
+            process.join(1)
+
+
+def test_rtc_does_not_start_unused_planner_and_sync_switch_owns_its_lifecycle():
+    from yam_abc_reproduce.hil.planner_process import ProcessActionPlanner
+    from yam_abc_reproduce.hil.policy import PolicyWorker
+
+    class Transport:
+        rtc = True
+
+        def restart(self):
+            pass
+
+        def set_rtc(self, enabled):
+            self.rtc = enabled
+
+    def wait_ready(worker):
+        deadline = time.monotonic() + 5
+        while not worker.ready and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert worker.ready, worker.restart_error
+
+    planner = ProcessActionPlanner()
+    worker = PolicyWorker(Transport(), planner=planner)
+    try:
+        wait_ready(worker)
+        assert planner._process is None
+        worker.request_transport_mode(False)
+        wait_ready(worker)
+        process = planner._process
+        assert process.is_alive()
+        worker.mark_failed("old synchronous planner failure", planner=True)
+        worker.request_transport_mode(True)
+        wait_ready(worker)
+        assert not process.is_alive() and planner._process is None
+        assert worker.restart_error is None
+        worker.request_transport_mode(False)
+        wait_ready(worker)
+        assert planner._process.pid != process.pid
+    finally:
+        worker.close()
 
 
 def test_policy_process_can_reload_without_replacing_device_owner():
@@ -144,10 +237,14 @@ def test_policy_settings_api_validates_and_forwards_without_motor_calls():
 def test_source_change_only_queues_and_requires_hold():
     import queue
 
+    from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
     from yam_abc_reproduce.hil.run import Runtime
 
     owner = Runtime.__new__(Runtime)
     owner.task_switching = False
+    owner.session = SimpleNamespace(arbiter=Arbiter(Mode.INFERENCE))
+    owner.maintenance = SimpleNamespace(state="idle", latched=False)
+    owner.emergency = threading.Event()
     owner.status = {"phase": "hold"}
     owner.recorder = SimpleNamespace(recording=False)
     owner.worker = SimpleNamespace(client=SimpleNamespace(url="ws://old:8000"))
@@ -157,9 +254,9 @@ def test_source_change_only_queues_and_requires_hold():
     assert envelope == "command" and command == ("source", "ws://new:8002")
     assert receipt["state"] == "queued" and receipt is owner.policy_command_status
     assert owner.worker.client.url == "ws://old:8000"
-    owner.status["phase"] = "policy"
+    owner.session.arbiter.phase = Phase.POLICY
     with pytest.raises(ValueError, match="暂停"):
         owner.change_policy_source(url="ws://new:8002")
-    owner.status["phase"] = "hold"
+    owner.session.arbiter.phase = Phase.HOLD
     with pytest.raises(ValueError, match="地址"):
         owner.change_policy_source(url="http://invalid")

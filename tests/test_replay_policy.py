@@ -5,7 +5,10 @@ import numpy as np
 import pytest
 
 from yam_abc_reproduce.hil.replay_policy import (
-    ReplayPolicy, load_targets, load_xr1_eef_targets, retime_targets_for_step,
+    ReplayPolicy,
+    load_targets,
+    load_xr1_eef_targets,
+    retime_targets_for_step,
     time_stretch_targets,
 )
 
@@ -226,7 +229,6 @@ def test_replay_preserves_grippers_through_worker_and_real_planner_process():
         external_planner=True, max_request_age=3,
     )
     worker = PolicyWorker(ReplayPolicy(targets), planner=ProcessActionPlanner())
-    worker.plan_context = lambda: ("sync_hold", None, 1 / 30, 3)
     session = Session(arbiter, worker)
     try:
         deadline = time.monotonic() + 5

@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from yam_abc_reproduce.hil.core import Phase
 from yam_abc_reproduce.hil.grasp_diagnostics import Thresholds, analyze
 from yam_abc_reproduce.hil.rtc_timeline import RtcTimeline
 from yam_abc_reproduce.hil.storage import Samples, h5_rows
@@ -245,10 +246,10 @@ def test_runtime_recording_switch_does_not_reset_epoch_or_move_targets(tmp_path,
         assert saved
         assert all(("grasp_diagnostics" in row) == (mode == "grasp_diagnostics") for row in saved)
         assert all(np.count_nonzero(row["submitted_action"]) == 0 for row in saved)
-        runtime.status["phase"] = "policy"
+        runtime.session.arbiter.phase = Phase.POLICY
         with pytest.raises(ValueError, match="暂停"):
             runtime.configure_recording(mode=mode)
-        runtime.status["phase"] = "hold"
+        runtime.session.arbiter.phase = Phase.HOLD
         with pytest.raises(ValueError, match="记录模式"):
             runtime.configure_recording(mode="close_gripper")
     finally:

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-import time
+
+from .process_pipe import close_pipe_process, receive_process_reply, start_pipe_process
 
 
 def _serve(conn, url: str, timeout: float, rtc: bool):
@@ -30,8 +31,6 @@ def _serve(conn, url: str, timeout: float, rtc: bool):
             if observation is None:
                 break
             try:
-                if client is None:
-                    client = (RtcPolicyClient if rtc else PlainPolicyClient)(url, timeout=timeout)
                 if rtc:
                     if not isinstance(observation, tuple) or len(observation) not in (3, 4):
                         raise ValueError("RTC transport requires observation, tick, prefix")
@@ -44,10 +43,8 @@ def _serve(conn, url: str, timeout: float, rtc: bool):
                     result = client.infer(observation)
                 conn.send((result, client.last_timing, None))
             except Exception as exc:
-                if client is not None:
-                    client.close()
-                    client = None
                 conn.send((getattr(exc, "response", None), None, f"{type(exc).__name__}: {exc}"))
+                break  # One handshake per child; recovery explicitly creates another.
     finally:
         if client is not None:
             client.close()
@@ -66,36 +63,29 @@ class ProcessPolicyClient:
         self._context = mp.get_context("spawn")
         self._process = None
         self._conn = None
+        self._failed = False
 
     def _start(self):
-        parent, child = self._context.Pipe()
-        process = self._context.Process(
-            target=_serve, args=(child, self.url, self.timeout, self.rtc), daemon=True,
+        self._process, self._conn = start_pipe_process(
+            self._context, _serve, args=(self.url, self.timeout, self.rtc),
             name="thor-policy",
         )
-        try:
-            process.start()
-        except Exception:
-            parent.close()
-            child.close()
-            raise
-        child.close()
-        self._conn, self._process = parent, process
         # Cold ARM64 module imports can exceed the network RPC timeout. This
         # wait runs in PolicyWorker, not the control thread; inference remains
         # disabled until the child has completed its Thor handshake.
-        if not parent.poll(max(8.0, self.timeout + 1.0)):
-            self.close()
-            raise TimeoutError("policy process startup timeout")
         try:
-            kind, metadata, error = parent.recv()
-        except EOFError:
+            kind, metadata, error = receive_process_reply(
+                self._process, self._conn, timeout=max(8.0, self.timeout + 1.0),
+                label="policy process startup",
+            )
+            if kind != "ready":
+                raise RuntimeError(error or "policy process startup failed")
+        except Exception:
+            self._failed = True
             self.close()
-            raise RuntimeError("policy process exited during startup") from None
-        if kind != "ready":
-            self.close()
-            raise RuntimeError(error or "policy process startup failed")
+            raise
         self.metadata = metadata
+        self._failed = False
 
     def infer(self, observation):
         return self._infer(observation)
@@ -105,27 +95,30 @@ class ProcessPolicyClient:
                            (observation, target_start_tick, committed_actions, pld))
 
     def _infer(self, observation):
+        if self._failed:
+            raise RuntimeError("policy process unavailable; restart it while HOLD")
         if self._process is None:
             self._start()
         if not self._process.is_alive():
+            self._failed = True
+            self.close()
             raise RuntimeError("policy process stopped; restart it while HOLD")
         try:
             self._conn.send(observation)
-            # Includes child startup, OpenPI handshake, and response. This wait
-            # occurs exclusively in PolicyWorker, never the motor control loop.
-            deadline = time.monotonic() + self.timeout + 1.0
-            while time.monotonic() < deadline:
-                if self._conn.poll(min(0.05, max(0, deadline - time.monotonic()))):
-                    result, self.last_timing, error = self._conn.recv()
-                    if error:
-                        from .policy import PolicyResponseError
-                        raise PolicyResponseError(error, result)
-                    return result
-                if not self._process.is_alive():
-                    raise RuntimeError("policy process exited")
-            raise TimeoutError("policy process response timeout")
-        except (BrokenPipeError, EOFError, OSError):
-            raise RuntimeError("policy process communication failed") from None
+            result, self.last_timing, error = receive_process_reply(
+                self._process, self._conn, timeout=self.timeout + 1.0,
+                label="policy process response",
+            )
+            if error:
+                from .policy import PolicyResponseError
+                raise PolicyResponseError(error, result)
+            return result
+        except Exception:
+            # Preserve raw PolicyResponseError traces for recording, but never
+            # let a late response on this pipe satisfy another request.
+            self._failed = True
+            self.close()
+            raise
 
     def restart(self):
         self.close()
@@ -136,11 +129,6 @@ class ProcessPolicyClient:
         self.restart()
 
     def close(self):
-        process, conn = self._process, self._conn
+        close_pipe_process(self._process, self._conn)
         self._process = self._conn = None
-        if process is not None:
-            if process.is_alive():
-                process.terminate()
-            process.join(timeout=0.5)
-        if conn is not None:
-            conn.close()
+        self.metadata = None

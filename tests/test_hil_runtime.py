@@ -26,6 +26,86 @@ class DelayedRtcPolicy(MockPolicy):
         return {"actions": np.tile(obs["observation.state"], (50, 1))}
 
 
+@pytest.mark.parametrize("operation", ["recording_mode", "configure", "hil_input"])
+@pytest.mark.parametrize("change", ["phase", "recording", "saving", "maintenance", "intervention", "stop"])
+def test_settings_recheck_current_owner_state_after_queueing(operation, change):
+    rec = SimpleNamespace(recording=False, saving=False)
+    cameras = [SimpleNamespace(role=role) for role in ("top", "left", "right")]
+    runtime = Runtime(SimpleNamespace(), cameras, None, rec, mode="hil")
+    q = np.zeros(14)
+    a = runtime.session.arbiter
+    commands = {"recording_mode": ("recording_mode", "grasp_diagnostics"),
+                "restart": ("restart",), "configure": ("configure", "sync_hold", 9),
+                "hil_input": ("hil_input", "keyboard")}
+    command = commands[operation]
+    runtime._queue_policy_command(command)
+    _, queued, receipt = runtime.policy_commands.get_nowait()
+    epoch = a.epoch
+    if change == "phase":
+        a.phase = Phase.POLICY
+    elif change in ("recording", "saving"):
+        setattr(rec, change, True)
+    elif change == "maintenance":
+        runtime.maintenance.state = "gravity"
+    elif change == "intervention":
+        a.intervention_pending = True
+    else:
+        runtime.emergency.set()
+    # A stale UI snapshot must not override the real control owner's state.
+    runtime.status = {"phase": "hold", "recording": False}
+    with pytest.raises(ValueError):
+        runtime._queue_policy_command(command)
+    runtime._apply_settings_command(queued, q, q, receipt)
+    assert receipt["state"] == "rejected" and a.epoch == epoch
+    assert runtime.recording_mode == "standard" and a.hil_input == "leader"
+    assert runtime.policy_commands.empty()
+
+
+def test_mode_switch_clears_old_policy_failure_only_after_new_transport_is_ready():
+    cameras = [SimpleNamespace(role=role) for role in ("top", "left", "right")]
+    runtime = Runtime(SimpleNamespace(), cameras, None,
+        SimpleNamespace(recording=False, saving=False), mode="inference")
+    modes = []
+    runtime.worker = runtime.session.worker = SimpleNamespace(
+        request_transport_mode=modes.append, ready=False)
+    runtime.session.policy_error = runtime.session.notice = "old synchronous planner failure"
+    q = np.zeros(14)
+    receipt = {}
+    runtime._apply_settings_command(("configure", "rtc", 9), q, q, receipt)
+    assert modes == [True] and receipt["state"] == "accepted"
+    runtime.session.check_policy_recovery()
+    assert runtime.session.policy_error
+    runtime.worker.ready = True
+    runtime.session.check_policy_recovery()
+    assert runtime.session.policy_error is None and runtime.session.notice is None
+    assert runtime.session.arbiter.phase == Phase.HOLD
+
+
+@pytest.mark.parametrize("kind", ["restart", "restart_planner", "interaction"])
+def test_reloads_remain_available_in_held_intervention_and_background_save(kind):
+    from yam_abc_reproduce.hil import interaction_rules
+
+    cameras = [SimpleNamespace(role=role) for role in ("top", "left", "right")]
+    rec = SimpleNamespace(recording=False, saving=True)
+    runtime = Runtime(SimpleNamespace(), cameras, None, rec, mode="hil")
+    called = []
+    runtime.worker = SimpleNamespace(request_restart=lambda: called.append("restart"),
+        request_planner_restart=lambda: called.append("restart_planner"))
+    a = runtime.session.arbiter
+    a.hold(np.zeros(14))
+    a.intervention_pending = True
+    a._leader_frozen = np.full(14, .4)
+    command = (kind, interaction_rules) if kind == "interaction" else (kind,)
+    runtime._queue_policy_command(command)
+    _, queued, receipt = runtime.policy_commands.get_nowait()
+    q = np.zeros(14)
+    runtime._apply_settings_command(queued, q, q, receipt)
+    assert receipt["state"] == "accepted"
+    assert called == ([] if kind == "interaction" else [kind])
+    assert rec.saving and a.intervention_pending and a.phase == Phase.HOLD
+    np.testing.assert_array_equal(a._leader_frozen, np.full(14, .4))
+
+
 def test_leader_home_uses_native_gain_without_changing_manual_or_hold():
     io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
     calls = []
@@ -232,7 +312,7 @@ def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path, 
         assert "policy_tda_drop_max" not in result
         assert result["policy_trajectory_mode"] == "second_order"
         assert runtime.session.arbiter.epoch > old_epoch
-        runtime.status["phase"] = "policy"
+        runtime.session.arbiter.phase = Phase.POLICY
         with pytest.raises(ValueError, match="暂停"):
             runtime.configure_policy(
                 fusion="rtc" if fusion == "sync_hold" else "sync_hold"

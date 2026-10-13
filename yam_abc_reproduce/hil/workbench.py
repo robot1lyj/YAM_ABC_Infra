@@ -16,12 +16,12 @@ import uuid
 from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
-from urllib.parse import urlparse
 
 from ..storage_health import recording_storage_health
 from .camera_slots import CameraSlot
 from .core import Mode
 from .data_session import paused_data_session, recover_recording
+from .policy import validate_policy_url
 from .task_dataset import TaskDatasetCache, inventory, trash_episode
 from .tasks import Tasks
 
@@ -660,9 +660,8 @@ class Workbench:
             if not self.args.mock and ready is not True:
                 raise ValueError("请确认机械臂已固定、行程清空并有操作员在场")
             if url is not None:
-                parsed = urlparse(url)
-                if url and (parsed.scheme not in ("ws", "wss") or not parsed.hostname):
-                    raise ValueError("Thor地址应为 ws://主机:端口 或 wss://主机:端口")
+                if url:
+                    validate_policy_url(url)
                 self.args.url = url or None
             taskless_teleop = self.selected_task is None and not initialize
             # Task identity belongs to a data session, not the SDK connection.
@@ -862,64 +861,50 @@ class Workbench:
         self.runtime.event(event)
         self.log("指令已排队：" + event)
 
-    def request_jog(self, arm, joint, delta=None, *, target=None):
-        if self.runtime is None or self.state != "connected":
-            raise ValueError("请先连接设备")
-        if time.monotonic() - self._heartbeat > 3:
+    def _require_runtime(self, *, heartbeat=False, allow_initialization=False):
+        """Common API admission; operation-specific state stays with Runtime."""
+        if (self.runtime is None or self.state != "connected"
+                or (self.initializing and not allow_initialization)):
+            raise ValueError("请先连接设备并退出初始化向导")
+        if heartbeat and time.monotonic() - self._heartbeat > 3:
             raise ValueError("操作台心跳已断开")
-        self.runtime.request_jog(arm, joint, delta, target=target)
+        return self.runtime
+
+    def request_jog(self, arm, joint, delta=None, *, target=None):
+        self._require_runtime(heartbeat=True, allow_initialization=True).request_jog(
+            arm, joint, delta, target=target)
 
     def configure_recording(self, *, mode):
-        if self.runtime is None or self.state != "connected" or self.initializing:
-            raise ValueError("请先连接设备并退出初始化向导")
-        self.runtime.configure_recording(mode=mode)
+        self._require_runtime().configure_recording(mode=mode)
         self.log(f"记录模式设置已提交：{mode}")
 
     def configure_hil_input(self, *, input):
-        if self.runtime is None or self.state != "connected" or self.initializing:
-            raise ValueError("请先连接设备并退出初始化向导")
-        self.runtime.configure_hil_input(input=input)
+        self._require_runtime().configure_hil_input(input=input)
 
     def request_cartesian(self, **body):
-        if self.runtime is None or self.state != "connected" or self.initializing:
-            raise ValueError("请先连接设备并退出初始化向导")
-        if time.monotonic()-self._heartbeat > 3:
-            raise ValueError("操作台心跳已断开")
-        self.runtime.request_cartesian(**body)
+        self._require_runtime(heartbeat=True).request_cartesian(**body)
 
     def configure_pld(self, **body):
-        if self.runtime is None or self.state != "connected" or self.initializing:
-            raise ValueError("请先连接设备并退出初始化向导")
-        self.runtime.configure_pld(**body)
+        self._require_runtime().configure_pld(**body)
         self.log("PLD-Grasp 模式设置已提交；不会自动开始运动")
 
     def evaluate_pld_round(self, **body):
-        if self.runtime is None or self.state != "connected" or self.initializing:
-            raise ValueError("请先连接设备")
-        self.runtime.evaluate_pld_round(**body)
+        self._require_runtime().evaluate_pld_round(**body)
 
     def configure_policy(self, *, fusion, rtc_delay_steps=None):
-        if self.runtime is None or self.state != "connected" or self.initializing:
-            raise ValueError("请先连接设备并退出初始化向导")
-        self.runtime.configure_policy(fusion=fusion, rtc_delay_steps=rtc_delay_steps)
+        self._require_runtime().configure_policy(fusion=fusion, rtc_delay_steps=rtc_delay_steps)
         self.log(f"推理动作块设置已提交：{fusion}")
 
     def restart_policy(self):
-        if self.runtime is None or self.state != "connected" or self.initializing:
-            raise ValueError("请先连接设备并退出初始化向导")
-        self.runtime.restart_policy()
+        self._require_runtime().restart_policy()
         self.log("已请求重载推理通信子进程；机械臂保持连接")
 
     def reload_interaction(self):
-        if self.runtime is None or self.state != "connected" or self.initializing:
-            raise ValueError("请先连接设备并退出初始化向导")
-        self.runtime.reload_interaction()
+        self._require_runtime().reload_interaction()
         self.log("已请求HOLD下重载交互规则；不关闭SDK或释放力矩")
 
     def change_policy_source(self, *, url):
-        parsed = urlparse(url)
-        if parsed.scheme not in ("ws", "wss") or not parsed.hostname:
-            raise ValueError("来源地址需为 ws:// 或 wss://")
+        validate_policy_url(url)
         with self._editing():
             if self.initializing or self.state not in ("disconnected", "connected"):
                 raise ValueError("请等待设备操作完成并退出初始化向导")
@@ -932,9 +917,7 @@ class Workbench:
             self.log("已请求切换推理来源；只重建通信子进程，机械臂保持连接")
 
     def restart_planner(self):
-        if self.runtime is None or self.state != "connected" or self.initializing:
-            raise ValueError("请先连接设备并退出初始化向导")
-        self.runtime.restart_planner()
+        self._require_runtime().restart_planner()
         self.log("已请求重载动作规划子进程；机械臂保持连接")
 
     def disconnect(self, *, supported=False):

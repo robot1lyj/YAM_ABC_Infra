@@ -254,10 +254,10 @@ function renderTaskDataset() {
 function camerasConnected() {
   return online && state.camera_connection === "connected";
 }
-function policySettingsEditable({connected, paused, latched, recording, maint}) {
+function policySettingsEditable({connected, paused, latched, recording, maint, recovery = false}) {
   return connected && paused && !latched && !recording && maint === "idle" &&
-    !state.initializing && !state.task_switching && !state.recording_saving &&
-    !state.intervention_pending && state.policy_command?.state !== "queued";
+    !state.initializing && !state.task_switching && state.policy_command?.state !== "queued" &&
+    (recovery || (!state.recording_saving && !state.intervention_pending));
 }
 function renderPolicyControls(rlView, editable) {
   // Move the same form instead of duplicating IDs, drafts or restart handlers.
@@ -271,7 +271,7 @@ function renderPolicyControls(rlView, editable) {
     state.policy_fusion === "rtc" ? `当前：RTC · 前缀 ${state.rtc_delay_steps ?? "—"} 步` : "当前：同步推理 · 完整 50 步");
   $("policy-restart").title = editable
     ? "重连当前推理服务并刷新握手；不重启 Thor 服务或机械臂，不自动开始运动"
-    : "连接后暂停运动，结束介入并等待保存完成后可重载；无需断开机械臂";
+    : "连接后暂停运动并结束当前维护操作，即可重载；无需断开机械臂";
 }
 function render() {
   const xr1Replay = state.policy_url === "ws://127.0.0.1:8003";
@@ -395,8 +395,10 @@ function render() {
     $("policy-fusion").value = state.policy_fusion || "sync_hold";
     $("rtc-delay-steps").value = state.rtc_delay_steps ?? 9;
   }
-  const policyEditable = policySettingsEditable({connected, paused, latched, recording, maint});
-  renderPolicyControls(rlView, policyEditable);
+  const policyContext = {connected, paused, latched, recording, maint};
+  const policyEditable = policySettingsEditable(policyContext);
+  const policyRecoveryEditable = policySettingsEditable({...policyContext, recovery: true});
+  renderPolicyControls(rlView, policyRecoveryEditable);
   if (recordingDraft === state.recording_mode) recordingDraft = null;
   if (!recordingDraft) $("inference-recording-mode").value = state.recording_mode || "standard";
   $("inference-recording-form").hidden = mode !== "inference";
@@ -412,16 +414,16 @@ function render() {
   $("policy-fusion").disabled = !policyEditable;
   $("rtc-delay-steps").disabled = !policyEditable || $("policy-fusion").value !== "rtc";
   $("policy-apply").disabled = !policyEditable;
-  $("policy-restart").disabled = !policyEditable || !!state.mock;
+  $("policy-restart").disabled = !policyRecoveryEditable || !!state.mock;
   $("policy-source-apply").disabled = !sourceEditable;
   $("policy-source-url").disabled = !sourceEditable;
   $("policy-source-local").disabled = !sourceEditable;
   $("policy-source-xr1-eef").disabled = !sourceEditable;
-  $("interaction-reload").disabled = !policyEditable;
+  $("interaction-reload").disabled = !policyRecoveryEditable;
   $("policy-source-thor").disabled = !sourceEditable;
   if (!$("policy-source-url").value) $("policy-source-url").value = state.policy_url || "";
   text("policy-source-current", `当前来源：${state.policy_url || "未配置"}`);
-  $("planner-restart").disabled = !policyEditable || !!state.mock;
+  $("planner-restart").disabled = !policyRecoveryEditable || !!state.mock;
   $("session-summary").hidden = teleopView && !rlView;
   $("recent-episodes").hidden = teleopView || rlView;
   text("control-title", rlView ? "RL 控制" : teleopView ? "遥操作控制" : "采集控制");
@@ -667,8 +669,8 @@ function render() {
     );
     healthRow(
       "动作规划",
-      state.planner_ready ? "独立进程就绪" : "未就绪 / 保持",
-      !!state.planner_ready,
+      state.policy_fusion === "rtc" ? "RTC 原生队列" : state.planner_ready ? "独立进程就绪" : "未就绪 / 保持",
+      state.policy_fusion === "rtc" || !!state.planner_ready,
     );
     healthRow(
       "录制队列",

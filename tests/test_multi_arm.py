@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from yam_abc_reproduce.camera.interface import CameraMode
 from yam_abc_reproduce.camera.mock_camera import MockCamera
@@ -51,3 +52,35 @@ def test_records_both_arms(tmp_path):
         assert np.load(path / f"{arm}-gripper_pos.npy").shape == (n, 1)
         assert np.load(path / f"action-{arm}-joint.npy").shape == (n, 6)
         assert np.load(path / f"action-{arm}-gripper.npy").shape == (n, 1)
+
+
+def test_yaml_parse_cache_is_content_based_and_never_shares_mutable_values(tmp_path, monkeypatch):
+    import os
+
+    import yaml
+
+    from yam_abc_reproduce.config import _parse_yaml, load_yaml
+
+    _parse_yaml.cache_clear()
+    calls = []
+    original = yaml.safe_load
+
+    def parse(content):
+        calls.append(content)
+        return original(content)
+
+    monkeypatch.setattr(yaml, "safe_load", parse)
+    source = tmp_path / "station.yaml"
+    source.write_text("robot: {gripper_force_limit_n: 3}\n")
+    first = load_yaml(source)
+    first["robot"]["gripper_force_limit_n"] = 99
+    assert load_yaml(source)["robot"]["gripper_force_limit_n"] == 3
+    assert len(calls) == 1
+    stamp = source.stat()
+    source.write_text("robot: {gripper_force_limit_n: 4}\n")
+    os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    assert load_yaml(source)["robot"]["gripper_force_limit_n"] == 4
+    assert len(calls) == 2
+    source.unlink()
+    with pytest.raises(FileNotFoundError):
+        load_yaml(source)

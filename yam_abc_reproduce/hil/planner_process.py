@@ -3,22 +3,13 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-from time import monotonic
 
 import numpy as np
 
-
-def _snap_close_grippers(actions):
-    """Temporary inference experiment: make small close targets decisive."""
-    result = np.asarray(actions, dtype=np.float64).copy()
-    grippers = result[:, [6, 13]]
-    result[:, [6, 13]] = np.where(grippers < 0.3, 0.1, grippers)
-    return result
+from .process_pipe import close_pipe_process, receive_process_reply, start_pipe_process
 
 
-def build_plan(
-    mode, token, actions, previous, now, action_dt, max_action_age, action_source="model",
-):
+def build_plan(mode, token, actions, action_source="model"):
     """Plan model chunks or already submitted replay targets without mixing their transforms."""
     if mode != "sync_hold":
         raise ValueError("unknown policy plan mode; RTC uses its own committed-tick queue")
@@ -30,17 +21,15 @@ def build_plan(
     rows[:, [6, 13]] = np.clip(rows[:, [6, 13]], 0.0, 1.0)
     if action_source not in ("model", "recorded_replay"):
         raise ValueError("unknown planner action source")
-    if action_source == "recorded_replay" and mode != "sync_hold":
-        raise ValueError("recorded replay requires sync_hold")
-    if mode == "sync_hold":
-        return {
-            "kind": "queue", "origin": now, "first_index": 0,
-            "actions": rows if action_source == "recorded_replay" else _snap_close_grippers(rows),
-            "meta": [(token, index) for index in range(50)],
-            "based_on_consumed": 0,
-            "trimmed_steps": 0,
-        }
-    raise ValueError("unknown policy plan mode")
+    if action_source == "model":
+        # Ordinary model-only experiment; replay and RTC preserve their targets.
+        grippers = rows[:, [6, 13]]
+        rows[:, [6, 13]] = np.where(grippers < 0.3, 0.1, grippers)
+    return {
+        "kind": "queue",
+        "actions": rows,
+        "meta": [(token, index) for index in range(50)],
+    }
 
 
 def _serve(conn):
@@ -78,51 +67,30 @@ class ProcessActionPlanner:
         return self._process is not None and self._process.is_alive()
 
     def _start(self):
-        parent, child = self._context.Pipe()
-        process = self._context.Process(target=_serve, args=(child,), daemon=True,
-                                        name="yam-action-planner")
+        self._process, self._conn = start_pipe_process(
+            self._context, _serve, name="yam-action-planner")
         try:
-            process.start()
+            kind, error = receive_process_reply(
+                self._process, self._conn, timeout=max(8.0, self.timeout),
+                label="action planner startup")
+            if kind != "ready":
+                raise RuntimeError(error or "action planner startup failed")
         except Exception:
-            parent.close()
-            child.close()
+            self.close()
             raise
-        child.close()
-        self._conn, self._process = parent, process
-        if not parent.poll(max(8.0, self.timeout)):
-            self.close()
-            raise TimeoutError("action planner startup timeout")
-        try:
-            kind, error = parent.recv()
-        except EOFError:
-            self.close()
-            raise RuntimeError("action planner exited during startup") from None
-        if kind != "ready":
-            self.close()
-            raise RuntimeError(error or "action planner startup failed")
 
-    def plan(
-        self, mode, token, actions, previous, now, action_dt, max_action_age,
-        action_source="model",
-    ):
+    def plan(self, mode, token, actions, action_source="model"):
         if self._process is None or not self._process.is_alive():
             raise RuntimeError("action planner unavailable; restart while HOLD")
         try:
-            self._conn.send((
-                mode, token, actions, previous, now, action_dt, max_action_age, action_source,
-            ))
-            deadline = monotonic() + self.timeout
-            while monotonic() < deadline:
-                if self._conn.poll(min(0.02, max(0, deadline - monotonic()))):
-                    kind, payload = self._conn.recv()
-                    if kind == "error":
-                        raise ValueError(payload)
-                    if kind != "plan":
-                        raise RuntimeError("invalid action planner response")
-                    return payload
-                if not self._process.is_alive():
-                    raise RuntimeError("action planner exited")
-            raise TimeoutError("action planner response timeout")
+            self._conn.send((mode, token, actions, action_source))
+            kind, payload = receive_process_reply(
+                self._process, self._conn, timeout=self.timeout, label="action planner response")
+            if kind == "error":
+                raise ValueError(payload)
+            if kind != "plan":
+                raise RuntimeError("invalid action planner response")
+            return payload
         except TimeoutError:
             # Replies have no request IDs. Once a response misses its deadline,
             # this pipe must never serve another request: a late old plan could
@@ -141,11 +109,5 @@ class ProcessActionPlanner:
         self._start()
 
     def close(self):
-        process, conn = self._process, self._conn
+        close_pipe_process(self._process, self._conn)
         self._process = self._conn = None
-        if process is not None:
-            if process.is_alive():
-                process.terminate()
-            process.join(timeout=0.5)
-        if conn is not None:
-            conn.close()

@@ -7,7 +7,9 @@ not silently restore defaults (in particular, a misspelled gripper force limit).
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field, fields
+from functools import lru_cache
 from math import isfinite
 from pathlib import Path
 from typing import Any
@@ -272,9 +274,19 @@ class StationConfig:
     deploy_home_pose: list[float] | None = None
 
 
+@lru_cache(maxsize=16)
+def _parse_yaml(content: bytes):
+    # Cache parsing, not filesystem health. Identical bytes share a parse across
+    # callers; edits, atomic replacements and missing files are still observed.
+    return yaml.safe_load(content) or {}
+
+
 def load_yaml(path: str | Path) -> dict[str, Any]:
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
+    content = Path(path).read_bytes()
+    # Callers overlay task/GUI values; no caller may mutate the shared parse.
+    # Large externally supplied YAML must not fill the small configuration cache.
+    parsed = _parse_yaml(content) if len(content) <= 256 * 1024 else yaml.safe_load(content)
+    return deepcopy(parsed or {})
 
 
 def build_station_config(

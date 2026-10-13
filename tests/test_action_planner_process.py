@@ -27,7 +27,7 @@ def test_policy_plan_target_reaches_device_arbiter_without_feedback_slew(mode):
     )
     arbiter.start(q)
     token = arbiter.request(1, 1.0, 1.0)
-    plan = build_plan(mode, token, rows, None, 1.1, 0.1, 3)
+    plan = build_plan(mode, token, rows)
     assert arbiter.accept_plan(token, plan, 1.1)
     decision = arbiter.step(q, q, now=1.1, dt=0.1, leader_ready=True)
     assert decision.source == "policy"
@@ -48,11 +48,29 @@ def test_inference_close_trick_only_changes_grippers_below_threshold(mode):
     rows[:, 6] = [0.0, 0.299, 0.3, 0.301, *([0.4] * 46)]
     rows[:, 13] = 0.8
     original = rows.copy()
-    plan = build_plan(mode, token, rows, None, 1.1, 0.1, 3)
+    plan = build_plan(mode, token, rows)
     np.testing.assert_array_equal(rows, original)
     np.testing.assert_allclose(plan["actions"][:4, 6], [0.1, 0.1, 0.3, 0.301])
     np.testing.assert_allclose(plan["actions"][:, 13], 0.8)
     np.testing.assert_allclose(plan["actions"][:, :6], 0.4)
+
+
+@pytest.mark.parametrize("bad_source", ["old_request", "wrong_index", "short_block"])
+def test_sync_full_block_cannot_carry_retired_mixed_chunk_provenance(bad_source):
+    from dataclasses import replace
+
+    a = Arbiter(Mode.INFERENCE, policy_fusion="sync_hold", external_planner=True)
+    a.start(np.zeros(14))
+    token = a.request(1, 1)
+    plan = build_plan("sync_hold", token, chunk(.2))
+    if bad_source == "old_request":
+        plan["meta"][0] = (replace(token, request_id=token.request_id-1), 0)
+    elif bad_source == "wrong_index":
+        plan["meta"][0] = (token, 1)
+    else:
+        plan["actions"] = plan["actions"][:49]
+    with pytest.raises(ValueError, match="provenance|50,14"):
+        a.accept_plan(token, plan, 1.1)
 
 
 def test_planner_process_restart_keeps_device_arbiter_and_discards_old_plan():
@@ -66,7 +84,7 @@ def test_planner_process_restart_keeps_device_arbiter_and_discards_old_plan():
         first_pid = planner._process.pid
         arbiter.start(q)
         token = arbiter.request(1, 1.0, 1.0)
-        plan = planner.plan("sync_hold", token, chunk(0.1), None, 1.1, 0.1, 3)
+        plan = planner.plan("sync_hold", token, chunk(0.1))
         assert arbiter.accept_plan(token, plan, 1.1)
         assert arbiter.step(q, q, now=1.1, dt=0.1, leader_ready=True).source == "policy"
         arbiter.hold(q)
@@ -102,9 +120,6 @@ def test_slow_network_and_planner_never_block_device_ticks():
     worker = PolicyWorker(SlowThor(), planner=InProcessPlanner())
     arbiter = Arbiter(Mode.INFERENCE, external_planner=True,
                       action_dt=0.1, max_request_age=2, max_action_age=3, policy_fusion="sync_hold")
-    worker.plan_context = lambda: (
-        arbiter.policy_fusion, None, 0.1, 3,
-    )
     session = Session(arbiter, worker)
     q = np.zeros(14)
     base = time.monotonic()
@@ -143,7 +158,7 @@ def test_sync_hold_external_plan_executes_all_fifty_then_holds():
     arbiter = Arbiter(Mode.INFERENCE, policy_fusion="sync_hold", external_planner=True, action_dt=1 / 30, max_action_age=1.5)
     arbiter.start(q)
     token = arbiter.request(1, 1.0, 1.0)
-    plan = build_plan("sync_hold", token, chunk(0.1), None, 1.17, 1 / 30, 1.5)
+    plan = build_plan("sync_hold", token, chunk(0.1))
     assert arbiter.accept_plan(token, plan, 1.17)
     for step in range(50):
         decision = arbiter.step(q, q, now=1.17 + step / 30,
@@ -161,7 +176,7 @@ def test_old_plan_rejected_after_takeover():
                       action_dt=0.1, max_action_age=3, policy_fusion="sync_hold")
     arbiter.start(q)
     token = arbiter.request(1, 1.0, 1.0)
-    plan = build_plan("sync_hold", token, chunk(0.1), None, 1.1, 0.1, 3)
+    plan = build_plan("sync_hold", token, chunk(0.1))
     arbiter.takeover(q, q)
     assert not arbiter.accept_plan(token, plan, 1.1)
 
@@ -188,13 +203,13 @@ def test_planner_loss_holds_without_waiting_for_network():
     try:
         arbiter.start(q)
         token = arbiter.request(1, 1.0, 1.0)
-        plan = build_plan("sync_hold", token, chunk(0.1), None, 1.1, 0.1, 3)
+        plan = build_plan("sync_hold", token, chunk(0.1))
         assert arbiter.accept_plan(token, plan, 1.1)
         assert session.tick(q, q, now=1.2, dt=0.1, observation_id=2,
                             fresh=False, leader_ready=True).phase == Phase.HOLD
         arbiter.start(q)
         token = arbiter.request(3, 2.0, 2.0)
-        plan = build_plan("sync_hold", token, chunk(0.1), None, 2.1, 0.1, 3)
+        plan = build_plan("sync_hold", token, chunk(0.1))
         assert arbiter.accept_plan(token, plan, 2.1)
         planner.alive = False
         decision = session.tick(q, q, now=2.2, dt=0.1, observation_id=4,
@@ -227,15 +242,15 @@ def test_planner_timeout_closes_old_pipe_before_explicit_restart():
     token = arbiter.request(1, 1.0, 1.0)
     try:
         with pytest.raises(TimeoutError, match="response timeout"):
-            planner.plan("sync_hold", token, chunk(0.1), None, 1.1, 1 / 30, 3)
+            planner.plan("sync_hold", token, chunk(0.1))
         assert not planner.alive and planner._conn is None and planner._process is None
         assert parent.closed and not process.is_alive()
         with pytest.raises(RuntimeError, match="restart while HOLD"):
-            planner.plan("sync_hold", token, chunk(0.7), None, 1.2, 1 / 30, 3)
+            planner.plan("sync_hold", token, chunk(0.7))
         planner.timeout = 2
         planner.restart()
         assert planner._process.pid != process.pid
-        plan = planner.plan("sync_hold", token, chunk(0.7), None, 1.2, 1 / 30, 3)
+        plan = planner.plan("sync_hold", token, chunk(0.7))
         np.testing.assert_allclose(plan["actions"][:, 0], 0.7)
     finally:
         planner.close()
@@ -255,7 +270,7 @@ def test_local_and_process_plans_share_reply_deadlines(mode, received_at):
         arbiter.start(q)
         token = arbiter.request(1, 1.0, 1.0)
         # The reply may have waited before the controller consumed it.
-        plan = build_plan(mode, token, chunk(0.7), None, 1.1, 1 / 30, 3)
+        plan = build_plan(mode, token, chunk(0.7))
         accepted = (
             arbiter.accept_plan(token, plan, received_at)
             if external else arbiter.accept(token, chunk(0.7), received_at)
@@ -307,7 +322,6 @@ def test_worker_failure_latches_readiness_until_its_boundary_restarts(failure):
     arbiter = Arbiter(Mode.INFERENCE, policy_fusion="sync_hold")
     arbiter.start(np.zeros(14))
     token = arbiter.request(1, 1.0, 1.0)
-    worker.plan_context = lambda: ("sync_hold", None, 1 / 30, 3)
     try:
         deadline = time.monotonic() + 2
         while not worker.ready and time.monotonic() < deadline:
@@ -339,7 +353,7 @@ def test_removed_modes_cannot_enter_core_or_planner(mode):
     with pytest.raises(ValueError, match="policy fusion"):
         Arbiter(Mode.INFERENCE, policy_fusion=mode)
     with pytest.raises(ValueError, match="unknown policy plan mode"):
-        build_plan(mode, None, chunk(.2), None, 1, 1/30, 1.5)
+        build_plan(mode, None, chunk(.2))
 
 
 @pytest.mark.parametrize("mode", ["sync_hold", "rtc"])

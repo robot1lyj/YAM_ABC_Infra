@@ -115,6 +115,32 @@ def test_latency_budget_uses_observation_age_not_only_request_rtt():
     assert arbiter.policy_latency_budget == pytest.approx(0.27)
 
 
+def test_latency_summaries_update_per_reply_not_per_status_read(monkeypatch):
+    q = np.zeros(14)
+    arbiter = Arbiter(Mode.INFERENCE, policy_fusion="sync_hold")
+    calls = []
+    percentile = np.percentile
+
+    def count_percentile(*args, **kwargs):
+        calls.append(True)
+        return percentile(*args, **kwargs)
+
+    monkeypatch.setattr(np, "percentile", count_percentile)
+    for index in range(20):
+        arbiter.hold(q)
+        arbiter.start(q)
+        token = arbiter.request(index, index + 1, index + .95)
+        assert arbiter.accept(token, chunk(), index + 1.2 + index * .001)
+    count = len(calls)
+    for _ in range(30):
+        assert arbiter.observed_policy_rtt_p95 == pytest.approx(percentile(
+            [.2 + i * .001 for i in range(4, 20)], 95))
+        assert arbiter.observed_observation_to_ready_p95 == pytest.approx(
+            arbiter.observed_policy_rtt_p95 + .05)
+        assert arbiter.policy_latency_budget > 0
+    assert len(calls) == count == 20
+
+
 def test_sync_hold_finishes_full_fifty_actions_then_holds_until_next_reply():
     q = np.zeros(14)
     arbiter = Arbiter(

@@ -41,7 +41,7 @@ class Maintenance:
 
     def capture(self, q, leader):
         if not self.leaders_connected:
-            raise ValueError("普通推理未连接 Leader，不能保存完整四臂准备位；请在遥操作或 HIL 模式示教")
+            raise ValueError("Leader尚未启用，不能保存完整四臂准备位；请先独立启用Leader")
         if self.factory_zero:
             raise ValueError("此设备固定使用官方关节零位，无需保存准备位")
         self.ready = {"follower": vector(q).tolist(), "leader": vector(leader).tolist()}

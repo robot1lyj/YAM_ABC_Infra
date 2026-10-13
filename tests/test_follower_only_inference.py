@@ -71,7 +71,7 @@ def test_read_apply_hold_close_and_health_touch_only_followers():
     io = StationIO(units, mock=False)
     try:
         q, leader, buttons, ages = io.read()
-        assert io._read_pool._max_workers == 2
+        assert io._read_pool._max_workers == 4  # Capacity for later independent Leader activation.
         assert ages == [.01, None, .01, None]
         assert buttons == [[False, False], [False, False]]
         assert io.leader_control_status() == []
@@ -123,12 +123,15 @@ def test_mode_change_cannot_implicitly_enable_or_release_leaders(followers_only,
     runtime = Runtime(io, [NS(role=r) for r in ("top", "left", "right")], None,
                       NS(recording=False, saving=False), mode=mode)
     try:
-        with pytest.raises(ValueError, match="支撑机械臂"):
-            runtime.event("mode:hil" if followers_only else "mode:inference")
-        assert runtime.session.arbiter.mode == mode
+        runtime.worker = NS(ready=True)
+        runtime.event("mode:hil" if followers_only else "mode:inference")
+        event, _ = runtime.events.get_nowait()
+        q, leader, _, _ = io.read()
+        runtime.session.tick(q, leader, now=0, dt=1/30, observation_id=0, event=event)
+        assert runtime.session.arbiter.mode == ("hil" if followers_only else "inference")
         assert io.leaders_connected is not followers_only
         if followers_only:
-            with pytest.raises(ValueError, match="未连接 Leader"):
+            with pytest.raises(ValueError, match="尚未启用"):
                 runtime.event("home_leader")
     finally:
         io.close()

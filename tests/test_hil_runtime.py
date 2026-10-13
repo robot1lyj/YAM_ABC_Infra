@@ -124,7 +124,7 @@ def test_leader_home_uses_native_gain_without_changing_manual_or_hold():
         io.apply(d, q, q, dt=1/30)
         assert all(c == {"manual": False, "gain_scale": .4} for c in calls)
         calls.clear()
-        d.leader_freeze, d.leader_manual = False, True
+        d.phase, d.leader_freeze, d.leader_manual = Phase.HUMAN, False, True
         io.apply(d, q, q, dt=1/30)
         assert all(c["manual"] for c in calls)
         calls.clear()
@@ -757,12 +757,19 @@ def test_policy_leaders_share_submitted_joint_targets_only_in_hil(mirror):
     try:
         submitted, _ = io.apply(d, np.zeros(14), np.zeros(14), dt=1 / 30, mirror=mirror)
         for i, (_, target, kw) in enumerate(calls[:2]):
-            assert kw["manual"] is (not mirror)
-            assert kw["gain_scale"] == (1.0 if mirror else .2)
+            assert kw["manual"] is False
+            assert kw["gain_scale"] == 1.0
             assert target.shape == (6,)
-            np.testing.assert_array_equal(target, submitted[i * 7:i * 7 + 6])
+            np.testing.assert_array_equal(target, submitted[i * 7:i * 7 + 6] if mirror else np.zeros(6))
         np.testing.assert_array_equal(submitted, np.concatenate([c[1] for c in calls[2:]]))
         assert submitted[0] == 1 and submitted[7] == -1
+        if not mirror:
+            calls.clear()
+            io.apply(d, np.zeros(14), np.full(14, .1), dt=1/30, mirror=False)
+            # Preserve the captured hold target, not drifting feedback positions.
+            for _, target, settings in calls[:2]:
+                np.testing.assert_array_equal(target, np.zeros(6))
+                assert not settings["manual"] and settings["gain_scale"] == 1.
     finally:
         io.close()
 

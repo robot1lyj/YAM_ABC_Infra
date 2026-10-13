@@ -63,6 +63,46 @@ def _report_gripper_travel(name: str, robot: RobotUnitConfig, limits: list[float
         )
 
 
+def _build_leader(cfg, controller):
+    """Shared Leader construction for full stations and independent activation."""
+    from .robot.yam_adapter import YamLeaderArm
+    n = cfg.robot.num_arm_joints
+    channel = controller_channel_for(controller)
+    if is_passive_gello(controller.type):
+        from .robot.passive_gello import PassiveGelloLeader
+        grip = cfg.robot.leader_gripper
+        gello_type, side = gello_variant(controller.type)
+        return PassiveGelloLeader(
+            channel=channel, num_arm_joints=n,
+            gripper_config=tuple(grip) if grip else (n, 0.7, 0.0),
+            joint_signs=leader_joint_signs_for(controller, cfg.robot.leader_joint_signs),
+            gello_type=gello_type, side=side,
+        )
+    return YamLeaderArm(channel=channel, num_arm_joints=n, arm_type=cfg.robot.arm_type,
+        gripper_type=cfg.robot.leader_gripper_type, ee_mass=cfg.robot.ee_mass,
+        bilateral_kp=cfg.robot.bilateral_kp)
+
+
+def iter_leader_agents(cfg, units, *, mock=False):
+    """Yield independently owned Leaders; caller retains/cleans each yielded owner.
+
+    Followers already exist and are never constructed or closed here. Yielding
+    one at a time lets the lifecycle owner clean up partial construction failures.
+    """
+    from .robot.yam_adapter import YamTeleop
+    robots = {_arm_name(r.type): r for r in cfg.robot.robots}
+    for unit in units:
+        if mock:
+            # MockTeleop.stop() closes its robot. Give it a distinct mock Leader,
+            # not the still-running Follower it must never disable.
+            yield MockTeleop(MockRobot(cfg.robot.num_arm_joints), cfg.robot.num_arm_joints)
+        else:
+            controller = cfg.robot.controller_for(robots[unit.name])
+            leader = _build_leader(cfg, controller)
+            kp = 0.0 if is_passive_gello(controller.type) else cfg.robot.bilateral_kp
+            yield YamTeleop(leader, unit.robot, bilateral_kp=kp)
+
+
 def build_arm_units(
     cfg: StationConfig, mock: bool = False, followers_only: bool = False
 ) -> list[ArmUnit]:
@@ -86,34 +126,7 @@ def build_arm_units(
         return units
 
     # Hardware path: the single i2rt boundary.
-    from .robot.yam_adapter import YamLeaderArm, YamRobot, YamTeleop
-
-    def _build_leader(controller):
-        """Passive GELLO (desk or mobile) -> motorless encoder arm (PassiveGelloLeader);
-        yam_lead_* -> motorized YAM arm read through i2rt (YamLeaderArm)."""
-        channel = controller_channel_for(controller)
-        if is_passive_gello(controller.type):
-            from .robot.passive_gello import PassiveGelloLeader
-
-            grip = cfg.robot.leader_gripper
-            gello_type, side = gello_variant(controller.type)
-            # Home zero lives in each encoder's EEPROM (calibrate_gello.py zero)
-            return PassiveGelloLeader(
-                channel=channel,
-                num_arm_joints=n,
-                gripper_config=tuple(grip) if grip else (n, 0.7, 0.0),
-                joint_signs=leader_joint_signs_for(controller, cfg.robot.leader_joint_signs),
-                gello_type=gello_type,
-                side=side,
-            )
-        return YamLeaderArm(
-            channel=channel,
-            num_arm_joints=n,
-            arm_type=cfg.robot.arm_type,
-            gripper_type=cfg.robot.leader_gripper_type,
-            ee_mass=cfg.robot.ee_mass,
-            bilateral_kp=cfg.robot.bilateral_kp,
-        )
+    from .robot.yam_adapter import YamRobot, YamTeleop
 
     # Build each pair, tearing down anything already opened if a later build fails
     units: list[ArmUnit] = []
@@ -141,7 +154,7 @@ def build_arm_units(
             )
             opened.append(follower)
             _report_gripper_travel(_arm_name(r.type), r, follower.gripper_limits())
-            leader = None if controller is None else _build_leader(controller)
+            leader = None if controller is None else _build_leader(cfg, controller)
             if leader is not None:
                 opened.append(leader)
         except Exception as exc:

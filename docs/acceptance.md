@@ -2,13 +2,17 @@
 
 最近部署核对：2026-10-13。这里区分现场运行状态与带日期的历史测试；旧失败和测量归 [历史验收快照](archive/acceptance_20260922.md) 及原始证据，不把旧“最新一集”当成现在。
 
-## 普通推理仅连接Follower（2026-10-13，本地完成，未部署IPC）
+## Follower默认连接、Leader独立启停（2026-10-13，本地完成，未部署IPC）
 
-复用现有`build_arm_units(followers_only=True)`：普通推理只打开、读写和关闭两台Follower；CAN启动/收尾与健康检查也仅涉及两台Follower。Leader没有SDK实例，不使能、不下发重力或摩擦补偿。遥操作、采集及HIL仍走原四臂路径，增益/补偿/模型动作/RTC参数不改。连接范围不同的模式切换明确提示支撑后断开重连，不自动启停Leader；旧四臂独立执行器不支持此范围时明确拒绝。
+所有日常GUI模式默认复用`build_arm_units(followers_only=True)`，只打开两台Follower；DAgger/HIL、遥操作和采集提供独立Leader按钮。启停需HOLD、无介入/维护且保存完成，并明确确认支撑。后台线程只构造/关闭Leader，部分失败保留诊断及未关闭owner；控制tick仅在读取新反馈前接入，禁止拿连接前占位反馈下发新Leader。Follower SDK对象及其CAN不重建、不失能，连接期间仍执行HOLD。模式切换不要求整机重连，不暗中启停Leader；普通推理不能启用Leader，已启用则保持自身位置并可单独停用。
 
-普通推理的`leader_state=null`、HDF5有效位false，SDK反馈年龄保持原四槽顺序、Leader槽null；manifest/details记录`leaders_connected=false`。回Follower准备位不等待未连接Leader；不以内部占位向量保存四臂准备位。模拟页面在独立8899端口验证了连接确认、两台Follower健康、Leader未连接显示和Follower调试，未访问正式控制接口。IPC仍使用之前的代码，本轮未部署、未重启或改变真机增益；首次应用需在保存完成、机械臂支撑并获当次许可后安排设备服务更新。
+任何模式未启用Leader时`leader_state=null`、HDF5有效位false、原四槽SDK年龄的Leader槽null；按帧记录`leaders_connected`及生命周期状态。回Follower准备位不等待未启用Leader。遥操作/采集启动及Leader介入要求已启用Leader，键盘HIL不要求；HIL策略镜像、人工绝对映射、Follower目标、RTC前缀和3 N配置均未改。已启用但未使用的Leader保持自身位置，不再因不镜像而进入零增益补偿。无页面CLI可显式`--enable-leaders`，初始化向导保留四臂；可选旧执行器仍固定四臂、不支持独立启停。
 
-最终本地全套838 passed、4 skipped、21 subtests通过，使用隔离工作树及其已安装安全补丁的SDK（`PYTHONPATH=.:third_party/i2rt`）；未修改SDK或物理标定。新增7项验证覆盖工厂不构造Leader、CAN范围、读写/保持/关闭仅Follower、两臂健康门禁、回位不等待Leader、模式切换不暗中启停Leader；RTC与PLD probe录制回读确认Leader有效位为空，保留原动作来源和前缀断言。JavaScript语法、文档链接/预算与diff检查通过。结果不代替真机运动验收。
+独立8899模拟页面验证了默认两台Follower、启用Leader、切普通推理、独立停用Leader及Follower持续连接，未访问正式控制接口。IPC仍使用之前的代码，本轮未部署、未重启或改变真机增益；首次应用需在保存完成、机械臂支撑并获当次许可后安排设备服务更新。运行中硬件故障仍按既有安全暂停处理，不承诺所有故障无重连恢复。
+
+最终全套850 passed、4 skipped、21 subtests通过；Ruff、JavaScript语法、文档链接/预算及diff检查通过。回归覆盖Follower-only工厂/CAN/反馈/回位、独立启停/重启用、构造与关闭失败、迟到取消、原生增益自身姿态保持、慢构造不阻塞控制tick、排队事件复查、接入读取时序和Web/Unix接口一致。RTC与PLD probe录制回读保留动作来源和前缀断言。使用隔离工作树及其已安装安全补丁的SDK（`PYTHONPATH=.:third_party/i2rt`），未修改SDK或物理标定。结果不代替真机运动验收。
+
+新路径RTC模拟负载：195 ms模型、30 Hz、每组8秒，无视频/有录制/录制加预览的控制耗时P95为1.77/1.72/1.77 ms，均无控制超期；两组录制各251帧，三路视频逐路对齐，累计484个策略tick原输出与提交关节最大差0。来源`scripts/benchmark_workbench_preview.py`与本地`output/performance/independent-leaders.json`。仅为开发机短时mock，不能外推RK3588/CAN实机性能或声称与上次不同机器负载形成严格A/B。
 
 ## 架构与设备健康检查（2026-10-13，已部署）
 

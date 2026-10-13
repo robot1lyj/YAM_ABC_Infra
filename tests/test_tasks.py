@@ -50,6 +50,8 @@ def test_independent_connections_and_task_scoped_recording(tmp_path):
         task = service.create_task("乐高分拣", "按颜色分拣乐高", "Sort the LEGO bricks by color.")
         service.connect()
         wait(lambda: service.runtime is not None and service.status.get("tick", 0) > 2)
+        service.configure_leaders(enabled=True, ready=True)
+        wait(lambda: service.status.get("leaders_connected"))
         assert service.camera_state == "disconnected"
         assert all(c.worker is None for c in service.camera_slots)
         with pytest.raises(ValueError, match="相机"):
@@ -149,6 +151,8 @@ def test_taskless_teleop_can_run_but_never_record(tmp_path):
         assert "teleop_sessions" in service.output.parts
         assert service.camera_state == "disconnected"
 
+        service.configure_leaders(enabled=True, ready=True)
+        wait(lambda: service.status.get("leaders_connected"))
         service.event("start")
         wait(lambda: service.status.get("phase") == "human")
         with pytest.raises(ValueError, match="不提供录制"):
@@ -194,6 +198,8 @@ def test_taskless_teleop_can_bind_collection_task_without_reconnecting_arms(tmp_
         runtime, owner, standalone_output = service.runtime, service.thread, service.output
         assert service.taskless_teleop and not runtime.recording_allowed
         assert standalone_output.parents[3] == tmp_path
+        service.configure_leaders(enabled=True, ready=True)
+        wait(lambda: service.status.get("leaders_connected"))
         service.event("start")
         wait(lambda: service.status.get("phase") == "human")
         with pytest.raises(ValueError, match="暂停遥操作"):
@@ -262,6 +268,8 @@ def test_teleop_mode_never_records_even_with_a_selected_task(tmp_path):
         service.create_task("仅遥操作", "不采集数据", "Validate teleoperation only.")
         service.connect()
         wait(lambda: service.runtime is not None and service.status.get("tick", 0) > 2)
+        service.configure_leaders(enabled=True, ready=True)
+        wait(lambda: service.status.get("leaders_connected"))
         service.event("start")
         wait(lambda: service.status.get("phase") == "human")
         time.sleep(0.15)

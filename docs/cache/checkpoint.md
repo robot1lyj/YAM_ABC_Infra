@@ -1,6 +1,6 @@
 # 续作检查点（2026-10-13）
 
-- 待部署：普通推理复用Follower-only，不使能Leader；HIL/遥操作不变。本地代码与模拟验证归[验收](../acceptance.md)，线上仍是旧四臂路径；部署须保存完成、支撑并取得当次许可，不自动运动。
-- 架构与健康检查`50ed746`已部署，SDK/力矩不改，executor未迁移；职责归[架构](../dagger_architecture.md)。静止检查不证明运动恢复。
-- 左Follower J6曾不跟随且红灯，USB重插后一次重连因CAN未UP失败，硬件根因未明，不连续重试。健康门禁归[手册](../hil_quickstart.md#开始前与运行中的设备检查)；历史许可不授权新动作。
-- RTC/PLD与C/N归[PLD](../pld_client.md)，Thor无线入口归[环境](../environment.md#ipc连接与地址)，USB仅排障备用；3 N与峰值边界归[硬件](../hardware.md#夹爪受阻软限力)。后续开发继续隔离。
+- 待部署：默认仅Follower，Leader在HOLD显式独立启停，不断开Follower；切模式不暗中启停。代码/模拟验证归[验收](../acceptance.md)，首次设备更新须当次支撑许可，不自动运动。
+- IPC此前架构/健康版50ed746，executor未迁移；历史进程/IP不代表现在状态，入口复查[环境](../environment.md#ipc连接与地址)。本轮不动IPC。
+- 左Follower J6红灯/不跟随根因未明，模拟通过不等于硬件复验成功。健康门禁与操作归[手册](../hil_quickstart.md#开始前与运行中的设备检查)，历史许可不授权新动作。
+- RTC/PLD与C/N归[PLD](../pld_client.md)；3 N与峰值边界归[硬件](../hardware.md#夹爪受阻软限力)。继续隔离开发，不新建进度账本。

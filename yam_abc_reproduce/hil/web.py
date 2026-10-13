@@ -100,6 +100,12 @@ class Disconnect(BaseModel):
     supported: bool = False
 
 
+class LeaderConnectionSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+    ready: bool = False
+
+
 class JogRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     arm: str
@@ -323,6 +329,11 @@ def create_app(runtime, *, control_access=False):
             raise HTTPException(409, "此演示会话已连接")
         invoke(runtime.connect, **body.model_dump())
         return {"queued": "connect"}
+
+    @app.post("/leaders/connection")
+    def leader_connection(body: LeaderConnectionSettings):
+        invoke(runtime.configure_leaders, **body.model_dump())
+        return {"queued": "leaders"}
 
     @app.post("/initialize/preflight")
     def initialize_preflight():

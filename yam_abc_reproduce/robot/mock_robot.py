@@ -76,3 +76,8 @@ class MockTeleop(TeleopAgent):
 
     def stop(self) -> None:
         self._robot.stop()
+
+    def close_hil(self) -> None:
+        # Match YamTeleop: closing a Leader agent must not stop its Follower.
+        # This mock agent owns no device thread or bus.
+        pass

@@ -20,6 +20,6 @@
 
 - 本站2 Follower＋2官方电动Leader＋3 D405，不是GELLO。既有身份无需每轮重登记，变更设备/接法再查 `docs/workstation.md`；不例行写电机零位、刷固件或关闭超时。
 - 构造/连接可能施力矩或校准夹爪；运动、释放力矩前确认四臂支撑、路径清空、有人照看。软件暂停不是实体急停，故障恢复不自动运动。重启影响先查部署边界，未知硬件根因不写成已修。
-- 单一Runtime/SDK写入者，维护与运行互斥。普通推理只连接Follower，不使能Leader；改变连接范围须显式支撑重连。遥操作/HIL人工复用绝对1:1，不恢复相对映射或对齐门槛；可选键盘HIL先暂停模型再微调，Leader保持。模式/按键查 `docs/hil_quickstart.md`，模型合同查 `docs/condapi_interface.md`。
+- 单一Runtime/SDK写入者，维护与运行互斥。默认仅连接Follower；Leader在HOLD且保存完成后显式独立启停，不重建或失能Follower，切模式不暗中启停Leader。遥操作/HIL人工复用绝对1:1，不恢复相对映射或对齐门槛；可选键盘HIL先暂停模型再微调，已启用Leader保持。模式/按键查 `docs/hil_quickstart.md`，模型合同查 `docs/condapi_interface.md`。
 - Web启动不构造硬件；本站factory_zero_home为真，Follower与Leader回零是独立操作，核验完整路径、保持夹爪，不写编码器零点；其他站按示教准备位配置。
 - 相机与四臂独立连接；HOLD且维护/介入/保存完毕可换任务，不必断臂。原始MP4/HDF5按任务保存，LeRobot仅显式离线转换；预览可丢帧，不得阻塞控制/录制，分进程仍可能争抢资源。

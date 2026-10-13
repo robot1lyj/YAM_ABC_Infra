@@ -180,6 +180,8 @@ def test_connected_delete_uses_barrier_without_reconnecting_devices(tmp_path):
         service.connect()
         check(lambda: service.status.get("tick", 0) > 2)
         owner, runtime = service.thread, service.runtime
+        service.configure_leaders(enabled=True, ready=True)
+        check(lambda: service.status.get("leaders_connected"))
         service.event("start")
         check(lambda: service.status.get("phase") == "human")
         service.event("record")

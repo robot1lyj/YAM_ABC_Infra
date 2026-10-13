@@ -135,6 +135,9 @@ class DeviceClient:
     def connect(self, **body):
         return self._request("POST", "/connect", body)
 
+    def configure_leaders(self, **body):
+        return self._request("POST", "/leaders/connection", body)
+
     def initialization_preflight(self):
         return self._request("POST", "/initialize/preflight")
 

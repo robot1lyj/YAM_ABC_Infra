@@ -344,6 +344,10 @@
                   </div>
                 </div>
                 <div id="ownership" class="ownership">控制权：保持</div>
+                <div id="leader-connection-panel" class="policy-execution-actions" hidden>
+                  <span id="leader-connection-status" class="muted" role="status">Leader 未启用</span>
+                  <button class="button" id="leader-connection-toggle" type="button">启用 Leader</button>
+                </div>
                 <div class="handle-hint" id="handle-hint">
                   手柄① 开始 / 结束录制<br />手柄② 放弃当前集
                 </div>
@@ -665,7 +669,7 @@
         <div class="eyebrow">CONNECT ROBOT</div>
         <h2>连接机械臂</h2>
         <p id="connect-scope">
-          连接两台 Leader 和两台 Follower，连接后先保持。遥操作无需采集任务或相机；只有录制数据和模型执行需要完整采集上下文。
+          默认仅连接两台 Follower，连接后先保持。Leader在遥操作、采集或HIL中按需独立启用，不需要断开Follower。
         </p>
         <div id="connect-task-summary" class="connect-task-summary"></div>
         <label

@@ -13,8 +13,9 @@
 | intervention_id、intervention_pending、is_intervention | 介入编号、介入尚未交还、当前是否人工介入 |
 | expert_valid、observation_valid、policy_valid | 有效人工示范、有效同步观测、当前有效策略目标；不是任务成功标签 |
 | measured_state | 下发前Follower反馈，14D |
-| leader_state | Leader反馈/手柄开度，14D；普通推理未连接Leader时为空，`leader_state__valid=false` |
-| leaders_connected | 本会话是否实际连接两台Leader；普通推理为false，不以Follower反馈冒充Leader反馈 |
+| leader_state | Leader反馈/手柄开度，14D；任何模式未启用Leader时为空，`leader_state__valid=false` |
+| leaders_connected | 本帧是否实际连接两台Leader；不由产品模式推断，不以Follower反馈冒充Leader反馈 |
+| leader_connection | 独立启停状态：state/busy/enabled/error；不支持此功能的执行器可空 |
 | observation_state | 与观测图像配对的状态，14D；可能空 |
 | policy_action | 本tick选中的模型目标，14D；非策略帧可空 |
 | human_action | Leader输入时为原始Leader14D；键盘微调时为IK后的14D人工绝对目标，不能当成Leader反馈 |

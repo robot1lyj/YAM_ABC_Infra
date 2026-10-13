@@ -326,13 +326,9 @@ function render() {
     state.connection === "connected"
       ? "断开机械臂并保存当前会话"
       : state.selected_task?.task
-        ? state.mode === "inference"
-          ? "普通推理仅连接两台 Follower，不使能 Leader；连接后先保持"
-          : "连接当前任务的四台机械臂；连接后先保持"
-        : "无需采集任务，直接连接四臂进行遥操作";
-  text("connect-scope", mode === "inference"
-    ? "普通推理仅连接两台 Follower；不连接、不使能 Leader，也不向 Leader 发送重力或摩擦补偿指令。连接后先保持。"
-    : "连接两台 Leader 和两台 Follower，连接后先保持。遥操作无需采集任务或相机；录制和模型执行需要完整采集上下文。");
+        ? "默认仅连接两台 Follower；Leader在遥操作、采集或HIL中独立启用"
+        : "无需采集任务，先连接Follower，再单独启用Leader进行遥操作";
+  text("connect-scope", "默认仅连接两台 Follower，连接后先保持。Leader在遥操作、采集或HIL中按需独立启用；不需要断开Follower。普通推理不自动启用Leader。");
   renderTask(transitional || (state.connection === "connected" && !canBindTask));
   const cameraBusy = ["connecting", "disconnecting"].includes(
     state.camera_connection,
@@ -353,11 +349,9 @@ function render() {
       ? "断开机械臂"
       : "连接机械臂";
   document.querySelectorAll("[data-mode]").forEach((b) => {
-    const needsReconnect = connected && typeof state.leaders_connected === "boolean"
-      && (b.dataset.mode !== "inference") !== state.leaders_connected;
     b.classList.toggle("active", !rlView && b.dataset.mode === mode);
     b.querySelector(".mode-state").textContent =
-      b.dataset.mode === mode ? "● 当前模式" : needsReconnect ? "需断开后重连 →" : "选择模式 →";
+      b.dataset.mode === mode ? "● 当前模式" : "选择模式 →";
     b.disabled =
       !online ||
       transitional ||
@@ -371,7 +365,7 @@ function render() {
       ? "当前为设备初始化会话；完成或退出向导后开放工作模式"
       : !state.selected_task && b.dataset.mode !== "teleop"
         ? "请先新建或选择采集任务"
-        : needsReconnect ? "Leader连接范围不同；先暂停、支撑并断开，选择该模式后重新连接" : "";
+        : "";
   });
   $("rl-entry").classList.toggle("active", rlView);
   $("rl-entry").setAttribute("aria-pressed", String(rlView));
@@ -485,6 +479,8 @@ function render() {
   const intervening = mode === "hil" && (state.intervention_pending || ["takeover", "human"].includes(state.phase));
   $("start").disabled = !(canRun && paused && idle) || intervening;
   $("start").disabled ||= !state.device_health?.ok;
+  const leaders = state.leader_connection || {}, needsLeader = ["teleop", "collect"].includes(mode);
+  $("start").disabled ||= !!leaders.busy || (needsLeader && !state.leaders_connected);
   if (rlView) {
     const pldMode = pld?.mode || state.pld_configuration?.mode || "off";
     text("start", pldMode === "off" ? "开始原 Pi" : pldMode === "probe" || pldMode === "shadow" ? "开始基础策略记录" : "开始专家执行");
@@ -494,6 +490,15 @@ function render() {
     ? "推理通信尚未就绪；可在保持状态重载推理通信" : "";
   if (intervening) $("start").title = "介入期间只能暂停或明确交还模型";
   if (state.device_health?.reason) $("start").title = state.device_health.reason;
+  if (needsLeader && !state.leaders_connected) $("start").title = "请先点击启用 Leader；Follower无需断开";
+  $("leader-connection-panel").hidden = !["teleop", "collect", "hil"].includes(mode) && !state.leaders_connected && !leaders.error;
+  text("leader-connection-toggle", state.leaders_connected || leaders.error ? "停用 Leader" : "启用 Leader");
+  const leaderControl = state.leader_controls?.[state.leaders_connected || leaders.error ? "disable" : "enable"];
+  $("leader-connection-toggle").disabled = !online || !connected || !!leaders.busy || !leaderControl?.allowed;
+  $("leader-connection-toggle").title = leaderControl?.reason || "独立启停Leader；Follower保持连接";
+  text("leader-connection-status", leaders.error ? "Leader启停失败：" + leaders.error
+    : leaders.busy ? (leaders.state === "connecting" ? "正在启用Leader · Follower保持" : "正在停用Leader · Follower保持")
+    : state.leaders_connected ? "Leader已启用" : connected ? "Leader未启用 · Follower已连接" : "先连接Follower");
   renderRL({connected, idle, paused, latched, recording, policyEditable, mode, pld});
   renderKeyboardHil(connected, idle, paused, latched, recording, mode);
   $("header-stop").disabled =
@@ -506,6 +511,9 @@ function render() {
     (["policy", "resume"].includes(state.phase) || (state.hil_input === "keyboard"
       && paused && state.intervention_pending))
   );
+  $("takeover").disabled ||= !!leaders.busy || (state.hil_input !== "keyboard" && !state.leaders_connected);
+  $("takeover").title = state.hil_input !== "keyboard" && !state.leaders_connected
+    ? "请先暂停并启用Leader，或选择键盘微调" : "";
   text("takeover", state.hil_input === "keyboard" && paused && state.intervention_pending ? "继续微调" : "介入 I");
   $("resume").disabled = !(canRun && mode === "hil" && (intervening || (paused
     && state.leader_locked && state.hil_input !== "keyboard")));
@@ -518,7 +526,7 @@ function render() {
       : mode === "hil"
         ? state.hil_input === "keyboard" ? "I 暂停模型并微调 · 点击交还模型继续　\nLeader 保持 · 手柄按钮不接管"
         : "I 介入锁定 → 右①遥操作 → ①锁定待交还　\n点击交还模型继续 · ② 无功能"
-        : "普通推理仅控制 Follower · Leader 未连接、未使能",
+        : state.leaders_connected ? "普通推理只控制Follower · 已启用的Leader保持，可单独停用" : "普通推理只控制Follower · Leader未启用",
   );
   text(
     "ownership",
@@ -642,7 +650,7 @@ function render() {
       ok
         ? Math.round(ages[i] * 1000) + " ms"
         : absent
-          ? "未连接（普通推理不使用）"
+          ? "未启用（可独立连接）"
         : connected
           ? "反馈异常"
           : "未连接",
@@ -768,7 +776,7 @@ function render() {
       angles = document.createElement("div");
     dot.className = "led" + (ok ? " ok" : "");
     title.append(dot, document.createTextNode(name));
-    meta.textContent = absent ? "未连接 · 普通推理不使能 Leader" : connected
+    meta.textContent = absent ? "未启用 · 可独立连接" : connected
       ? `反馈 ${ages[i] == null ? "—" : Math.round(ages[i] * 1000)} ms`
       : "设备未连接";
     angles.className = "arm-angles";
@@ -840,7 +848,7 @@ function render() {
   $("home").title = homeBlockReason;
   $("home-leader").hidden = !factoryZero;
   $("home-leader").disabled = !!homeBlockReason || state.leaders_connected === false;
-  $("home-leader").title = state.leaders_connected === false ? "普通推理未连接 Leader" : homeBlockReason;
+  $("home-leader").title = state.leaders_connected === false ? "请先独立启用Leader；Follower无需断开" : homeBlockReason;
   $("gravity").disabled = !(canMaintain && idle);
   $("gravity-exit").disabled = !(connected && !latched && maint === "gravity");
   text("maintenance-title", factoryZero ? "零位与重力补偿" : "准备位与重力补偿");
@@ -1242,9 +1250,17 @@ $("home").onclick = () =>
 $("home-leader").onclick = () =>
   confirmAction(
     "两台 Leader 回零？",
-    "仅两台 Leader 六关节沿插值路径回到零位，Follower 与夹爪保持。请确认长手柄到桌面的完整路径间隙；可随时暂停或急停。完成后 Leader 恢复重力补偿。",
+    "仅两台 Leader 六关节沿插值路径回到零位，Follower 与夹爪保持。请确认长手柄到桌面的完整路径间隙；可随时暂停或急停。完成后 Leader 保持当前位置。",
     () => action("/event/home_leader"),
   );
+$("leader-connection-toggle").onclick = () => {
+  const enabled = !(state.leaders_connected || state.leader_connection?.error);
+  confirmAction(enabled ? "独立启用 Leader？" : "独立停用 Leader？",
+    enabled
+      ? "仅连接左右Leader并在各自当前位置保持，不自动对齐或启动遥操作。请确认Leader已支撑、手柄按钮释放、行程清空且有人照看。Follower保持连接，不会失能。"
+      : "将释放左右Leader的力矩，请先稳妥支撑两台Leader并确认现场有人照看。Follower继续保持，不断开、不掉使能。",
+    () => action("/leaders/connection", {enabled, ready:true}));
+};
 $("gravity").onclick = () =>
   confirmAction(
     "进入重力补偿？",
@@ -1477,7 +1493,7 @@ function renderTask(locked) {
   text("task-name", task?.name || (page === "rl" ? "请选择 RL 数据任务" : "无需任务，直接遥操作"));
   text(
     "task-instruction",
-    task?.instruction || (page === "rl" ? "" : "连接机械臂即可双臂遥操作；需要录制数据时再选择采集任务。"),
+    task?.instruction || (page === "rl" ? "" : "连接Follower后独立启用Leader即可遥操作；需要录制时再选择采集任务。"),
   );
   text(
     "task-identity",

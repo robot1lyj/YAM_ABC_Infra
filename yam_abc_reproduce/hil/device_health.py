@@ -74,7 +74,7 @@ class DeviceHealth:
             if now - window[0][0] < self.WINDOW_S:
                 continue
             movement = max(v[1] for v in window) - min(v[1] for v in window)
-            if movement < self.MOTION_RAD and self.tracking_fault is None:
+            if movement < self.MOTION_RAD and self.active_tracking_fault() is None:
                 side = "左" if (i // 7) % 2 == 0 else "右"
                 role = "Follower" if i < 14 else "Leader"
                 self.tracking_fault = dict(
@@ -94,13 +94,22 @@ class DeviceHealth:
         for window in self._windows:
             window.clear()
 
+    def active_tracking_fault(self):
+        # Explicitly detached Leaders no longer gate Follower-only operation.
+        # Retain their latch internally; it applies again if they are re-enabled.
+        if (self.expected_arms == 2 and self.tracking_fault
+                and "Leader" in self.tracking_fault.get("arm", "")):
+            return None
+        return self.tracking_fault
+
     def blocking_reason(self, *, now=None):
         now = time.monotonic() if now is None else now
         if self.checked_at is None or not 0 <= now - self.checked_at <= self.max_age:
             return "设备健康状态尚未更新或已过期；请检查连接，等待新鲜反馈"
         if self.issues:
             return "；".join(self.issues)
-        return self.tracking_fault["message"] if self.tracking_fault else None
+        fault = self.active_tracking_fault()
+        return fault["message"] if fault else None
 
     def acknowledge(self, *, now):
         # Explicit acknowledgement is NOT proof that motion has recovered.
@@ -115,6 +124,6 @@ class DeviceHealth:
     def snapshot(self, *, now=None):
         reason = self.blocking_reason(now=now)
         return dict(ok=reason is None, checked_at=self.checked_at, reason=reason,
-                    arms=self.arms, tracking_fault=self.tracking_fault,
+                    arms=self.arms, tracking_fault=self.active_tracking_fault(),
                     thresholds=dict(error_deg=10, duration_s=1, movement_deg=1),
                     scope="只读通信与报警检查；静止通过不代表运动跟随已验证")

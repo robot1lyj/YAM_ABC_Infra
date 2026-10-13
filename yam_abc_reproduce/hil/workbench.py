@@ -705,11 +705,9 @@ class Workbench:
             self.log(
                 "正在按初始化流程连接四台机械臂；连接后保持，不自动回零"
                 if initialize
-                else "正在连接四台机械臂进行遥操作；本会话不录制"
+                else "正在连接两台Follower；遥操作前请独立启用Leader，本会话不录制"
                 if taskless_teleop
-                else "普通推理仅连接两台 Follower；不连接或使能 Leader，连接后保持"
-                if self.mode == "inference"
-                else "正在独立连接四台机械臂；连接后保持，等待开始"
+                else "正在连接两台Follower；Leader按需独立启用，连接后保持"
             )
             try:
                 self.thread = threading.Thread(
@@ -896,6 +894,10 @@ class Workbench:
 
     def configure_hil_input(self, *, input):
         self._require_runtime().configure_hil_input(input=input)
+
+    def configure_leaders(self, *, enabled, ready=False):
+        self._require_runtime(allow_initialization=True).configure_leaders(enabled=enabled, ready=ready)
+        self.log("已提交Leader独立启停；Follower保持连接")
 
     def request_cartesian(self, **body):
         self._require_runtime(heartbeat=True).request_cartesian(**body)

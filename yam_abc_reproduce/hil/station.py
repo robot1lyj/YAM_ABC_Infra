@@ -65,7 +65,7 @@ class StationIO:
             None
             if mock
             else ThreadPoolExecutor(
-                max_workers=4 if self.leaders_connected else 2,
+                max_workers=4,  # Threads are created lazily when Leaders are attached.
                 thread_name_prefix="station-read",
                 initializer=place_on_cpus,
                 initargs=("CONTROL",),
@@ -81,6 +81,7 @@ class StationIO:
         self._policy_trace = None
         self._mock_leaders = np.concatenate([u.robot.get_joint_pos() for u in self.units])
         self._manual = self.leaders_connected
+        self._idle_leader_hold = None
         self._mock_t = 0
         self._limits = [
             np.tile([-np.pi, np.pi], (6, 1)) if mock else u.robot.joint_limits() for u in self.units
@@ -92,6 +93,18 @@ class StationIO:
             for limits in self._limits
         ):
             raise ValueError("invalid SDK joint limits")
+
+    def set_leaders(self, agents):
+        """Tick-boundary ownership transfer; never reconstructs a Follower."""
+        if len(agents) != 2 or (agents[0] is None) != (agents[1] is None):
+            raise ValueError("attach both Leaders or neither")
+        for unit, agent in zip(self.units, agents, strict=True):
+            unit.agent = agent
+        self.leaders_connected = agents[0] is not None
+        self._manual = False
+        self._idle_leader_hold = None
+        if self.mock and self.leaders_connected:
+            self._mock_leaders = np.concatenate([u.robot.get_joint_pos() for u in self.units])
 
     def read(self):
         self.gripper_feedback = [None, None]
@@ -219,7 +232,16 @@ class StationIO:
             self._policy_trajectory.submit(target)
             submitted = self._policy_trajectory.latest()
             self._policy_trace = self._policy_trajectory.drain_trace()
-        manual = (decision.leader_manual or not mirror) and maintenance_leader is None and not decision.leader_freeze
+        manual = decision.leader_manual and maintenance_leader is None and not decision.leader_freeze
+        idle_hold = (self.leaders_connected and maintenance_leader is None and not gravity
+            and not decision.leader_freeze and (getattr(decision, "phase", None) == "hold"
+                or (not mirror and not decision.leader_manual)))
+        if idle_hold:
+            if self._idle_leader_hold is None:
+                self._idle_leader_hold = leader.copy()
+            manual = False
+        else:
+            self._idle_leader_hold = None
         leader_targets = []
         for i, limits in enumerate(self._limits):
             sl = slice(i * 7, i * 7 + 6)
@@ -234,6 +256,8 @@ class StationIO:
             if decision.leader_freeze:
                 frozen = getattr(decision, "leader_hold_target", None)
                 arm = leader[sl] if frozen is None else frozen[sl]
+            if idle_hold:
+                arm = self._idle_leader_hold[sl]
             if maintenance_leader is not None:
                 # Maintenance owns its bounded trajectory and tracking guard;
                 # re-clamping against feedback here would prevent it progressing.
@@ -243,6 +267,8 @@ class StationIO:
         self.write_timings_s = {}
         rules = getattr(self, "interaction_rules", interaction_rules)
         gain = self.leader_gain
+        if idle_hold:
+            gain = rules.POLICY_GAIN
         if (mirror and (decision.source == "policy" or getattr(decision, "phase", None) == "resume")
                 and maintenance_leader is None):
             gain = rules.POLICY_GAIN
@@ -355,6 +381,11 @@ class StationIO:
         errors = self._stop_trajectory()
         if self._policy_trajectory is not None:
             return errors
+        lifecycle = getattr(self, "leader_connection", None)
+        if lifecycle is not None:
+            errors += lifecycle.close()
+            if lifecycle.busy:
+                return errors
         if self._read_pool is not None:
             errors += close_resources([
                 ("state readers", lambda: self._read_pool.shutdown(wait=True, cancel_futures=True))

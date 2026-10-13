@@ -29,7 +29,7 @@ from ..config import (
 )
 from ..resource_qos import place_on_cpus
 from ..robot.can_bus import bring_up_can_buses, check_can_up, stop_can_buses
-from ..runtime import build_arm_units, build_cameras_from_config
+from ..runtime import build_arm_units, build_cameras_from_config, iter_leader_agents
 from .buttons import HandleButtons
 from .cleanup import close_resources
 from .core import Arbiter, Mode, Phase
@@ -101,7 +101,11 @@ def station_can_channels(cfg, *, followers_only=False) -> list[str]:
 
 def prepare_station_can(cfg, *, followers_only=False) -> str:
     """Bring station CAN up and verify every interface before i2rt opens it."""
-    needed = station_can_channels(cfg, followers_only=followers_only)
+    return prepare_can_channels(station_can_channels(cfg, followers_only=followers_only))
+
+
+def prepare_can_channels(needed) -> str:
+    """Shared bring-up for Follower connection and independent Leader activation."""
     down = check_can_up(needed)
     if down:
         errors = bring_up_can_buses(down)
@@ -130,11 +134,22 @@ class Runtime:
         action_dt=1 / 30,
         prompt="pick and place",
         settings=None,
+        leader_factory=None,
+        leader_prepare=None,
+        leader_stop=None,
     ):
         self.io, self.cameras, self.worker, self.recorder = io, cameras, worker, recorder
         self.leaders_connected = getattr(io, "leaders_connected", True)
-        if hasattr(io, "leaders_connected") and ((Mode(mode) != Mode.INFERENCE) != self.leaders_connected):
-            raise ValueError("普通推理仅连接 Follower；遥操作、采集和 HIL 需要两台 Leader")
+        self.leader_connection = None
+        if leader_factory is not None:
+            from .leader_connection import LeaderConnection
+            options = {}
+            if leader_prepare is not None:
+                options["prepare"] = leader_prepare
+            if leader_stop is not None:
+                options["stop"] = leader_stop
+            self.leader_connection = LeaderConnection(io, leader_factory, **options)
+            io.leader_connection = self.leader_connection
         self.hz, self.prompt = hz, prompt
         settings = {} if settings is None else settings
         validate_hil_keys(settings)
@@ -326,16 +341,8 @@ class Runtime:
         }
         if event not in allowed:
             raise ValueError("unknown event")
-        if event.startswith(("mode:", "end_intervention:")):
-            target_mode = Mode(event.split(":", 1)[1])
-            if hasattr(self.io, "leaders_connected") and (
-                (target_mode != Mode.INFERENCE) != self.leaders_connected
-            ):
-                raise ValueError("普通推理仅连接 Follower，其他模式需要 Leader。请先暂停、支撑机械臂并断开，选择目标模式后重新连接；不会自动使能或释放 Leader")
-        if event == "home_leader" and not self.leaders_connected:
-            raise ValueError("普通推理未连接 Leader，无需回零；如需操作 Leader，请先切换连接方式")
-        if event == "capture_home" and not self.leaders_connected:
-            raise ValueError("普通推理未连接 Leader，不能保存完整四臂准备位；请在遥操作或 HIL 模式示教")
+        if reason := self._leader_event_error(event):
+            raise ValueError(reason)
         if event in MOTION_EVENTS:
             self._require_device_health()
         if event == "ack_device_health" and self.status.get("phase") != "hold":
@@ -466,6 +473,8 @@ class Runtime:
         """
         if self.task_switching:
             return "任务切换中，设置未提交；完成后可重试"
+        if kind == "leaders" and self.leader_connection and self.leader_connection.busy:
+            return "Leader连接操作正在进行，请等待；Follower仍保持"
         a = self.session.arbiter
         if a.phase != Phase.HOLD or getattr(self.recorder, "recording", False):
             return "请先暂停运动并结束本集，再修改设置"
@@ -489,6 +498,61 @@ class Runtime:
             result[name] = {"allowed": reason is None, "reason": reason}
         return result
 
+    def _leader_event_error(self, event):
+        """Recheck both HTTP admission and the tick after topology/settings change."""
+        if self.leader_connection and self.leader_connection.busy and (
+            event in MOTION_EVENTS or (event and event.startswith(("mode:", "end_intervention:")))
+        ):
+            return "Leader正在独立启停，Follower保持；完成后可继续，无需断开Follower"
+        if self.leaders_connected:
+            return None
+        a = self.session.arbiter
+        if event == "start" and a.mode in (Mode.TELEOP, Mode.COLLECT):
+            return "请先点击“启用 Leader”；Follower无需断开"
+        if event in ("takeover", "manual_ready") and a.mode == Mode.HIL and a.hil_input == "leader":
+            return "请先暂停并启用 Leader，或选择键盘微调；Follower无需断开"
+        if event == "home_leader":
+            return "Leader尚未启用；请先点击“启用 Leader”，Follower无需断开"
+        if event == "capture_home":
+            return "Leader尚未启用，不能保存完整四臂准备位；请先独立启用Leader"
+        return None
+
+    def leader_controls(self):
+        reason = self._settings_error("leaders")
+        if self.leader_connection is None:
+            reason = "当前执行器不支持独立Leader启停"
+        enable_reason = reason
+        if self.session.arbiter.mode == Mode.INFERENCE:
+            enable_reason = "普通推理不需要启用Leader"
+        return dict(enable=dict(allowed=enable_reason is None, reason=enable_reason),
+                    disable=dict(allowed=reason is None, reason=reason))
+
+    def configure_leaders(self, *, enabled, ready=False):
+        if not ready:
+            raise ValueError("请确认Leader已支撑、行程清空且有人现场照看；停用会释放Leader力矩")
+        control = self.leader_controls()["enable" if enabled else "disable"]
+        if not control["allowed"]:
+            raise ValueError(control["reason"])
+        self._queue_policy_command(("leaders", enabled))
+
+    def _refresh_leaders(self, *, poll=True):
+        if self.leader_connection is None:
+            return
+        # New devices are adopted only BEFORE io.read(), never mid-tick using
+        # the absent-Leader placeholder that was captured before connection.
+        completed = (self.leader_connection.poll(cancelled=self.emergency.is_set() or self.stopping.is_set())
+                     if poll else False)
+        connected = self.io.leaders_connected
+        if connected != self.leaders_connected:
+            self.leaders_connected = connected
+            self.maintenance.leaders_connected = connected
+            self.device_health.expected_arms = 4 if connected else 2
+            self.device_health.clear_window()
+            self.handle_buttons = HandleButtons()
+        if completed and self.leader_connection.error:
+            self.operator_error = ("Leader独立启停失败，Follower未断开。请检查Leader供电和USB-CAN；"
+                "如清理未完成，请支撑后重试停用。原始诊断：" + self.leader_connection.error)
+
     def _queue_policy_command(self, command):
         reason = self._settings_error(command[0])
         if reason:
@@ -504,14 +568,24 @@ class Runtime:
         reason = self._settings_error(kind)
         if kind == "hil_input" and a.mode != Mode.HIL:
             reason = "状态已变化，介入方式未切换"
-        if kind not in {"recording_mode", "hil_input", "pld", "interaction", "configure",
+        if kind == "leaders" and command[1] and a.mode == Mode.INFERENCE:
+            reason = "模式已变化；普通推理不启用Leader"
+        if kind not in {"leaders", "recording_mode", "hil_input", "pld", "interaction", "configure",
                         "restart_planner", "source", "restart"}:
             reason = "未知设置请求，未应用"
         if reason:
             self.operator_error = reason
             receipt.update(state="rejected", error=reason)
             return
-        if kind == "recording_mode":
+        if kind == "leaders":
+            try:
+                self.leader_connection.start(command[1])
+                self._refresh_leaders(poll=False)
+            except Exception as exc:
+                self.operator_error = str(exc)
+                receipt.update(state="rejected", error=str(exc))
+                return
+        elif kind == "recording_mode":
             # Recording settings do not invalidate RTC epochs, targets or plans.
             self.recording_mode = command[1]
             self.io.grasp_diagnostics_enabled = self.pld.enabled or self.recording_mode == "grasp_diagnostics"
@@ -680,13 +754,14 @@ class Runtime:
                     break
                 dt = max(period, now - last)
                 last = now
+                self._refresh_leaders()
                 q, leader, buttons, ages = self.io.read()
                 read_done = time.monotonic()
                 if max(age for age in ages if age is not None) > self.max_state_age:
                     raise RuntimeError("SDK state update stale")
                 self.device_health.update(self.io.device_health(), now=read_done,
                                           follower=q, leader=leader)
-                incident = self.device_health.tracking_fault
+                incident = self.device_health.active_tracking_fault()
                 if incident is not None and incident is not self._health_fault_logged:
                     audit = dict(event="device_health_fault", tick=tick, time=now,
                                  episode_id=(getattr(self.recorder, "episode_id", None)
@@ -851,6 +926,7 @@ class Runtime:
                 a = self.session.arbiter
                 if (
                     a.mode == Mode.HIL
+                    and self.leaders_connected
                     and a.hil_input == "leader"
                     and a.phase == Phase.POLICY
                     and error > self.mirror_error
@@ -879,7 +955,7 @@ class Runtime:
                     if event in MOTION_EVENTS:
                         self.operator_error = health_reason
                         event = None
-                    if self.device_health.tracking_fault:
+                    if self.device_health.active_tracking_fault():
                         self.jog.clear()
                         self.cartesian.cancel()
                         if event != "stop" and (a.phase not in (Phase.HOLD, Phase.FAULT)
@@ -899,6 +975,9 @@ class Runtime:
                     event = None
                 elif event is not None:
                     self.operator_error = None
+                if reason := self._leader_event_error(event):
+                    self.operator_error = reason
+                    event = None
                 if event in ("stop", "home", "home_leader", "gravity", "capture_home", "reset_stop", "hold") or (
                     event and event.startswith("end_intervention:")
                 ):
@@ -943,7 +1022,7 @@ class Runtime:
                     event=event,
                     policy_tick=tick,
                 )
-                if self.device_health.tracking_fault:
+                if self.device_health.active_tracking_fault():
                     if a._leader_frozen is None:
                         a._leader_frozen = leader.copy()
                     decision.leader_manual = False
@@ -1131,7 +1210,7 @@ class Runtime:
                     "event_applied_at": apply_done if transitions else None,
                     "transitions": transitions,
                     "intervention_id": self.intervention_id,
-                    "device_tracking_fault": self.device_health.tracking_fault,
+                    "device_tracking_fault": self.device_health.active_tracking_fault(),
                     "intervention_pending": a.intervention_pending,
                     "tick": tick,
                     "policy_reply": self.session.last_reply,
@@ -1166,6 +1245,7 @@ class Runtime:
                     "measured_state": q,
                     "leader_state": leader if self.leaders_connected else None,
                     "leaders_connected": self.leaders_connected,
+                    "leader_connection": self.leader_connection.snapshot() if self.leader_connection else None,
                     "gripper_owned": decision.gripper_owned,
                     "observation_state": None if obs is None else obs["observation.state"],
                     "obs_id": obs_id,
@@ -1284,6 +1364,8 @@ class Runtime:
                     "follower_state": q.tolist(),
                     "leader_state": leader.tolist() if self.leaders_connected else None,
                     "leaders_connected": self.leaders_connected,
+                    "leader_connection": self.leader_connection.snapshot() if self.leader_connection else None,
+                    "leader_controls": self.leader_controls(),
                     "sdk_state_age_s": list(ages),
                     "gripper_limits": [
                         getattr(unit.robot, "gripper_limits", lambda: None)()
@@ -1452,6 +1534,8 @@ def main(argv=None, *, service=None):
         "--check", action="store_true", help="仅检查配置和依赖，不连接设备或创建数据目录"
     )
     p.add_argument("--mode", choices=[m.value for m in Mode], default="hil")
+    p.add_argument("--enable-leaders", action="store_true",
+                   help="headless only: explicitly connect Leaders at startup; GUI uses independent buttons")
     p.add_argument("--url", help="Thor WebSocket URL on the local Ethernet link")
     p.add_argument("--output", type=Path)
     p.add_argument("--pld-config", type=Path, help="PLD-Grasp mode/identity JSON; default off")
@@ -1543,9 +1627,11 @@ def main(argv=None, *, service=None):
     if args.web_port is not None and not 1 <= args.web_port <= 65535:
         p.error("web-port must be between 1 and 65535")
     cfg = build_station_config(args.station)
-    followers_only = args.mode == Mode.INFERENCE
-    if followers_only and args.executor_socket:
+    followers_only = not (args.enable_leaders or args.demo or bool(service and service.initializing))
+    if args.mode == Mode.INFERENCE and args.executor_socket:
         p.error("当前独立执行器只支持四臂会话；Follower-only普通推理请使用直接SDK连接")
+    if args.executor_socket:
+        followers_only = False  # Existing v1 executor owns a fixed four-arm roster.
     validate_station(cfg, mock=args.mock, check_cameras=service is None, followers_only=followers_only)
     hil_cfg = load_yaml(args.station).get("hil", {})
     try:
@@ -1687,7 +1773,7 @@ def main(argv=None, *, service=None):
             can_output = prepare_station_can(cfg, followers_only=followers_only)
             print(f"CAN ready: {can_output}", flush=True)
             print(
-                "Opening two YAM Followers only; Leaders will not be opened or energized."
+                "Opening two YAM Followers only; enable Leaders explicitly when needed."
                 if followers_only else
                 "Opening four YAM arms: motors may energize and grippers may calibrate. Keep leader buttons released.",
                 flush=True,
@@ -1721,6 +1807,30 @@ def main(argv=None, *, service=None):
             PolicyWorker(client, planner=ProcessActionPlanner(),
                          auto_connect=bool(args.mock or args.url))
         )
+        leader_options = {}
+        if not args.executor_socket:
+            owned_leader_channels = [] if followers_only else [
+                channel for channel in station_can_channels(cfg)
+                if channel not in station_can_channels(cfg, followers_only=True)]
+
+            def prepare_leaders():
+                validate_station(cfg, mock=args.mock, check_cameras=False)
+                if not args.mock:
+                    owned_leader_channels[:] = [
+                        channel for channel in station_can_channels(cfg)
+                        if channel not in station_can_channels(cfg, followers_only=True)]
+                    prepare_can_channels(owned_leader_channels)
+
+            def stop_leaders():
+                if not args.mock:
+                    errors = stop_can_buses(owned_leader_channels)
+                    if errors:
+                        raise RuntimeError("；".join(errors))
+                owned_leader_channels.clear()
+
+            leader_options = dict(
+                leader_factory=lambda: iter_leader_agents(cfg, io.units, mock=args.mock),
+                leader_prepare=prepare_leaders, leader_stop=stop_leaders)
         runtime = Runtime(
             io,
             workers,
@@ -1731,6 +1841,7 @@ def main(argv=None, *, service=None):
             action_dt=action_dt,
             prompt=cfg.task_name,
             settings=hil_cfg,
+            **leader_options,
         )
         if service is not None:
             service.attach(runtime, output)
@@ -1791,8 +1902,9 @@ def main(argv=None, *, service=None):
         if not args.mock and not args.executor_socket:
             # Remote sessions never own CAN. Only the persistent executor may
             # release its buses; detaching a session must preserve SDK HOLD.
+            only_followers = followers_only or bool(runtime and runtime.leader_connection is not None)
             can_errors = close_resources([("CAN", lambda: stop_can_buses(
-                station_can_channels(cfg, followers_only=followers_only)))])
+                station_can_channels(cfg, followers_only=only_followers)))])
             if can_errors:
                 message = "CAN shutdown failed: " + "; ".join(can_errors)
                 recorder.metadata.setdefault("close_errors", []).append(message)

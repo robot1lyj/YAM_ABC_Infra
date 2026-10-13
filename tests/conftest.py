@@ -17,7 +17,7 @@ def healthy_runtime():
 
     from yam_abc_reproduce.hil.station import StationIO
 
-    io = SimpleNamespace(mock=True, units=[SimpleNamespace(name=name, robot=None, agent=None)
+    io = SimpleNamespace(mock=True, units=[SimpleNamespace(name=name, robot=SimpleNamespace(), agent=SimpleNamespace())
                                            for name in ("left", "right")])
     def ready(runtime):
         runtime.io.device_health = lambda: StationIO.device_health(io)

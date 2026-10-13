@@ -2,6 +2,14 @@
 
 最近部署核对：2026-10-13。这里区分现场运行状态与带日期的历史测试；旧失败和测量归 [历史验收快照](archive/acceptance_20260922.md) 及原始证据，不把旧“最新一集”当成现在。
 
+## 普通推理仅连接Follower（2026-10-13，本地完成，未部署IPC）
+
+复用现有`build_arm_units(followers_only=True)`：普通推理只打开、读写和关闭两台Follower；CAN启动/收尾与健康检查也仅涉及两台Follower。Leader没有SDK实例，不使能、不下发重力或摩擦补偿。遥操作、采集及HIL仍走原四臂路径，增益/补偿/模型动作/RTC参数不改。连接范围不同的模式切换明确提示支撑后断开重连，不自动启停Leader；旧四臂独立执行器不支持此范围时明确拒绝。
+
+普通推理的`leader_state=null`、HDF5有效位false，SDK反馈年龄保持原四槽顺序、Leader槽null；manifest/details记录`leaders_connected=false`。回Follower准备位不等待未连接Leader；不以内部占位向量保存四臂准备位。模拟页面在独立8899端口验证了连接确认、两台Follower健康、Leader未连接显示和Follower调试，未访问正式控制接口。IPC仍使用之前的代码，本轮未部署、未重启或改变真机增益；首次应用需在保存完成、机械臂支撑并获当次许可后安排设备服务更新。
+
+最终本地全套838 passed、4 skipped、21 subtests通过，使用隔离工作树及其已安装安全补丁的SDK（`PYTHONPATH=.:third_party/i2rt`）；未修改SDK或物理标定。新增7项验证覆盖工厂不构造Leader、CAN范围、读写/保持/关闭仅Follower、两臂健康门禁、回位不等待Leader、模式切换不暗中启停Leader；RTC与PLD probe录制回读确认Leader有效位为空，保留原动作来源和前缀断言。JavaScript语法、文档链接/预算与diff检查通过。结果不代替真机运动验收。
+
 ## 架构与设备健康检查（2026-10-13，已部署）
 
 已按当次四臂支撑许可部署源码`50ed746`（含`e32c93d`架构收敛、`924faff`恢复与健康检查）。IPC仍为`76b6834`基线加增量快照，不冒充其Git HEAD已更新；本轮48个文件与发布提交逐个Git blob校验一致。备份`/data/YAM/data/deployment_backups/architecture-health.mPKPHh/`包含before/after包与原现场配置/SDK校验值。站点、相机、正在使用的PLD配置及三项SDK源码hash前后不变。

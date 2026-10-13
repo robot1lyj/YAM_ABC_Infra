@@ -90,17 +90,18 @@ def validate_hil_keys(settings):
         raise ValueError("未知或已移除的 hil 配置：" + ", ".join(sorted(unknown)))
 
 
-def station_can_channels(cfg) -> list[str]:
-    """CAN interfaces owned by a full four-arm workstation session."""
+def station_can_channels(cfg, *, followers_only=False) -> list[str]:
+    """Only the CAN interfaces this session actually owns."""
     robots = cfg.robot.robots or [cfg.robot.active_robot()]
     channels = [robot_channel_for(robot) for robot in robots]
-    channels += [controller_channel_for(cfg.robot.controller_for(robot)) for robot in robots]
+    if not followers_only:
+        channels += [controller_channel_for(cfg.robot.controller_for(robot)) for robot in robots]
     return list(dict.fromkeys(channels))
 
 
-def prepare_station_can(cfg) -> str:
+def prepare_station_can(cfg, *, followers_only=False) -> str:
     """Bring station CAN up and verify every interface before i2rt opens it."""
-    needed = station_can_channels(cfg)
+    needed = station_can_channels(cfg, followers_only=followers_only)
     down = check_can_up(needed)
     if down:
         errors = bring_up_can_buses(down)
@@ -131,6 +132,9 @@ class Runtime:
         settings=None,
     ):
         self.io, self.cameras, self.worker, self.recorder = io, cameras, worker, recorder
+        self.leaders_connected = getattr(io, "leaders_connected", True)
+        if hasattr(io, "leaders_connected") and ((Mode(mode) != Mode.INFERENCE) != self.leaders_connected):
+            raise ValueError("普通推理仅连接 Follower；遥操作、采集和 HIL 需要两台 Leader")
         self.hz, self.prompt = hz, prompt
         settings = {} if settings is None else settings
         validate_hil_keys(settings)
@@ -181,7 +185,8 @@ class Runtime:
         self.stopping = threading.Event()
         self.holding = queue.Queue(maxsize=1)
         self.status = {"phase": "hold", "mode": mode, "tick": 0}
-        self.device_health = DeviceHealth(settings.get("max_state_age", .25))
+        self.device_health = DeviceHealth(settings.get("max_state_age", .25),
+            expected_arms=4 if self.leaders_connected else 2)
         self._health_fault_logged = None
         self.handle_buttons = HandleButtons()
         self.outcome = "unknown"
@@ -192,7 +197,8 @@ class Runtime:
         self.cartesian = CartesianJog()
         self.cartesian_commands = queue.Queue(maxsize=1)
         self.maintenance = Maintenance(
-            factory_zero=bool(settings.get("factory_zero_home", False)) and not io.mock
+            factory_zero=bool(settings.get("factory_zero_home", False)) and not io.mock,
+            leaders_connected=self.leaders_connected,
         )
         self.operator_error = None
         self.recording_error = None
@@ -320,6 +326,16 @@ class Runtime:
         }
         if event not in allowed:
             raise ValueError("unknown event")
+        if event.startswith(("mode:", "end_intervention:")):
+            target_mode = Mode(event.split(":", 1)[1])
+            if hasattr(self.io, "leaders_connected") and (
+                (target_mode != Mode.INFERENCE) != self.leaders_connected
+            ):
+                raise ValueError("普通推理仅连接 Follower，其他模式需要 Leader。请先暂停、支撑机械臂并断开，选择目标模式后重新连接；不会自动使能或释放 Leader")
+        if event == "home_leader" and not self.leaders_connected:
+            raise ValueError("普通推理未连接 Leader，无需回零；如需操作 Leader，请先切换连接方式")
+        if event == "capture_home" and not self.leaders_connected:
+            raise ValueError("普通推理未连接 Leader，不能保存完整四臂准备位；请在遥操作或 HIL 模式示教")
         if event in MOTION_EVENTS:
             self._require_device_health()
         if event == "ack_device_health" and self.status.get("phase") != "hold":
@@ -666,7 +682,7 @@ class Runtime:
                 last = now
                 q, leader, buttons, ages = self.io.read()
                 read_done = time.monotonic()
-                if max(ages) > self.max_state_age:
+                if max(age for age in ages if age is not None) > self.max_state_age:
                     raise RuntimeError("SDK state update stale")
                 self.device_health.update(self.io.device_health(), now=read_done,
                                           follower=q, leader=leader)
@@ -1148,7 +1164,8 @@ class Runtime:
                     "policy_write_trace": getattr(self.io, "take_policy_trace", lambda: None)(),
                     "constraint_mask": constraint_mask,
                     "measured_state": q,
-                    "leader_state": leader,
+                    "leader_state": leader if self.leaders_connected else None,
+                    "leaders_connected": self.leaders_connected,
                     "gripper_owned": decision.gripper_owned,
                     "observation_state": None if obs is None else obs["observation.state"],
                     "obs_id": obs_id,
@@ -1172,6 +1189,7 @@ class Runtime:
                     # changes are permitted in HOLD between recorded episodes.
                     if not self.recorder.recording:
                         self.recorder.metadata.update({
+                            "leaders_connected": self.leaders_connected,
                             "recording_mode": self.recording_mode,
                             "rtc": a.rtc_timeline is not None,
                             "policy_fusion": a.policy_fusion,
@@ -1264,7 +1282,8 @@ class Runtime:
                     "updated_at": time.monotonic(),
                     "device_health": self.device_health.snapshot(),
                     "follower_state": q.tolist(),
-                    "leader_state": leader.tolist(),
+                    "leader_state": leader.tolist() if self.leaders_connected else None,
+                    "leaders_connected": self.leaders_connected,
                     "sdk_state_age_s": list(ages),
                     "gripper_limits": [
                         getattr(unit.robot, "gripper_limits", lambda: None)()
@@ -1338,7 +1357,7 @@ class Runtime:
                     "policy_trajectory_active": (
                         getattr(self.io, "_policy_trajectory", None) is not None
                     ),
-                    "leader_error_rad": error,
+                    "leader_error_rad": error if self.leaders_connected else None,
                     "frame_age_s": quality.get("age_s"),
                     "arrival_skew_s": quality.get("arrival_skew_s"),
                     "deadline_misses": missed,
@@ -1398,7 +1417,7 @@ class Runtime:
         return self.status
 
 
-def validate_station(cfg, *, mock, check_cameras=True):
+def validate_station(cfg, *, mock, check_cameras=True, followers_only=False):
     if mock:
         return
     if cfg.robot.num_arm_joints != 6 or {r.type for r in cfg.robot.robots} != {
@@ -1406,15 +1425,15 @@ def validate_station(cfg, *, mock, check_cameras=True):
         "yam_right",
     }:
         raise ValueError("station must have two standard six-joint YAM followers")
-    if len(cfg.robot.controllers) != 2 or {c.type for c in cfg.robot.controllers} != {
+    if not followers_only and (len(cfg.robot.controllers) != 2 or {c.type for c in cfg.robot.controllers} != {
         "yam_lead_left",
         "yam_lead_right",
-    }:
+    }):
         raise ValueError("use official motorized YAM leaders, not GELLO")
     for r in cfg.robot.robots:
         if r.gripper not in ("linear_4310", "linear_3507"):
             raise ValueError("set the verified parallel gripper motor type in the station YAML")
-        if cfg.robot.controller_for(r).controls != r.type:
+        if not followers_only and cfg.robot.controller_for(r).controls != r.type:
             raise ValueError("invalid leader/follower mapping")
     if not check_cameras:
         return
@@ -1524,7 +1543,10 @@ def main(argv=None, *, service=None):
     if args.web_port is not None and not 1 <= args.web_port <= 65535:
         p.error("web-port must be between 1 and 65535")
     cfg = build_station_config(args.station)
-    validate_station(cfg, mock=args.mock, check_cameras=service is None)
+    followers_only = args.mode == Mode.INFERENCE
+    if followers_only and args.executor_socket:
+        p.error("当前独立执行器只支持四臂会话；Follower-only普通推理请使用直接SDK连接")
+    validate_station(cfg, mock=args.mock, check_cameras=service is None, followers_only=followers_only)
     hil_cfg = load_yaml(args.station).get("hil", {})
     try:
         validate_hil_keys(hil_cfg)
@@ -1610,6 +1632,7 @@ def main(argv=None, *, service=None):
                     "dependencies": sorted(required),
                     "mock": args.mock,
                     "mode": args.mode,
+                    "followers_only": followers_only,
                     "action_dt": action_dt,
                     "policy_fusion": hil_cfg.get("policy_fusion", "sync_hold"),
                     "pld_mode": hil_cfg.get("pld", {}).get("mode", "off"),
@@ -1661,9 +1684,11 @@ def main(argv=None, *, service=None):
         else:
             workers = list(service.camera_slots)
         if not args.mock and not args.executor_socket:
-            can_output = prepare_station_can(cfg)
+            can_output = prepare_station_can(cfg, followers_only=followers_only)
             print(f"CAN ready: {can_output}", flush=True)
             print(
+                "Opening two YAM Followers only; Leaders will not be opened or energized."
+                if followers_only else
                 "Opening four YAM arms: motors may energize and grippers may calibrate. Keep leader buttons released.",
                 flush=True,
             )
@@ -1671,7 +1696,7 @@ def main(argv=None, *, service=None):
             from .remote_station import RemoteStationIO
             io_type, io_source = RemoteStationIO, args.executor_socket
         else:
-            units = build_arm_units(cfg, mock=args.mock)
+            units = build_arm_units(cfg, mock=args.mock, followers_only=followers_only)
             io_type, io_source = StationIO, units
         io = io_type(
             io_source,
@@ -1766,7 +1791,8 @@ def main(argv=None, *, service=None):
         if not args.mock and not args.executor_socket:
             # Remote sessions never own CAN. Only the persistent executor may
             # release its buses; detaching a session must preserve SDK HOLD.
-            can_errors = close_resources([("CAN", lambda: stop_can_buses(station_can_channels(cfg)))])
+            can_errors = close_resources([("CAN", lambda: stop_can_buses(
+                station_can_channels(cfg, followers_only=followers_only)))])
             if can_errors:
                 message = "CAN shutdown failed: " + "; ".join(can_errors)
                 recorder.metadata.setdefault("close_errors", []).append(message)

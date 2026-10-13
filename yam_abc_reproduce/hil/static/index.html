@@ -547,14 +547,14 @@
               </div>
               <div id="device-cards" class="device-cards"></div>
               <div class="device-note">
-                连接后四臂保持；需要手动摆位时请明确进入重力补偿。关节点动控制
+                连接后已连接的机械臂保持；需要手动摆位时请明确进入重力补偿。关节点动控制
                 Follower；普通遥操作采用绝对 1:1 映射，启动后 Follower 与 Leader 姿态一致。
               </div>
             </section>
             <section class="panel maintenance-panel">
               <div class="panel-heading">
                 <h2><svg><use href="#i-spark" /></svg><span id="maintenance-title">准备位与重力补偿</span></h2>
-                <span class="pill">四臂维护</span>
+                <span class="pill" id="maintenance-scope">已连接机械臂</span>
               </div>
               <div class="maintenance-status">
                 <i class="led"></i>
@@ -664,7 +664,7 @@
       <form id="connect-form">
         <div class="eyebrow">CONNECT ROBOT</div>
         <h2>连接机械臂</h2>
-        <p>
+        <p id="connect-scope">
           连接两台 Leader 和两台 Follower，连接后先保持。遥操作无需采集任务或相机；只有录制数据和模型执行需要完整采集上下文。
         </p>
         <div id="connect-task-summary" class="connect-task-summary"></div>

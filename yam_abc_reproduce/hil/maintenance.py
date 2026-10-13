@@ -18,8 +18,9 @@ class Maintenance:
     HOME_HARD_ERROR = 0.15
     HOME_STALL_TIMEOUT = 5.0
 
-    def __init__(self, *, factory_zero=False):
+    def __init__(self, *, factory_zero=False, leaders_connected=True):
         self.factory_zero = factory_zero
+        self.leaders_connected = leaders_connected
         self.latched = False
         self.state = "idle"
         self.ready = (
@@ -39,6 +40,8 @@ class Maintenance:
         self.home_leader_only = False
 
     def capture(self, q, leader):
+        if not self.leaders_connected:
+            raise ValueError("普通推理未连接 Leader，不能保存完整四臂准备位；请在遥操作或 HIL 模式示教")
         if self.factory_zero:
             raise ValueError("此设备固定使用官方关节零位，无需保存准备位")
         self.ready = {"follower": vector(q).tolist(), "leader": vector(leader).tolist()}
@@ -97,14 +100,14 @@ class Maintenance:
                 lead_target = vector(self.ready["leader"])
                 joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
                 distance = np.max(np.abs(target[joints] - q[joints]))
-                if not self.factory_zero or self.home_leader_only:
+                if self.leaders_connected and (not self.factory_zero or self.home_leader_only):
                     distance = max(
                         distance,
                         np.max(np.abs(lead_target[joints] - leader[joints])),
                     )
                 self.home_start = (
                     q.copy(),
-                    None if self.factory_zero and not self.home_leader_only else leader.copy(),
+                    None if not self.leaders_connected or (self.factory_zero and not self.home_leader_only) else leader.copy(),
                 )
                 self.home_duration = distance / self.HOME_SPEED
                 self.home_progress = 0.0
@@ -133,7 +136,7 @@ class Maintenance:
         lead_target[[6, 13]] = leader[[6, 13]]
         joints = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12]
         distance = np.max(np.abs(target[joints] - q[joints]))
-        if not self.factory_zero or self.home_leader_only:
+        if self.leaders_connected and (not self.factory_zero or self.home_leader_only):
             distance = max(
                 distance,
                 np.max(np.abs(lead_target[joints] - leader[joints])),

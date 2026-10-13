@@ -295,7 +295,7 @@ def test_runtime_end_to_end_takeover_resume_and_recording(tmp_path, fusion):
 @pytest.mark.parametrize("fusion", ("sync_hold", "rtc"))
 def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path, fusion):
     cfg = StationConfig()
-    io = StationIO(build_arm_units(cfg, mock=True), mock=True)
+    io = StationIO(build_arm_units(cfg, mock=True, followers_only=True), mock=True)
     recorder = Recorder(tmp_path / "policy-settings")
     worker = PolicyWorker(MockPolicy())
     cameras = [CameraWorker(MockCamera(role, role, width=32, height=32))
@@ -328,7 +328,7 @@ def test_policy_settings_change_only_in_hold_and_invalidate_old_reply(tmp_path, 
 
 def test_mock_rtc_executes_only_post_commit_suffix_at_30hz(tmp_path):
     cfg = StationConfig()
-    io = StationIO(build_arm_units(cfg, mock=True), mock=True)
+    io = StationIO(build_arm_units(cfg, mock=True, followers_only=True), mock=True)
     recorder = Recorder(tmp_path / "rtc")
     worker = PolicyWorker(MockPolicy())
     cameras = [CameraWorker(MockCamera(role, role, width=32, height=32))
@@ -345,6 +345,10 @@ def test_mock_rtc_executes_only_post_commit_suffix_at_30hz(tmp_path):
         assert result["rtc_delay_steps"] == 9
         recorder.close("aborted")
         rows = list(read_rows(recorder.path))
+        assert result["leaders_connected"] is False
+        assert result["leader_state"] is None
+        assert result["leader_error_rad"] is None
+        assert all(row["leader_state"] is None for row in rows)
         policy_rows = [row for row in rows if row["source"] == "policy"]
         assert policy_rows
         for row in policy_rows:
@@ -369,7 +373,7 @@ def test_mock_rtc_executes_only_post_commit_suffix_at_30hz(tmp_path):
 
 def test_rtc_prefix_delay_changes_in_hold_without_restarting_device(tmp_path):
     cfg = StationConfig()
-    io = StationIO(build_arm_units(cfg, mock=True), mock=True)
+    io = StationIO(build_arm_units(cfg, mock=True, followers_only=True), mock=True)
     recorder = Recorder(tmp_path / "rtc-delay-setting")
     worker = PolicyWorker(MockPolicy())
     cameras = [CameraWorker(MockCamera(role, role, width=32, height=32))
@@ -398,7 +402,7 @@ def test_rtc_prefix_delay_changes_in_hold_without_restarting_device(tmp_path):
 @pytest.mark.parametrize("delay_steps", (8, 9))
 def test_rtc_219ms_rpc_does_not_block_control_loop(tmp_path, delay_steps):
     cfg = StationConfig()
-    io = StationIO(build_arm_units(cfg, mock=True), mock=True)
+    io = StationIO(build_arm_units(cfg, mock=True, followers_only=True), mock=True)
     recorder = Recorder(tmp_path / f"rtc-delay-{delay_steps}")
     worker = PolicyWorker(DelayedRtcPolicy())
     cameras = [CameraWorker(MockCamera(role, role, width=32, height=32))

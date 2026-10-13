@@ -311,7 +311,7 @@ def test_runtime_probe_uses_native_scheduler_and_records_trace(tmp_path):
                                  state=obs["observation.state"].copy())
             return reply
 
-    io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
+    io = StationIO(build_arm_units(StationConfig(), mock=True, followers_only=True), mock=True)
     cameras = [CameraWorker(MockCamera(r, r, width=32, height=32)) for r in ("top", "left", "right")]
     worker = PolicyWorker(ProbePolicy())
     recorder = RecordingSession(tmp_path / "probe", video_backend="libx264")
@@ -330,6 +330,7 @@ def test_runtime_probe_uses_native_scheduler_and_records_trace(tmp_path):
             camera.stop()
         io.close()
     rows = list(read_rows(recorder.path / "episode_000001"))
+    assert rows and all(r["leader_state"] is None and r["leaders_connected"] is False for r in rows)
     replies = [r["policy_reply"] for r in rows if (r.get("policy_reply") or {}).get("pld")]
     assert replies
     for reply in replies:

@@ -707,6 +707,8 @@ class Workbench:
                 if initialize
                 else "正在连接四台机械臂进行遥操作；本会话不录制"
                 if taskless_teleop
+                else "普通推理仅连接两台 Follower；不连接或使能 Leader，连接后保持"
+                if self.mode == "inference"
                 else "正在独立连接四台机械臂；连接后保持，等待开始"
             )
             try:

@@ -27,7 +27,8 @@ hil:
   # Model action sample interval; align with condapi training before hardware rollout.
   action_dt: 0.03333333333333333
   # Follower factory home is six zero arm joints, not encoder recalibration.
-  # Leaders stay manual; retain both follower grippers.
+  # Ordinary inference does not open Leaders; other modes keep their own Leader control.
+  # Retain both follower grippers during home.
   factory_zero_home: true
   # Trained RTC keeps an explicit committed prefix; ordinary checkpoints use sync_hold.
   policy_fusion: rtc

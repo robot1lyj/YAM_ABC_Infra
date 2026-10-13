@@ -326,8 +326,13 @@ function render() {
     state.connection === "connected"
       ? "断开机械臂并保存当前会话"
       : state.selected_task?.task
-        ? "连接当前任务的四台机械臂；连接后先保持"
+        ? state.mode === "inference"
+          ? "普通推理仅连接两台 Follower，不使能 Leader；连接后先保持"
+          : "连接当前任务的四台机械臂；连接后先保持"
         : "无需采集任务，直接连接四臂进行遥操作";
+  text("connect-scope", mode === "inference"
+    ? "普通推理仅连接两台 Follower；不连接、不使能 Leader，也不向 Leader 发送重力或摩擦补偿指令。连接后先保持。"
+    : "连接两台 Leader 和两台 Follower，连接后先保持。遥操作无需采集任务或相机；录制和模型执行需要完整采集上下文。");
   renderTask(transitional || (state.connection === "connected" && !canBindTask));
   const cameraBusy = ["connecting", "disconnecting"].includes(
     state.camera_connection,
@@ -348,9 +353,11 @@ function render() {
       ? "断开机械臂"
       : "连接机械臂";
   document.querySelectorAll("[data-mode]").forEach((b) => {
+    const needsReconnect = connected && typeof state.leaders_connected === "boolean"
+      && (b.dataset.mode !== "inference") !== state.leaders_connected;
     b.classList.toggle("active", !rlView && b.dataset.mode === mode);
     b.querySelector(".mode-state").textContent =
-      b.dataset.mode === mode ? "● 当前模式" : "选择模式 →";
+      b.dataset.mode === mode ? "● 当前模式" : needsReconnect ? "需断开后重连 →" : "选择模式 →";
     b.disabled =
       !online ||
       transitional ||
@@ -364,7 +371,7 @@ function render() {
       ? "当前为设备初始化会话；完成或退出向导后开放工作模式"
       : !state.selected_task && b.dataset.mode !== "teleop"
         ? "请先新建或选择采集任务"
-        : "";
+        : needsReconnect ? "Leader连接范围不同；先暂停、支撑并断开，选择该模式后重新连接" : "";
   });
   $("rl-entry").classList.toggle("active", rlView);
   $("rl-entry").setAttribute("aria-pressed", String(rlView));
@@ -511,7 +518,7 @@ function render() {
       : mode === "hil"
         ? state.hil_input === "keyboard" ? "I 暂停模型并微调 · 点击交还模型继续　\nLeader 保持 · 手柄按钮不接管"
         : "I 介入锁定 → 右①遥操作 → ①锁定待交还　\n点击交还模型继续 · ② 无功能"
-        : "手柄按钮不分配功能",
+        : "普通推理仅控制 Follower · Leader 未连接、未使能",
   );
   text(
     "ownership",
@@ -628,11 +635,14 @@ function render() {
   $("health").replaceChildren();
   healthRow("关节检查", state.device_health?.ok ? "检查通过" : connected ? "需检查" : "未连接", !!state.device_health?.ok);
   for (const [label, i] of devices) {
+    const absent = connected && i % 2 === 1 && state.leaders_connected === false;
     const ok = connected && Number.isFinite(ages[i]) && ages[i] < 0.25;
     healthRow(
       label,
       ok
         ? Math.round(ages[i] * 1000) + " ms"
+        : absent
+          ? "未连接（普通推理不使用）"
         : connected
           ? "反馈异常"
           : "未连接",
@@ -744,6 +754,7 @@ function render() {
   }
   $("device-cards").replaceChildren();
   for (const [name, i] of devices) {
+    const absent = connected && i % 2 === 1 && state.leaders_connected === false;
     const card = document.createElement("article");
     card.className = "device-card";
     const title = document.createElement("h3"),
@@ -757,7 +768,7 @@ function render() {
       angles = document.createElement("div");
     dot.className = "led" + (ok ? " ok" : "");
     title.append(dot, document.createTextNode(name));
-    meta.textContent = connected
+    meta.textContent = absent ? "未连接 · 普通推理不使能 Leader" : connected
       ? `反馈 ${ages[i] == null ? "—" : Math.round(ages[i] * 1000)} ms`
       : "设备未连接";
     angles.className = "arm-angles";
@@ -823,24 +834,29 @@ function render() {
               ? state.home_reason || "零位当前不可用"
               : "";
   $("capture-home").hidden = factoryZero;
-  $("capture-home").disabled = factoryZero || !(canMaintain && idle);
+  $("capture-home").disabled = factoryZero || state.leaders_connected === false || !(canMaintain && idle);
+  $("capture-home").title = state.leaders_connected === false ? "完整四臂准备位请在遥操作或 HIL 模式示教" : "";
   $("home").disabled = !!homeBlockReason;
   $("home").title = homeBlockReason;
   $("home-leader").hidden = !factoryZero;
-  $("home-leader").disabled = !!homeBlockReason;
-  $("home-leader").title = homeBlockReason;
+  $("home-leader").disabled = !!homeBlockReason || state.leaders_connected === false;
+  $("home-leader").title = state.leaders_connected === false ? "普通推理未连接 Leader" : homeBlockReason;
   $("gravity").disabled = !(canMaintain && idle);
   $("gravity-exit").disabled = !(connected && !latched && maint === "gravity");
   text("maintenance-title", factoryZero ? "零位与重力补偿" : "准备位与重力补偿");
+  text("maintenance-scope", state.leaders_connected === false ? "仅 Follower" : "四臂维护");
   text("home-group-title", factoryZero ? "关节回零" : "准备位");
   text(
     "home-group-copy",
-    factoryZero ? "两台 Follower 回到官方关节零位，Leader 不主动运动。" : "保存合适的四臂姿态，供下一次采集恢复。",
+    state.leaders_connected === false
+      ? factoryZero ? "两台 Follower 回到官方关节零位；Leader 未连接。" : "仅恢复已保存的 Follower 准备位；完整四臂准备位请在遥操作或 HIL 模式示教。"
+      : factoryZero ? "两台 Follower 回到官方关节零位，Leader 不主动运动。" : "保存合适的四臂姿态，供下一次采集恢复。",
   );
   text("home-label", factoryZero ? "Follower 回零" : "回准备位");
   text(
     "home-subtitle",
-    factoryZero ? "六关节零位 · Leader 与夹爪保持" : "四臂协调回位 · 夹爪保持当前开度",
+    state.leaders_connected === false ? "仅 Follower · 夹爪保持当前开度"
+      : factoryZero ? "六关节零位 · Leader 与夹爪保持" : "四臂协调回位 · 夹爪保持当前开度",
   );
   text(
     "home-status",
@@ -1232,7 +1248,9 @@ $("home-leader").onclick = () =>
 $("gravity").onclick = () =>
   confirmAction(
     "进入重力补偿？",
-    "请手扶机械臂后继续。模型和遥操作将停止；四臂关节可手动摆放，Follower夹爪保持。完成后点击“结束补偿 / 保持”。",
+    state.leaders_connected === false
+      ? "请手扶两台 Follower 后继续。模型将停止；仅 Follower 进入重力补偿，Leader 未连接。夹爪保持当前开度。完成后点击“结束补偿 / 保持”。"
+      : "请手扶机械臂后继续。模型和遥操作将停止；四臂关节可手动摆放，Follower夹爪保持。完成后点击“结束补偿 / 保持”。",
     () => action("/event/gravity"),
   );
 $("init-preflight").onclick = async () => {

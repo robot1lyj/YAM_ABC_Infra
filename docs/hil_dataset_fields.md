@@ -1,4 +1,4 @@
-# HIL 原始数据字段（按当前写入代码，2026-10-12）
+# HIL 原始数据字段（按当前写入代码，2026-10-13）
 
 原始格式为 `yam_hil_v2`：每集 manifest.json，每段 samples.h5 和 top/left/right.mp4；不是LeRobot导出格式。三路RGB视频独立存储，不在HDF5中存像素。下列字段可空，不能把空值当作0。
 
@@ -13,7 +13,8 @@
 | intervention_id、intervention_pending、is_intervention | 介入编号、介入尚未交还、当前是否人工介入 |
 | expert_valid、observation_valid、policy_valid | 有效人工示范、有效同步观测、当前有效策略目标；不是任务成功标签 |
 | measured_state | 下发前Follower反馈，14D |
-| leader_state | Leader反馈/手柄开度，14D |
+| leader_state | Leader反馈/手柄开度，14D；普通推理未连接Leader时为空，`leader_state__valid=false` |
+| leaders_connected | 本会话是否实际连接两台Leader；普通推理为false，不以Follower反馈冒充Leader反馈 |
 | observation_state | 与观测图像配对的状态，14D；可能空 |
 | policy_action | 本tick选中的模型目标，14D；非策略帧可空 |
 | human_action | Leader输入时为原始Leader14D；键盘微调时为IK后的14D人工绝对目标，不能当成Leader反馈 |
@@ -31,7 +32,7 @@
 | grasp_diagnostics | 可选抓取诊断快照，普通记录不写；见下 |
 | policy_write_trace | 可选高频写入追踪；当前30Hz直发可空，不能宣称每次电机写入均有独立追踪 |
 | policy_url | 当前代码仍写入策略来源地址；无模型名称/检查点指纹字段 |
-| obs_id、sync、sdk_state_age_s | 观测编号、同步质量详情、各SDK反馈年龄 |
+| obs_id、sync、sdk_state_age_s | 观测编号、同步质量详情、SDK反馈年龄；顺序为左Follower/左Leader/右Follower/右Leader，未连接Leader的两个位置为null |
 | video_indices | top/left/right在本segment视频内的索引；新segment从0开始 |
 | record_event | 采集模式的录制按键事件，仅该模式有 |
 | omitted_intervention_wait | 被删等待段之后第一条保留帧附带的区间摘要 |
@@ -104,7 +105,7 @@ video_indices为int64 N×3。camera_host_received_at、camera_device_timestamp_m
 
 固定存储字段：`schema, episode_id, fps, steps, segments, outcome, episode_success, error, clock, action_semantics`。outcome为recording/unknown/success/failure/discarded/aborted等；episode_success在明确成功/失败时保存对应字符串，否则null，非逐帧reward。
 
-配置/来源元数据：`station, mock, rtc, streaming, action_dt, policy_fusion, expected_policy_latency, prefetch_margin, rtc_delay_steps, operator_task, task, collection_task, collection_mode, video_encoder`。station含robot/cameras/control_hz/save_root/task_name/data_format/deploy_home_pose等配置快照；collection_task含id/created_at/name/instruction/task。
+配置/来源元数据：`station, mock, rtc, streaming, action_dt, policy_fusion, expected_policy_latency, prefetch_margin, rtc_delay_steps, operator_task, task, collection_task, collection_mode, video_encoder, leaders_connected`。station含robot/cameras/control_hz/save_root/task_name/data_format/deploy_home_pose等配置快照；它是站点清单，不代表全数设备已打开，实际Leader连接范围看leaders_connected。collection_task含id/created_at/name/instruction/task。
 
 键盘 HIL 新集另保存 `hil_input=keyboard`（默认为leader）。每帧 `human_input.command` 可空；有值时含 `arm, axis, delta, epoch, generation, command_id, requested_at, completed_at`，XYZ还含基座SE(3) `target_pose`。XYZ delta单位m，夹爪delta为归一化开度；时间为主机单调秒。只在接受第一步后标记 `expert_valid`，继续保持该人工目标的帧仍可有效；计算未完成/拒绝且此前无接受目标的帧不冒充专家动作。按 `command.arm`识别本次纠正臂，另一侧14D分量是保持目标。输入方式不在活动集内切换。
 

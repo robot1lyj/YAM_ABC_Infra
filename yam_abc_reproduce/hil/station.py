@@ -1,4 +1,4 @@
-"""Four-arm IO adapter, with all motor writes owned by the runtime tick."""
+"""Follower IO with optional Leaders; all writes belong to the runtime tick."""
 
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -19,6 +19,8 @@ class StationIO:
             for unit in self.units:
                 label = ("左" if unit.name == "left" else "右") + " " + role
                 owner = unit.robot if role == "Follower" else unit.agent
+                if owner is None:
+                    continue
                 if self.mock:
                     data = dict(running=True, feedback_age_s=0, motors=[
                         dict(joint=f"J{i+1}", id=i+1, error_code=1,
@@ -49,6 +51,9 @@ class StationIO:
         if set(by_name) != {"left", "right"} or len(units) != 2:
             raise ValueError("exactly left and right YAM followers required")
         self.units = [by_name["left"], by_name["right"]]
+        self.leaders_connected = all(u.agent is not None for u in self.units)
+        if not self.leaders_connected and any(u.agent is not None for u in self.units):
+            raise ValueError("connect both Leaders or neither")
         self.mock = mock
         self.max_state_age = max_state_age
         # Every real arm has its own CAN interface and i2rt state lock. Waiting for
@@ -60,7 +65,7 @@ class StationIO:
             None
             if mock
             else ThreadPoolExecutor(
-                max_workers=4,
+                max_workers=4 if self.leaders_connected else 2,
                 thread_name_prefix="station-read",
                 initializer=place_on_cpus,
                 initargs=("CONTROL",),
@@ -75,7 +80,7 @@ class StationIO:
         self._policy_trajectory = None
         self._policy_trace = None
         self._mock_leaders = np.concatenate([u.robot.get_joint_pos() for u in self.units])
-        self._manual = True
+        self._manual = self.leaders_connected
         self._mock_t = 0
         self._limits = [
             np.tile([-np.pi, np.pi], (6, 1)) if mock else u.robot.joint_limits() for u in self.units
@@ -95,7 +100,8 @@ class StationIO:
             if self._manual:
                 self._mock_t += 1
                 self._mock_leaders[[0, 7]] += 0.001 * np.cos(self._mock_t / 30)
-            return q, self._mock_leaders.copy(), [[False, False], [False, False]], [0.0] * 4
+            ages = [0.0, 0.0 if self.leaders_connected else None] * 2
+            return q, self._mock_leaders.copy(), [[False, False], [False, False]], ages
 
         def read_follower(unit):
             started = time.monotonic()
@@ -127,10 +133,10 @@ class StationIO:
         follower_futures = [self._read_pool.submit(labelled_read, read_follower, unit, "Follower")
                             for unit in self.units]
         leader_futures = [self._read_pool.submit(labelled_read, read_leader, unit, "Leader")
-                          for unit in self.units]
+                          if unit.agent is not None else None for unit in self.units]
         followers = [future.result() for future in follower_futures]
         self.gripper_feedback = [result[3] for result in followers]
-        leaders_read = [future.result() for future in leader_futures]
+        leaders_read = [future.result() if future is not None else None for future in leader_futures]
         self.read_timings_s = {
             **{
                 f"{unit.name}_follower": result[2]
@@ -139,17 +145,21 @@ class StationIO:
             **{
                 f"{unit.name}_leader": result[3]
                 for unit, result in zip(self.units, leaders_read, strict=True)
+                if result is not None
             },
             "parallel_total": time.monotonic() - started,
         }
         q = vector(np.concatenate([result[0] for result in followers]))
-        leaders = [result[0] for result in leaders_read]
-        buttons = [[bool(key) for key in result[1][:2]] for result in leaders_read]
+        # Fixed-shape internal arbitration input only. Absent Leaders are recorded
+        # as null/__valid=false, never as these placeholder positions.
+        leaders = [result[0] if result is not None else np.zeros(7) for result in leaders_read]
+        buttons = [[bool(key) for key in result[1][:2]] if result is not None else [False, False]
+                   for result in leaders_read]
         ages = [
             age
             for pair in zip(
                 [result[1] for result in followers],
-                [result[2] for result in leaders_read],
+                [result[2] if result is not None else None for result in leaders_read],
                 strict=True,
             )
             for age in pair
@@ -244,6 +254,8 @@ class StationIO:
             gain = rules.POLICY_GAIN if (getattr(decision, "phase", None) == "takeover"
                 or getattr(decision, "leader_native_hold", False)) else rules.HOLD_GAIN
         for i, u in enumerate(self.units):
+            if u.agent is None:
+                continue
             started_at = time.monotonic()
             if self.mock:
                 if not manual:
@@ -255,11 +267,11 @@ class StationIO:
                 )
             stamps[f"{u.name}_leader"] = time.monotonic()
             self.write_timings_s[f"{u.name}_leader"] = stamps[f"{u.name}_leader"] - started_at
-        self._manual = manual
+        self._manual = manual and self.leaders_connected
         self.last_leader_target = np.asarray(leader).copy()
         for i in (0, 1):
             self.last_leader_target[i*7:i*7+6] = leader_targets[i]
-        self.leader_position_controlled = not manual
+        self.leader_position_controlled = self.leaders_connected and not manual
         if policy_trajectory:
             for u in self.units:
                 stamps[f"{u.name}_follower"] = time.monotonic()
@@ -317,7 +329,7 @@ class StationIO:
                 u.robot.command_joint_pos(position)
             except Exception as exc:
                 errors.append(f"{u.name} follower: {exc}")
-            if not self.mock:
+            if not self.mock and u.agent is not None:
                 try:
                     position, _, age = u.agent.hil_read()
                     self._check_hold_feedback(position, age)
@@ -351,6 +363,8 @@ class StationIO:
         resources = []
         for u in self.units:
             for role, device in (("leader", u.agent), ("follower", u.robot)):
+                if device is None:
+                    continue
                 close = getattr(device, "close_hil", None)
                 if close:
                     resources.append((f"{u.name} {role}", close))

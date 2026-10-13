@@ -22,8 +22,9 @@ class DeviceHealth:
     MOTION_RAD = math.radians(1)
     WINDOW_S = 1.0
 
-    def __init__(self, max_age=.25):
+    def __init__(self, max_age=.25, *, expected_arms=4):
         self.max_age = max_age
+        self.expected_arms = expected_arms
         self.checked_at = None
         self.arms = []
         self.issues = ["等待设备反馈检查"]
@@ -33,7 +34,7 @@ class DeviceHealth:
 
     def update(self, arms, *, now, follower, leader):
         self.checked_at, self.arms = now, arms
-        issues = [] if len(arms) == 4 else ["缺少四臂设备诊断反馈"]
+        issues = [] if len(arms) == self.expected_arms else ["缺少已连接机械臂的设备诊断反馈"]
         for arm in arms:
             label = arm["label"]
             if not arm["running"]:

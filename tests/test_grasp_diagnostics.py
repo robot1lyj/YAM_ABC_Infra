@@ -228,7 +228,7 @@ def test_runtime_recording_switch_does_not_reset_epoch_or_move_targets(tmp_path,
     from yam_abc_reproduce.hil.storage import read_rows
     from yam_abc_reproduce.runtime import build_arm_units
 
-    io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
+    io = StationIO(build_arm_units(StationConfig(), mock=True, followers_only=True), mock=True)
     rec = Recorder(tmp_path / mode)
     cameras = [CameraWorker(MockCamera(role, role, width=32, height=32))
                for role in ("top", "left", "right")]

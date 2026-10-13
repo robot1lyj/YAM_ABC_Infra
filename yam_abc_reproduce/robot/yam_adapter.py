@@ -141,6 +141,36 @@ def _feedback_age(robot) -> float:
     return _joint_snapshot(robot)[1]
 
 
+def _motor_health(robot):
+    """Inspect published feedback only: no SDK lock and no extra CAN request.
+
+    Pinned i2rt replaces the complete chain.state list. On error it may stop
+    before publishing the failed frame, so a stopped thread is NOT 'normal'
+    even if the last stored error nibble was 1. Timestamps are SDK publication
+    times, not individual CAN receipt times.
+    """
+    chain = robot.motor_chain
+    state = robot._joint_state
+    frames = chain.state
+    now = time.monotonic()
+    # JointStates timestamps can advance while the CAN producer is recovering.
+    # Retain the prior list (not its id, which Python can reuse) and require the
+    # CAN producer to keep publishing new complete snapshots as well.
+    if getattr(robot, "_health_motor_frames", None) is not frames:
+        robot._health_motor_frames = frames
+        robot._health_motor_changed_at = now
+    age = None if state is None else max(
+        _age_from_stamp(state.timestamp), now - robot._health_motor_changed_at)
+    motors = [dict(joint=f"J{i+1}" if i < 6 else "夹爪", id=int(frame.id),
+                   error_code=int(frame.error_code, 16),
+                   temp_mos_c=float(frame.temperature_mos),
+                   temp_rotor_c=float(frame.temperature_rotor))
+              for i, frame in enumerate(frames)]
+    return dict(running=bool(robot._server_thread.is_alive() and chain.running
+                            and chain._control_thread.is_alive()),
+                feedback_age_s=age, motors=motors)
+
+
 class YamRobot(RobotInterface):
     """Follower YAM arm wrapped from i2rt's ``get_yam_robot``."""
 
@@ -169,6 +199,9 @@ class YamRobot(RobotInterface):
 
     def num_dofs(self) -> int:
         return self._n + 1
+
+    def hil_health(self):
+        return _motor_health(self._robot)
 
     def gripper_limits(self) -> list[float] | None:
         """The ``[closed, open]`` gripper motor range i2rt is using: the pinned config
@@ -495,6 +528,9 @@ class YamTeleop(TeleopAgent):
 
     def hil_leader_status(self):
         return self._require_leader().control_status()
+
+    def hil_health(self):
+        return _motor_health(self._require_leader()._robot)
 
     def close_hil(self):
         leader = self._leader or getattr(self, "_released_leader", None)

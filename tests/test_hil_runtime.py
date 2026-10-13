@@ -110,7 +110,8 @@ def test_leader_home_uses_native_gain_without_changing_manual_or_hold():
     io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
     calls = []
     for unit in io.units:
-        unit.agent = SimpleNamespace(hil_leader_command=lambda target, **kw: calls.append(kw))
+        unit.agent = SimpleNamespace(hil_leader_command=lambda target, **kw: calls.append(kw),
+                                     stop=lambda: None)
     io.mock = False  # Exercise real command selection with mock motor endpoints.
     q = np.zeros(14)
     a = Arbiter(Mode.HIL)
@@ -766,6 +767,8 @@ def test_filtered_policy_leader_uses_sampled_target_not_raw_model(monkeypatch):
     from yam_abc_reproduce.hil import station
 
     class FakeTrajectory:
+        alive = False
+
         def __init__(self, *args, **kwargs):
             pass
 

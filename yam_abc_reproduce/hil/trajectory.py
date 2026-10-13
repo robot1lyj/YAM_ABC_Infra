@@ -157,6 +157,10 @@ class TrajectoryExecutor:
             self._trace_lost = 0
             return {"samples": rows, "lost": lost}
 
+    @property
+    def alive(self):
+        return self._thread.is_alive()
+
     def close(self):
         with self._condition:
             self._stopping = True

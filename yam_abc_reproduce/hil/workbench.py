@@ -764,8 +764,8 @@ class Workbench:
         if self.initializing:
             base = base.parent / "workstation" / "initialization_sessions"
         elif self.taskless_teleop:
-            # Keep the unrecorded session on the task output's filesystem
-            # so the first task binding can atomically rename it.
+            # Logical identity only: no directory is created until task binding
+            # or an explicit recording start needs storage.
             base = base.parent / "workstation" / "teleop_sessions"
         output = (
             base
@@ -807,6 +807,7 @@ class Workbench:
             getattr(self.runtime, "io", None), "release_on_close", False
         )
         self.recording_error = self.runtime.recording_error if self.runtime else None
+        recorded = bool(self.runtime and self.runtime.recorder.episodes)
         self.runtime = None
         self._previews = {}
         self.state = "disconnected"
@@ -816,7 +817,8 @@ class Workbench:
         self.log(
             "录制中断，机械臂已断开；请检查本集错误与已写入数据"
             if self.recording_error
-            else "本地MP4与HDF5数据已保存；可上传服务器后独立转换"
+            else "本地MP4与HDF5数据已保存；可上传服务器后独立转换" if recorded
+            else "设备会话已结束；本次未录制数据"
         )
 
     def event(self, event):
@@ -869,6 +871,20 @@ class Workbench:
         if heartbeat and time.monotonic() - self._heartbeat > 3:
             raise ValueError("操作台心跳已断开")
         return self.runtime
+
+    def check_device_health(self):
+        """Read the owner's latest check; never constructs SDKs or moves motors."""
+        status = self.status
+        result = dict(status.get("device_health") or {})
+        if self.state != "connected" or status.get("phase") == "fault":
+            result.update(ok=False, reason=status.get("connection_error") or status.get("error")
+                          or "机械臂未连接，无法检查电机反馈；连接后保持，不会自动运动")
+        elif status.get("control_age_s") is None or status["control_age_s"] > .25:
+            result.update(ok=False, reason="控制状态已过期，不能据此判断设备正常")
+        elif self.runtime is not None:
+            result = self.runtime.check_device_health()
+        result.setdefault("arms", [])
+        return result
 
     def request_jog(self, arm, joint, delta=None, *, target=None):
         self._require_runtime(heartbeat=True, allow_initialization=True).request_jog(

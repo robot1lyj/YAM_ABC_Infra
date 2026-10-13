@@ -3,6 +3,7 @@ import threading
 import time
 
 import numpy as np
+import pytest
 
 from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase
 from yam_abc_reproduce.hil.recording import RecordingSession
@@ -295,9 +296,9 @@ def test_session_manifest_failure_is_reported(tmp_path, monkeypatch):
         return original(path, *args, **kwargs)
 
     monkeypatch.setattr(storage, "atomic_json", write)
-    rec = RecordingSession(tmp_path / "session", mode="collect")
-    rec.close()
-    assert "disk full" in rec.error
+    with pytest.raises(OSError, match="disk full"):
+        RecordingSession(tmp_path / "session", mode="collect")
+    assert not (tmp_path / "session").exists()
 
 
 def test_failed_episode_is_listed_as_aborted(tmp_path, monkeypatch):

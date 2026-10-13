@@ -1,6 +1,7 @@
 """Bounded, low-frequency summaries of controller latency (not hard real-time claims)."""
 
 from collections import deque
+from time import monotonic
 
 import numpy as np
 
@@ -28,3 +29,15 @@ class Latencies:
             }
             self.next_report = now + 1
         return self.cached
+
+    def finish_tick(self, started_at, **seconds):
+        """Include status construction and these statistics in total work time.
+
+        Total-work percentiles summarize completed earlier ticks (at most one
+        report period behind), not a partial tick that excludes its own overhead.
+        """
+        report = self.add(started_at, **seconds)
+        self.values.setdefault("control_work", deque(maxlen=self.capacity)).append(
+            (monotonic() - started_at) * 1000
+        )
+        return report

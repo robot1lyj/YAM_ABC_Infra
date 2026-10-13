@@ -472,7 +472,7 @@
                   <h2>
                     <svg><use href="#i-pulse" /></svg>设备健康
                   </h2>
-                  <span class="muted">实时</span>
+                  <button class="button" id="check-device-health">检查设备</button>
                 </div>
                 <div id="health"></div>
                 <div class="health-footer">
@@ -543,7 +543,7 @@
             <section class="panel">
               <div class="panel-heading">
                 <h2><svg><use href="#i-arm" /></svg>机械臂姿态</h2>
-                <span class="muted">2 LEADERS + 2 FOLLOWERS</span>
+                <button class="button" id="check-device-health-detail">检查设备</button>
               </div>
               <div id="device-cards" class="device-cards"></div>
               <div class="device-note">
@@ -742,6 +742,17 @@
       <div class="dialog-actions">
         <button class="button" data-close>取消</button
         ><button id="confirm-action" class="button danger">确认</button>
+      </div>
+    </dialog>
+    <dialog id="device-health-dialog" class="device-health-dialog">
+      <h2>设备健康检查</h2>
+      <p id="device-health-result" role="status"></p>
+      <p class="muted">只读取反馈，不点动、不回零、不清除电机报警。静止检查通过不代表运动跟随已验证。</p>
+      <div id="device-health-details"></div>
+      <div class="dialog-actions">
+        <button class="button" id="device-health-refresh">重新检查</button>
+        <button class="button" id="device-health-ack" hidden>已处理，确认解除跟随告警</button>
+        <button class="button primary" id="device-health-close">关闭</button>
       </div>
     </dialog>
     <script src="/assets/app.js"></script>

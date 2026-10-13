@@ -639,7 +639,7 @@ def test_moment_merge_is_exact_and_independent():
         np.testing.assert_allclose(b.result()[key], direct.result()[key], atol=1e-14)
 
 
-def test_gravity_retains_entry_gripper_target_when_feedback_drifts(tmp_path):
+def test_gravity_retains_entry_gripper_target_when_feedback_drifts(tmp_path, healthy_runtime):
     from yam_abc_reproduce.hil.recording import RecordingSession
     from yam_abc_reproduce.hil.run import Runtime
 
@@ -671,6 +671,7 @@ def test_gravity_retains_entry_gripper_target_when_feedback_drifts(tmp_path):
         mode="collect",
     )
     try:
+        healthy_runtime(runtime)
         runtime.event("gravity")
         runtime.run(duration=0.15)
         assert len(io.commands) >= 2
@@ -681,7 +682,7 @@ def test_gravity_retains_entry_gripper_target_when_feedback_drifts(tmp_path):
         rec.close()
 
 
-def test_recording_failure_holds_arms_without_faulting_session(tmp_path, monkeypatch):
+def test_recording_failure_holds_arms_without_faulting_session(tmp_path, monkeypatch, healthy_runtime):
     from yam_abc_reproduce.hil.recording import RecordingSession
     from yam_abc_reproduce.hil.run import Runtime
 
@@ -729,6 +730,7 @@ def test_recording_failure_holds_arms_without_faulting_session(tmp_path, monkeyp
     )
     try:
         rec.start_episode()
+        healthy_runtime(runtime)
         runtime.event("start")
         runtime.run(duration=0.2)
         assert runtime.status["phase"] == "hold"
@@ -780,7 +782,7 @@ def test_full_episode_queue_aborts_in_writer_without_blocking_control(tmp_path, 
     assert rec.episodes[0]["outcome"] == "aborted"
 
 
-def test_separate_recording_process_loss_holds_but_control_keeps_ticking(tmp_path):
+def test_separate_recording_process_loss_holds_but_control_keeps_ticking(tmp_path, healthy_runtime):
     from yam_abc_reproduce.hil.recording_service import RemoteRecordingSession
     from yam_abc_reproduce.hil.run import Runtime
 
@@ -807,6 +809,7 @@ def test_separate_recording_process_loss_holds_but_control_keeps_ticking(tmp_pat
     io = IO()
     cameras = [SimpleNamespace(role=role, history=lambda: []) for role in ("top", "left", "right")]
     runtime = Runtime(io, cameras, None, recorder, mode="collect")
+    healthy_runtime(runtime)
     try:
         recorder.start_episode()
         thread = threading.Thread(target=runtime.run, kwargs={"duration": 0.4})

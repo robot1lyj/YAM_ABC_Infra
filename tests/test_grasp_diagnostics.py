@@ -125,6 +125,8 @@ def test_station_and_remote_executor_propagate_same_feedback_snapshot():
     from yam_abc_reproduce.runtime import build_arm_units
 
     io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
+    mock_health = io.device_health()
+    io.device_health = lambda: mock_health
     feedback = rows()[0]["grasp_diagnostics"]["followers"]
     calls = []
     for i, unit in enumerate(io.units):
@@ -132,7 +134,8 @@ def test_station_and_remote_executor_propagate_same_feedback_snapshot():
             calls.append(index)
             return np.zeros(7), .005, feedback[index]
         unit.robot.hil_read_with_gripper = read
-        unit.agent = SimpleNamespace(hil_read=lambda: (np.zeros(7), [False, False], .005))
+        unit.agent = SimpleNamespace(hil_read=lambda: (np.zeros(7), [False, False], .005),
+                                     stop=lambda: None)
     io.mock = False
     io._read_pool = ThreadPoolExecutor(max_workers=4)
     io.leader_control_status = lambda: {}

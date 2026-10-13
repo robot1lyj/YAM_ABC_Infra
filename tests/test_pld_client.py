@@ -516,24 +516,22 @@ const $ = id => { if (!nodes.has(id)) nodes.set(id, {
   value:'', append(child) { child.parentElement=this; }, querySelector() { return $('sync-option'); }
 }); return nodes.get(id) };
 const text = (id,v) => $(id).textContent=v;
-const state = {policy_fusion:'rtc',rtc_delay_steps:9,pld:{mode:'probe'}};
+const state = {policy_fusion:'rtc',rtc_delay_steps:9,pld:{mode:'probe'},
+  policy_controls:{configure:{allowed:true},reload:{allowed:true}}};
 const action = async endpoint => { requests.push(endpoint); return true; }, toast = () => {};
 """ + "function policySettingsEditable(" + helpers + "const restart = " + restart + """
 const context = {connected:true,paused:true,latched:false,recording:false,maint:'idle'};
 assert.equal(policySettingsEditable(context), true);
-for (const key of ['initializing','task_switching','recording_saving','intervention_pending']) {
-  state[key]=true; assert.equal(policySettingsEditable(context), false); state[key]=false;
-}
-for (const key of ['recording_saving','intervention_pending']) {
-  state[key]=true; assert.equal(policySettingsEditable({...context,recovery:true}), true); state[key]=false;
-}
-state.policy_command={state:'queued'}; assert.equal(policySettingsEditable(context), false);
-for (const status of ['accepted','rejected']) {
-  state.policy_command={state:status}; assert.equal(policySettingsEditable(context), true);
-}
-for (const changes of [{connected:false},{paused:false},{latched:true},{recording:true},{maint:'homing'}]) {
-  assert.equal(policySettingsEditable({...context,...changes}), false);
-}
+state.initializing=true; assert.equal(policySettingsEditable(context), false); state.initializing=false;
+state.policy_controls.configure.allowed=false;
+assert.equal(policySettingsEditable(context), false);
+assert.equal(policySettingsEditable({...context,recovery:true}), true);
+state.policy_controls.reload.allowed=false;
+assert.equal(policySettingsEditable({...context,recovery:true}), false);
+delete state.policy_controls;
+assert.equal(policySettingsEditable(context), false); // Unknown owner state is not permission.
+state.policy_controls={configure:{allowed:true},reload:{allowed:true}};
+assert.equal(policySettingsEditable({...context,connected:false}), false);
 const shared=$('policy-execution-controls');
 $('policy-fusion').value='rtc'; $('rtc-delay-steps').value='7'; // Unsubmitted draft.
 renderPolicyControls(true, true);

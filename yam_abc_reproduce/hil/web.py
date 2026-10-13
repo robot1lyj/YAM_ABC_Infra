@@ -328,6 +328,10 @@ def create_app(runtime, *, control_access=False):
     def initialize_preflight():
         return invoke(runtime.initialization_preflight)
 
+    @app.get("/device/health")
+    def device_health():
+        return invoke(runtime.check_device_health)
+
     @app.post("/initialize/complete")
     def initialize_complete(body: InitializationComplete):
         return invoke(runtime.complete_initialization, **body.model_dump())

@@ -94,6 +94,11 @@ class RemoteStationIO(StationIO):
     def leader_control_status(self):
         return self.cache["control"]
 
+    def device_health(self):
+        age = max(0, time.monotonic() - self.cache["sampled_at"])
+        return [dict(arm, feedback_age_s=(None if arm["feedback_age_s"] is None
+                     else arm["feedback_age_s"] + age)) for arm in self.cache["device_health"]]
+
     def apply(self, decision, q, leader, **kwargs):
         self.packet = {"gravity": False}
         super().apply(decision, q, leader, **kwargs)
@@ -114,12 +119,15 @@ class RemoteStationIO(StationIO):
         else:
             self.held = None
         self.sequence += 1
+        self.last_leader_target = leaders.copy()
+        self.leader_position_controlled = not self.packet["manual"]
         reply = self._rpc(dict(op="apply", seq=self.sequence, created_at=time.monotonic(),
                                followers=followers.tolist(), leaders=leaders.tolist(),
                                manual=bool(self.packet["manual"]), gain=float(self.packet["gain"]),
                                gravity=self.packet["gravity"]))
         if reply["seq"] != self.sequence:
             raise RuntimeError("executor acknowledgement mismatch")
+        self.write_timings_s = reply["write_timings_s"]  # Not the local collector timings.
         return np.asarray(reply["submitted"]), reply["stamps"]
 
     def hold(self):

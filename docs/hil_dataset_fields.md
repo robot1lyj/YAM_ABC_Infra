@@ -38,6 +38,12 @@
 
 所有14D向量顺序：左J1–J6、左夹爪、右J1–J6、右夹爪。关节rad，夹爪名义0闭1开。submitted_action是训练动作候选；measured_state是反馈，两者不可混淆。真实YAM下发夹爪沿用既有[0.02,0.98]端点余量，RTC承诺和记录使用同一限幅；其语义是归一化SDK入口目标，不含SDK内部受阻软限力再次调整后的电机目标。
 
+### 设备与执行诊断
+
+设备跟随诊断：HDF5 `details.device_tracking_fault` 保留告警对象（无告警为null），包含`arm, joint, error_deg, movement_deg, target_rad, measured_rad, detected_at, message`。录制中首次告警同时写session的`policy_events.jsonl`，`event=device_health_fault`附`episode_id/tick/time/fault`，在暂停收尾前入队，不随HOLD/介入等待帧过滤；非录制期间留设备服务日志，不为检查单独创建数据集。跟随告警不等于电机故障码或抓取失败标签。
+
+执行性能：可选`details.sdk_write_timings_s`为四臂各次SDK入口调用耗时，单位秒；`submitted_at`为各臂SDK调用返回的单调时间。**不是实际CAN发送或电机到位时间**。老版本可能在一批写入后统一取时间，不能用其拆解逐臂写入时差；新字段缺失时不补造。控制耗时现在包含本tick状态组装与统计更新，百分位展示使用前一批已完成样本，不为统计再等待控制线程。
+
 ### 请求与回复
 
 request及policy_reply.token：`epoch, request_id, observation_id, created_at, observed_at, queue_size_at_request, observation_policy_tick, rtc_delay_steps`；时间为IPC单调秒，TDA/RTC专属值可空。

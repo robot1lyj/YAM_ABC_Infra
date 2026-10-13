@@ -8,6 +8,26 @@ from yam_abc_reproduce.runtime import ArmUnit
 
 
 @pytest.fixture
+def healthy_runtime():
+    """Give lightweight IO doubles an explicit, fresh mock health contract."""
+    import time
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from yam_abc_reproduce.hil.station import StationIO
+
+    io = SimpleNamespace(mock=True, units=[SimpleNamespace(name=name, robot=None, agent=None)
+                                           for name in ("left", "right")])
+    def ready(runtime):
+        runtime.io.device_health = lambda: StationIO.device_health(io)
+        runtime.device_health.update(runtime.io.device_health(), now=time.monotonic(),
+                                     follower=np.zeros(14), leader=np.zeros(14))
+        return runtime
+    return ready
+
+
+@pytest.fixture
 def mock_station(tmp_path):
     return StationConfig(
         robot=RobotConfig(type="mock", arm_name="left", num_arm_joints=6),

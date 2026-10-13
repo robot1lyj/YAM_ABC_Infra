@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import shutil
+import tempfile
 import threading
 import time
 import uuid
@@ -14,6 +16,7 @@ import numpy as np
 
 from ..resource_qos import place_on_cpus
 from ..storage_health import require_recording_storage
+from .storage import json_value
 
 SAVE_STALL_SECONDS = 120
 
@@ -32,12 +35,22 @@ def wait_for_save(thread, progress_at, label):
             raise RuntimeError(f"{label} made no save progress for {SAVE_STALL_SECONDS} seconds")
 
 
-def json_value(value):
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, np.generic):
-        return value.item()
-    raise TypeError(type(value).__name__)
+def create_session_directory(path, manifest):
+    """Publish a new, empty session only after its initial manifest is ready."""
+    from .storage import atomic_json
+
+    require_recording_storage(path)
+    if path.exists():
+        raise FileExistsError(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".session-", dir=path.parent) as staging:
+        atomic_json(Path(staging) / "session.json", manifest)
+        Path(staging).rename(path)
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 class Recorder:
@@ -196,10 +209,10 @@ class RecordingSession:
         segment_seconds=60,
         min_free_bytes=512 * 1024**2,
         video_backend=None,
+        defer_storage=False,
     ):
         self.path = Path(path)
-        require_recording_storage(self.path)
-        self.path.mkdir(parents=True, exist_ok=False)
+        self._storage_created = False
         self.metadata = metadata or {}
         self.min_free_bytes = min_free_bytes
         self.segment_seconds = segment_seconds
@@ -223,8 +236,14 @@ class RecordingSession:
         self._stop = threading.Event()
         self._session_progress_at = time.monotonic()
         self._thread = threading.Thread(target=self._run, daemon=True, name="episode-session")
-        self._write_manifest()
+        if not defer_storage:
+            self._open_storage()
         self._thread.start()
+
+    def _open_storage(self):
+        if not self._storage_created:
+            create_session_directory(self.path, self._manifest())
+            self._storage_created = True
 
     @property
     def saving(self):
@@ -330,6 +349,12 @@ class RecordingSession:
             raise FileExistsError(f"采集会话目录已存在：{target}")
         target.parent.mkdir(parents=True, exist_ok=True)
         original = self.path
+        if not self._storage_created:
+            create_session_directory(target, self._manifest(metadata=metadata))
+            self.path, self.metadata = target, metadata
+            self._storage_created = True
+            self.episode_id = None
+            return
         original.rename(target)
         try:
             from .storage import atomic_json
@@ -373,9 +398,7 @@ class RecordingSession:
             active.metadata.update(self.metadata)
             active.metadata.update(active_metadata)
             active.close(outcome)
-            self._completed_steps += active.written
             self._session_progress_at = time.monotonic()
-            self._active = None
             entry = {
                 "path": active.path.name,
                 "steps": active.written,
@@ -386,7 +409,9 @@ class RecordingSession:
             # signal and must never observe it ahead of ``session.json``.
             pending_episodes = [*self.episodes, entry]
             self._write_manifest(episodes=pending_episodes)
+            self._completed_steps += active.written
             self.episodes.append(entry)
+            self._active = None
             if active.error:
                 raise RuntimeError(active.error)
             if outcome == "discarded":
@@ -410,18 +435,16 @@ class RecordingSession:
                     try:
                         if active is not None:
                             raise ValueError("episode still active")
-                        from .storage import atomic_json
-
-                        require_recording_storage(target)
-                        target.mkdir(parents=True, exist_ok=False)
-                        atomic_json(target / "session.json", dict(
+                        create_session_directory(target, dict(
                             metadata, schema="yam_session_v2", episodes=[],
                             session_queue_peak=0, error=None, outcome="unknown",
                         ))
-                        self._write_manifest()
+                        if self._storage_created:
+                            self._write_manifest()
                         if self.error:
                             raise RuntimeError(self.error)
                         self.path, self.metadata = target, metadata
+                        self._storage_created = True
                         self.episode_id = None
                         self.episodes = []
                         self._completed_steps = count = self.queue_peak = 0
@@ -448,12 +471,14 @@ class RecordingSession:
                     finally:
                         result["done"].set()
                 elif item[0] == "policy_reply":
+                    self._open_storage()
                     with (item[1] / "policy_events.jsonl").open("a", encoding="utf-8") as stream:
                         json.dump(item[2], stream, default=json_value, ensure_ascii=False, allow_nan=False)
                         stream.write("\n")
                 elif item[0] == "start":
                     if active:
                         raise RuntimeError("episode already open")
+                    self._open_storage()
                     count += 1
                     active_metadata = dict(item[2], collection_mode=item[1],
                                            omitted_intervention_waits=[])
@@ -491,35 +516,39 @@ class RecordingSession:
                 except Exception as close_exc:
                     self.error += f"; close: {close_exc}"
                 if not any(e["path"] == active.path.name for e in self.episodes):
-                    self.episodes.append(
-                        {
-                            "path": active.path.name,
-                            "steps": active.written,
-                            "outcome": "aborted",
-                            "error": self.error,
-                        }
-                    )
+                    pending = [*self.episodes, dict(path=active.path.name,
+                        steps=active.written, outcome="aborted", error=self.error)]
+                    try:
+                        self._write_manifest(episodes=pending)
+                    except (OSError, ValueError, TypeError) as manifest_exc:
+                        self.error += f"; session manifest write: {manifest_exc}"
+                    else:
+                        self._completed_steps += active.written
+                        self.episodes = pending
+                self._active = None
         finally:
-            self._write_manifest()
+            if self._storage_created:
+                try:
+                    self._write_manifest()
+                except (OSError, ValueError, TypeError) as exc:
+                    self.error = self.error or f"session manifest write: {exc}"
+
+    def _manifest(self, *, episodes=None, metadata=None):
+        return dict(
+            self.metadata if metadata is None else metadata,
+            schema="yam_session_v2",
+            episodes=self.episodes if episodes is None else episodes,
+            session_queue_peak=self.queue_peak,
+            error=self.error,
+            outcome="aborted" if self.error else self.outcome,
+        )
 
     def _write_manifest(self, *, episodes=None):
-        try:
-            from .storage import atomic_json
+        # Callers publish completion only after this succeeds. The outer writer
+        # boundary reports I/O errors; swallowing them here would invent success.
+        from .storage import atomic_json
 
-            atomic_json(
-                self.path / "session.json",
-                dict(
-                    self.metadata,
-                    schema="yam_session_v2",
-                    episodes=self.episodes if episodes is None else episodes,
-                    session_queue_peak=self.queue_peak,
-                    error=self.error,
-                    outcome="aborted" if self.error else self.outcome,
-                ),
-            )
-
-        except OSError as exc:
-            self.error = f"session manifest write: {exc}"
+        atomic_json(self.path / "session.json", self._manifest(episodes=episodes))
 
     def close(self, outcome="unknown"):
         self.outcome = outcome

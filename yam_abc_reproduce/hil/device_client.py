@@ -138,6 +138,9 @@ class DeviceClient:
     def initialization_preflight(self):
         return self._request("POST", "/initialize/preflight")
 
+    def check_device_health(self):
+        return self._request("GET", "/device/health")
+
     def complete_initialization(self, **body):
         return self._request("POST", "/initialize/complete", body)
 

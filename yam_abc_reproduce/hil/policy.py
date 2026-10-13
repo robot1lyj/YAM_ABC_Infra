@@ -84,6 +84,7 @@ class PolicyWorker:
         self._replies = queue.Queue(maxsize=1)
         self._busy = threading.Event()
         self._stop = threading.Event()
+        self.close_errors = []
         self._restart = threading.Event()
         self._requested_rtc: bool | None = None
         self._requested_url = None
@@ -278,15 +279,25 @@ class PolicyWorker:
                         pld=response.get("pld") if isinstance(response, dict) else None, **audit)
                 self._replies.put_nowait(reply)
         finally:
+            from .cleanup import close_resources
+
+            resources = []
             close = getattr(self.client, "close", None)
             if close:
-                close()
+                resources.append(("policy transport", close))
             if self.planner is not None:
-                self.planner.close()
+                resources.append(("action planner", self.planner.close))
+            self.close_errors = close_resources(resources)
 
     def close(self):
         self._stop.set()
-        self._thread.join(timeout=0.1)
+        # Called during session teardown, never from a control tick. Allow the
+        # bounded cold handshake/RPC to finish before its owner releases pipes.
+        self._thread.join(timeout=max(10.0, getattr(self.client, "timeout", 1.5) + 2.0))
+        if self._thread.is_alive():
+            raise RuntimeError("policy worker did not stop; cleanup remains pending")
+        if self.close_errors:
+            raise RuntimeError("; ".join(self.close_errors))
 
 
 class PlainPolicyClient:

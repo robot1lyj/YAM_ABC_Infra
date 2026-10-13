@@ -55,6 +55,7 @@ class Executor:
                              gripper_command_margins=[getattr(u.robot, "_gripper_command_margin", 0.0)
                                                       for u in self.io.units],
                              gripper_feedback=getattr(self.io, "gripper_feedback", [None, None]),
+                             device_health=self.io.device_health(),
                              control=self.io.leader_control_status())
 
     def freeze(self, *, revoke_lease=True):
@@ -69,18 +70,22 @@ class Executor:
         followers = self.io.limit_policy_target(followers)
         leaders = self.io.limit_policy_target(leaders)
         stamps = {}
+        timings = {}
         for i, u in enumerate(self.io.units):
+            started = time.monotonic()
             if self.io.mock:
                 if not manual:
                     self.io._mock_leaders[i*7:i*7+6] = leaders[i*7:i*7+6]
             else:
                 u.agent.hil_leader_command(leaders[i*7:i*7+6], manual=manual, gain_scale=gain)
             stamps[f"{u.name}_leader"] = time.monotonic()
+            timings[f"{u.name}_leader"] = stamps[f"{u.name}_leader"] - started
         self.io._manual = manual
-        self.io._write_followers(followers, gravity=gravity)
-        for u in self.io.units:
-            stamps[f"{u.name}_follower"] = time.monotonic()
-        return followers.tolist(), stamps
+        _, arm_stamps = self.io._write_followers(followers, gravity=gravity, timing=True)
+        for name, times in arm_stamps.items():
+            stamps[f"{name}_follower"] = times["sdk_call_returned_at"]
+            timings[f"{name}_follower"] = times["sdk_call_returned_at"] - times["sdk_call_started_at"]
+        return followers.tolist(), stamps, timings
 
     def handle(self, r):
         now = time.monotonic()
@@ -157,12 +162,12 @@ class Executor:
         q = self.io.limit_policy_target(r["followers"])
         h = self.io.limit_policy_target(r["leaders"])
         try:
-            target, stamps = self._write(q, h, manual=r["manual"], gain=gain, gravity=r["gravity"])
+            target, stamps, timings = self._write(q, h, manual=r["manual"], gain=gain, gravity=r["gravity"])
         except Exception as exc:
             self.fault = f"SDK write failed: {exc}"
             raise
         self.seq, self.last_command, self.frozen = seq, time.monotonic(), None
-        return dict(seq=seq, submitted=target, stamps=stamps)
+        return dict(seq=seq, submitted=target, stamps=stamps, write_timings_s=timings)
 
     def run(self):
         while not self.stopping.is_set():

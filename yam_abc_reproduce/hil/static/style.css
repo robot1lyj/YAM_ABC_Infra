@@ -1179,6 +1179,12 @@ dialog {
   background: #fff;
   box-shadow: 0 24px 90px #00000025;
 }
+.device-health-dialog { width: min(760px, 94vw); max-height: 85vh; overflow: auto; }
+.device-health-dialog details { padding: 12px 0; border-bottom: 1px solid #ddd; }
+.device-health-dialog summary { cursor: pointer; }
+.device-health-dialog table { width: 100%; margin-top: 12px; border-collapse: collapse; }
+.device-health-dialog th, .device-health-dialog td { padding: 6px; text-align: left; }
+
 dialog::backdrop {
   background: #16161c4a;
   backdrop-filter: blur(5px);

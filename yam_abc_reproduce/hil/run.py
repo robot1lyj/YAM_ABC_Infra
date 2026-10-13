@@ -10,6 +10,7 @@ import argparse
 import dataclasses
 import json
 import queue
+import sys
 import threading
 import time
 from collections import deque
@@ -30,7 +31,9 @@ from ..resource_qos import place_on_cpus
 from ..robot.can_bus import bring_up_can_buses, check_can_up, stop_can_buses
 from ..runtime import build_arm_units, build_cameras_from_config
 from .buttons import HandleButtons
+from .cleanup import close_resources
 from .core import Arbiter, Mode, Phase
+from .device_health import MOTION_EVENTS, DeviceHealth
 from .jog import Jog
 from .maintenance import Maintenance
 from .metrics import Latencies
@@ -178,6 +181,8 @@ class Runtime:
         self.stopping = threading.Event()
         self.holding = queue.Queue(maxsize=1)
         self.status = {"phase": "hold", "mode": mode, "tick": 0}
+        self.device_health = DeviceHealth(settings.get("max_state_age", .25))
+        self._health_fault_logged = None
         self.handle_buttons = HandleButtons()
         self.outcome = "unknown"
         self.latencies = Latencies()
@@ -270,7 +275,7 @@ class Runtime:
         self._pld_pending = None
 
 
-    def _recording_failed(self, state, reason):
+    def _recording_failed(self, state, leader, reason):
         """Abort the episode and signal HOLD without latching a motor fault."""
         if self.recording_error is not None:
             return
@@ -279,6 +284,7 @@ class Runtime:
         self.recorder.metadata["recording_error"] = self.recording_error
         self.recorder.abort_episode()
         self.session.arbiter.hold(state)
+        self.session.arbiter._leader_frozen = leader.copy()
         hold_errors = self.io.hold()
         if hold_errors:
             raise RuntimeError("hold after recording failure: " + "; ".join(hold_errors))
@@ -287,6 +293,7 @@ class Runtime:
         if self.task_switching and event not in ("stop", "hold", "quit"):
             raise ValueError("任务切换中，请稍候")
         allowed = {
+            "ack_device_health",
             "start",
             "stop",
             "reset_stop",
@@ -313,6 +320,10 @@ class Runtime:
         }
         if event not in allowed:
             raise ValueError("unknown event")
+        if event in MOTION_EVENTS:
+            self._require_device_health()
+        if event == "ack_device_health" and self.status.get("phase") != "hold":
+            raise ValueError("请先暂停，再确认设备故障已处理")
         if event.startswith("mode:") and self.session.arbiter.intervention_pending:
             raise ValueError("介入尚未结束，请明确确认结束介入并切换模式")
         if event == "start" and self.session.arbiter.intervention_pending:
@@ -336,6 +347,7 @@ class Runtime:
                 "home",
                 "home_leader",
                 "gravity",
+                "ack_device_health",
                 "mode:teleop",
                 "end_intervention:teleop",
             )
@@ -383,6 +395,7 @@ class Runtime:
             self.events.put_nowait((event, time.monotonic()))
 
     def request_jog(self, arm, joint, delta=None, *, target=None):
+        self._require_device_health()
         if self.task_switching:
             raise ValueError("任务切换中，请稍候")
         if self.status.get("phase") != "hold":
@@ -398,6 +411,14 @@ class Runtime:
             raise ValueError("录制或紧急暂停时不可点动")
         self.jog.request(arm, joint, delta, target=target)
 
+    def _require_device_health(self):
+        reason = self.device_health.blocking_reason()
+        if reason:
+            raise ValueError(reason)
+
+    def check_device_health(self):
+        return self.device_health.snapshot()
+
     def configure_hil_input(self, *, input):
         if input not in ("leader", "keyboard"):
             raise ValueError("请选择 Leader 或键盘末端微调")
@@ -409,6 +430,7 @@ class Runtime:
             self.cartesian.prepare()
 
     def request_cartesian(self, *, arm, axis, delta, epoch, command_id, observed_tick):
+        self._require_device_health()
         self.cartesian.validate(arm, axis, delta)
         a = self.session.arbiter
         if (a.mode != Mode.HIL or a.hil_input != "keyboard" or a.phase != Phase.HUMAN
@@ -441,6 +463,15 @@ class Runtime:
             if a.intervention_pending:
                 return "请先交还或结束介入，再修改设置"
         return None
+
+    def policy_controls(self):
+        """UI consumes the owner's rules, rather than reconstructing them in JS."""
+        queued = self.policy_command_status and self.policy_command_status["state"] == "queued"
+        result = {}
+        for name, kind in (("configure", "configure"), ("reload", "restart")):
+            reason = self._settings_error(kind) or ("设置请求正在处理" if queued else None)
+            result[name] = {"allowed": reason is None, "reason": reason}
+        return result
 
     def _queue_policy_command(self, command):
         reason = self._settings_error(command[0])
@@ -507,7 +538,7 @@ class Runtime:
         self.operator_error = None
         receipt.update(state="accepted", applied_at=time.monotonic())
 
-    def _prepare_policy_recording(self, event, state):
+    def _prepare_policy_recording(self, event, state, leader):
         """Admit the ordered start marker before allowing policy execution.
 
         This is nonblocking queue admission, not a disk-flush acknowledgement.
@@ -563,9 +594,7 @@ class Runtime:
                 self.recorder.metadata["pld"] = {"mode": "off"}
             self.recorder.start_episode()
         if not self.recorder.recording or self.recorder.error:
-            frozen = a._leader_frozen
-            self._recording_failed(state, self.recorder.error or "episode start was not admitted")
-            a._leader_frozen = frozen
+            self._recording_failed(state, leader, self.recorder.error or "episode start was not admitted")
             return False
         return True
 
@@ -639,11 +668,28 @@ class Runtime:
                 read_done = time.monotonic()
                 if max(ages) > self.max_state_age:
                     raise RuntimeError("SDK state update stale")
+                self.device_health.update(self.io.device_health(), now=read_done,
+                                          follower=q, leader=leader)
+                incident = self.device_health.tracking_fault
+                if incident is not None and incident is not self._health_fault_logged:
+                    audit = dict(event="device_health_fault", tick=tick, time=now,
+                                 episode_id=(getattr(self.recorder, "episode_id", None)
+                                             if getattr(self.recorder, "recording", False) else None),
+                                 fault=incident)
+                    print(json.dumps(audit, ensure_ascii=False), flush=True)
+                    # Record before HOLD closes the episode. This out-of-band log
+                    # is not filtered out with intervention waiting/HOLD frames.
+                    if isinstance(self.recorder, RECORDING_SESSIONS) and self.recorder.recording:
+                        if not self.recorder.record_policy_reply(audit):
+                            self._recording_failed(q, leader, "设备跟随告警落盘失败")
+                    self._health_fault_logged = incident
+                if self.device_health.issues:
+                    raise RuntimeError(self.device_health.blocking_reason(now=read_done))
                 self.observations.add_state(now, q)
                 snapshot = self.observations.snapshot(now, self.prompt)
                 observation_done = time.monotonic()
                 if isinstance(self.recorder, RECORDING_SESSIONS) and self.recorder.error:
-                    self._recording_failed(q, self.recorder.error)
+                    self._recording_failed(q, leader, self.recorder.error)
                 try:
                     event, requested_at = self.events.get_nowait()
                 except queue.Empty:
@@ -803,6 +849,30 @@ class Runtime:
                 if event in ("record", "discard"):
                     recording_event, event = event, None
                 original_event = event
+                if event == "ack_device_health":
+                    try:
+                        if a.phase != Phase.HOLD or self.maintenance.state != "idle":
+                            raise ValueError("请先暂停并结束维护，再确认设备故障已处理")
+                        self.device_health.acknowledge(now=time.monotonic())
+                        self.operator_error = "已确认；未自动恢复运动。静止检查不证明关节跟随已恢复。"
+                    except ValueError as exc:
+                        self.operator_error = str(exc)
+                    event = None
+                health_reason = self.device_health.blocking_reason()
+                if health_reason:
+                    if event in MOTION_EVENTS:
+                        self.operator_error = health_reason
+                        event = None
+                    if self.device_health.tracking_fault:
+                        self.jog.clear()
+                        self.cartesian.cancel()
+                        if event != "stop" and (a.phase not in (Phase.HOLD, Phase.FAULT)
+                                                or self.maintenance.state != "idle"):
+                            self.outcome = "aborted"
+                            event = "hold"
+                        # HOLD must not silently return the Leaders to manual mode.
+                        if a._leader_frozen is None:
+                            a._leader_frozen = leader.copy()
                 if event in ("home", "home_leader", "capture_home", "gravity") and (
                     a.phase != Phase.HOLD
                     or getattr(self.recorder, "recording", False)
@@ -842,7 +912,7 @@ class Runtime:
                     self.operator_error = "介入状态已变化，模式切换未执行；请明确确认结束介入"
                     event = None
                 self.session.check_policy_recovery()
-                if not self._prepare_policy_recording(event, q):
+                if not self._prepare_policy_recording(event, q, leader):
                     event = None
                 decision = self.session.tick(
                     q,
@@ -857,6 +927,12 @@ class Runtime:
                     event=event,
                     policy_tick=tick,
                 )
+                if self.device_health.tracking_fault:
+                    if a._leader_frozen is None:
+                        a._leader_frozen = leader.copy()
+                    decision.leader_manual = False
+                    decision.leader_freeze = True
+                    decision.leader_hold_target = a._leader_frozen.copy()
                 reply = self.session.last_reply
                 if reply is not None and ((reply.get("pld_request") or {}).get("mode", "off") != "off"
                                           or reply.get("pld") is not None):
@@ -948,6 +1024,12 @@ class Runtime:
                     **({"leader_homing": True} if leader_homing else {}),
                     **({"gravity": True} if self.maintenance.state == "gravity" else {}),
                 )
+                apply_done = time.monotonic()
+                self.device_health.submitted(
+                    submitted, getattr(self.io, "last_leader_target", leader), now=apply_done,
+                    enabled=[self.maintenance.state != "gravity"] * 2
+                    + [getattr(self.io, "leader_position_controlled", False)] * 2,
+                )
                 self._submitted_history.append((tick, time.monotonic(), submitted.copy()))
                 if a.rtc_timeline is not None:
                     try:
@@ -1011,7 +1093,7 @@ class Runtime:
                 ):
                     # Preserve the actual clamped target; never spring back after a jog.
                     a.hold(submitted)
-                apply_done = time.monotonic()
+                bookkeeping_done = time.monotonic()
                 transitions = []
                 keyboard_takeover = (a.mode == Mode.HIL and a.hil_input == "keyboard"
                     and a.phase == Phase.HUMAN and event == "takeover"
@@ -1033,6 +1115,7 @@ class Runtime:
                     "event_applied_at": apply_done if transitions else None,
                     "transitions": transitions,
                     "intervention_id": self.intervention_id,
+                    "device_tracking_fault": self.device_health.tracking_fault,
                     "intervention_pending": a.intervention_pending,
                     "tick": tick,
                     "policy_reply": self.session.last_reply,
@@ -1076,6 +1159,7 @@ class Runtime:
                     else dataclasses.asdict(decision.request),
                     "action_index": decision.action_index,
                     "submitted_at": stamps,
+                    "sdk_write_timings_s": dict(getattr(self.io, "write_timings_s", {})),
                 }
                 if self.recording_mode == "grasp_diagnostics" or self.pld.enabled:
                     row["grasp_diagnostics"] = {
@@ -1119,22 +1203,25 @@ class Runtime:
                 row["observation_valid"] = snapshot is not None
                 if not self.recorder.submit(row, images or last_record_images):
                     if isinstance(self.recorder, RECORDING_SESSIONS):
-                        self._recording_failed(q, self.recorder.error or "recorder unavailable")
+                        self._recording_failed(q, leader, self.recorder.error or "recorder unavailable")
                     else:
                         raise RuntimeError(self.recorder.error or "recorder unavailable")
                 submitted_done = time.monotonic()
-                performance = self.latencies.add(
-                    now,
+                timings = dict(
                     io_read=read_done - now,
                     observation=observation_done - read_done,
                     arbitration=decision_done - observation_done,
                     io_apply=apply_done - decision_done,
-                    record_submit=submitted_done - apply_done,
-                    control_work=submitted_done - now,
+                    policy_bookkeeping=bookkeeping_done - apply_done,
+                    record_submit=submitted_done - bookkeeping_done,
                     tick_interval=dt,
                     **{
                         f"io_{name}": seconds
                         for name, seconds in getattr(self.io, "read_timings_s", {}).items()
+                    },
+                    **{
+                        f"write_{name}": seconds
+                        for name, seconds in getattr(self.io, "write_timings_s", {}).items()
                     },
                 )
                 if getattr(self.recorder, "recording", False):
@@ -1175,6 +1262,7 @@ class Runtime:
                     "ready_pose": self.maintenance.ready,
                     "ready_version": self.maintenance.ready_version,
                     "updated_at": time.monotonic(),
+                    "device_health": self.device_health.snapshot(),
                     "follower_state": q.tolist(),
                     "leader_state": leader.tolist(),
                     "sdk_state_age_s": list(ages),
@@ -1185,7 +1273,7 @@ class Runtime:
                     "buttons": buttons,
                     "jog_active": self.jog.target is not None,
                     "jog_error": self.jog.error,
-                    "performance": performance,
+                    "performance": self.latencies.cached,
                     "record_metrics": getattr(self.recorder, "metrics", {}),
                     "tick": tick,
                     "mode": a.mode.value,
@@ -1207,6 +1295,7 @@ class Runtime:
                         if a.phase == Phase.RESUME else None
                     ),
                     "policy_command": dict(self.policy_command_status) if self.policy_command_status else None,
+                    "policy_controls": self.policy_controls(),
                     "recording_mode": self.recording_mode,
                     "grasp_feedback_available": [
                         bool(f and f.get("valid")) for f in
@@ -1264,6 +1353,7 @@ class Runtime:
                     "error": a.fault_reason,
                     "outcome": self.outcome,
                 }
+                self.status["performance"] = self.latencies.finish_tick(now, **timings)
                 if a.phase == Phase.FAULT:
                     self.outcome = "aborted"
                     break
@@ -1277,7 +1367,9 @@ class Runtime:
                     self.stopping.wait(remaining)
         except Exception as exc:
             self.outcome = "aborted"
-            self.status = dict(self.status, phase="fault", error=f"{type(exc).__name__}: {exc}")
+            self.device_health.issues = [f"设备控制检查失败：{type(exc).__name__}: {exc}"]
+            self.status = dict(self.status, phase="fault", error=f"{type(exc).__name__}: {exc}",
+                               device_health=self.device_health.snapshot())
         finally:
             self.cartesian.close()
             hold_errors = self.io.hold()
@@ -1292,10 +1384,12 @@ class Runtime:
                 self._finish_pld_request()
             except RuntimeError as exc:
                 self.status["recording_error"] = str(exc)
-            # A hardware fault keeps gravity/hold active until explicit quit.
+            # A hardware fault never implicitly selects manual/gravity mode.
+            # HOLD failures remain visible until explicit shutdown/recovery.
             if self.status.get("phase") == "fault" and not self.io.mock:
                 print(
-                    "Fault latched; arms held where possible. Support arms, then q to shut down.",
+                    "Fault latched; position HOLD requested only where feedback is valid. "
+                    "Check hold_errors and support arms, then q to shut down.",
                     flush=True,
                 )
                 while not self.stopping.wait(0.1):
@@ -1539,6 +1633,7 @@ def main(argv=None, *, service=None):
         segment_seconds=args.segment_seconds,
         min_free_bytes=int(args.min_free_gb * 1024**3),
         fps=cfg.control_hz,
+        defer_storage=args.mode == "teleop" or bool(service and service.initializing),
         video_backend=None if service is None else service.video_backend,
         metadata={
             "station": dataclasses.asdict(cfg),
@@ -1554,7 +1649,6 @@ def main(argv=None, *, service=None):
     workers, io, policy_worker, dashboard = [], None, None, None
     runtime = None
     units = []
-    units_closed = False
     cameras = []
     try:
         if service is None:
@@ -1588,6 +1682,7 @@ def main(argv=None, *, service=None):
             policy_joint_speed=hil_cfg.get("policy_trajectory_joint_speed", 3.0),
             policy_joint_acceleration=hil_cfg.get("policy_joint_acceleration", 30.0),
             policy_natural_frequency=hil_cfg.get("policy_natural_frequency", 10.0),
+            max_state_age=hil_cfg.get("max_state_age", 0.25),
         )
         client = (
             MockPolicy(rtc=hil_cfg.get("policy_fusion") == "rtc")
@@ -1628,57 +1723,61 @@ def main(argv=None, *, service=None):
             result = runtime.run(duration=args.duration, auto_start=args.demo, demo=args.demo)
         print(json.dumps(result), flush=True)
         recorder = runtime.recorder  # Recovery may have replaced only the data owner.
-        # Legacy IO closes SDKs; remote IO only detaches into persistent HOLD
-        # unless the operator explicitly requested a supported disconnect.
-        if io:
-            close_errors = io.close()
-            io = None
-            units_closed = True
-            if close_errors:
-                recorder.metadata["close_errors"] = close_errors
-                if service is not None:
-                    service.cleanup_error = "; ".join(close_errors)
-        recorder.close(runtime.outcome)
-        if recorder.error and runtime.recording_error is None:
-            runtime.recording_error = recorder.error
         if result.get("phase") == "fault":
             raise RuntimeError(result.get("error") or "hardware session aborted")
     finally:
+        original_error = sys.exception()
         if runtime is not None:
             recorder = runtime.recorder
         if dashboard:
             dashboard.should_exit = True
+        # Hardware releases first; a long recording drain must not delay it.
+        # Remote IO detaches to HOLD unless explicitly asked to release.
+        devices = []
         if io:
-            close_errors = io.close()
-            units_closed = True
-            if close_errors:
-                recorder.metadata["close_errors"] = close_errors
-                if service is not None:
-                    service.cleanup_error = "; ".join(close_errors)
-        elif not units_closed:
+            devices.append(("arms", io.close))
+        else:
             for unit in units:
-                for device in (unit.agent, unit.robot):
+                for role, device in (("leader", unit.agent), ("follower", unit.robot)):
                     close = getattr(device, "close_hil", None)
                     if close:
-                        close()
+                        devices.append((f"{unit.name} {role}", close))
+        hardware_errors = close_resources(devices)
+        if hardware_errors and service is not None:
+            service.cleanup_error = "; ".join(hardware_errors)
+        resources = []
         if service is None:
             for worker in workers:
-                worker.stop()
+                resources.append(("camera", worker.stop))
         for camera in cameras[len(workers) :]:
-            camera.stop()
+            resources.append(("camera", camera.stop))
         if policy_worker:
-            policy_worker.close()
-        if recorder._thread.is_alive():
-            recorder.close("aborted")
+            resources.append(("policy", policy_worker.close))
+        cleanup_errors = hardware_errors + close_resources(resources)
+        if cleanup_errors:
+            recorder.metadata["close_errors"] = cleanup_errors.copy()
+        outcome = "aborted" if original_error or cleanup_errors or runtime is None else runtime.outcome
+        # A dead transport thread may still have a live child/pipe to reap.
+        cleanup_errors += close_resources([("recording", lambda: recorder.close(outcome))])
+        if runtime is not None and recorder.error and runtime.recording_error is None:
+            runtime.recording_error = recorder.error
+        if service is not None:
+            service.recording_error = recorder.error
         if not args.mock and not args.executor_socket:
             # Remote sessions never own CAN. Only the persistent executor may
             # release its buses; detaching a session must preserve SDK HOLD.
-            can_errors = stop_can_buses(station_can_channels(cfg))
+            can_errors = close_resources([("CAN", lambda: stop_can_buses(station_can_channels(cfg)))])
             if can_errors:
                 message = "CAN shutdown failed: " + "; ".join(can_errors)
                 recorder.metadata.setdefault("close_errors", []).append(message)
                 if service is not None:
                     service.cleanup_error = message
+                cleanup_errors += can_errors
+        if cleanup_errors:
+            message = "Session cleanup: " + "; ".join(cleanup_errors)
+            print(message, flush=True)
+            if original_error is None:
+                raise RuntimeError(message)
 
     if service is not None:
         service.saved()

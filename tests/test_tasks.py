@@ -160,9 +160,7 @@ def test_taskless_teleop_can_run_but_never_record(tmp_path):
         output = service.output
         service.disconnect(supported=True)
         wait(lambda: not service.thread.is_alive(), 30)
-        session = json.loads((output / "session.json").read_text())
-        assert session["episodes"] == []
-        assert session["collection_task"]["id"] == "standalone-teleop"
+        assert not output.exists()  # Non-recording teleoperation never opens storage.
     finally:
         service.close()
 

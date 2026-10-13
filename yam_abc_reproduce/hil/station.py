@@ -7,11 +7,27 @@ import numpy as np
 
 from ..resource_qos import place_on_cpus
 from . import interaction_rules
+from .cleanup import close_resources
 from .core import vector
 from .trajectory import TrajectoryExecutor
 
 
 class StationIO:
+    def device_health(self):
+        arms = []
+        for role in ("Follower", "Leader"):
+            for unit in self.units:
+                label = ("左" if unit.name == "left" else "右") + " " + role
+                owner = unit.robot if role == "Follower" else unit.agent
+                if self.mock:
+                    data = dict(running=True, feedback_age_s=0, motors=[
+                        dict(joint=f"J{i+1}", id=i+1, error_code=1,
+                             temp_mos_c=None, temp_rotor_c=None) for i in range(6)])
+                else:
+                    data = owner.hil_health()
+                arms.append(dict(label=label, **data))
+        return arms
+
     def leader_control_status(self):
         return [{"name": u.name, **u.agent.hil_leader_status()}
                 for u in self.units if hasattr(u.agent, "hil_leader_status")]
@@ -27,12 +43,14 @@ class StationIO:
         policy_joint_speed=3.0,
         policy_joint_acceleration=30.0,
         policy_natural_frequency=10.0,
+        max_state_age=0.25,
     ):
         by_name = {u.name: u for u in units}
         if set(by_name) != {"left", "right"} or len(units) != 2:
             raise ValueError("exactly left and right YAM followers required")
         self.units = [by_name["left"], by_name["right"]]
         self.mock = mock
+        self.max_state_age = max_state_age
         # Every real arm has its own CAN interface and i2rt state lock. Waiting for
         # those four independent snapshots serially adds their lock-contention times
         # together and made a nominal 30 Hz tick take 36-77 ms on RK3588. Reads are
@@ -98,9 +116,18 @@ class StationIO:
             pos, keys, age = unit.agent.hil_read()
             return pos, keys, age, time.monotonic() - started
 
+        def labelled_read(read, unit, role):
+            try:
+                return read(unit)
+            except Exception as exc:
+                side = "左" if unit.name == "left" else "右"
+                raise RuntimeError(f"{side} {role}: {exc}") from exc
+
         started = time.monotonic()
-        follower_futures = [self._read_pool.submit(read_follower, unit) for unit in self.units]
-        leader_futures = [self._read_pool.submit(read_leader, unit) for unit in self.units]
+        follower_futures = [self._read_pool.submit(labelled_read, read_follower, unit, "Follower")
+                            for unit in self.units]
+        leader_futures = [self._read_pool.submit(labelled_read, read_leader, unit, "Leader")
+                          for unit in self.units]
         followers = [future.result() for future in follower_futures]
         self.gripper_feedback = [result[3] for result in followers]
         leaders_read = [future.result() for future in leader_futures]
@@ -203,6 +230,7 @@ class StationIO:
                 arm = maintenance_leader[sl]
             leader_targets.append(np.clip(arm, limits[:, 0], limits[:, 1]))
         stamps = {}
+        self.write_timings_s = {}
         rules = getattr(self, "interaction_rules", interaction_rules)
         gain = self.leader_gain
         if (mirror and (decision.source == "policy" or getattr(decision, "phase", None) == "resume")
@@ -216,6 +244,7 @@ class StationIO:
             gain = rules.POLICY_GAIN if (getattr(decision, "phase", None) == "takeover"
                 or getattr(decision, "leader_native_hold", False)) else rules.HOLD_GAIN
         for i, u in enumerate(self.units):
+            started_at = time.monotonic()
             if self.mock:
                 if not manual:
                     self._mock_leaders[i * 7 : i * 7 + 6] = leader_targets[i]
@@ -225,14 +254,20 @@ class StationIO:
                     gain_scale=gain,
                 )
             stamps[f"{u.name}_leader"] = time.monotonic()
+            self.write_timings_s[f"{u.name}_leader"] = stamps[f"{u.name}_leader"] - started_at
         self._manual = manual
+        self.last_leader_target = np.asarray(leader).copy()
+        for i in (0, 1):
+            self.last_leader_target[i*7:i*7+6] = leader_targets[i]
+        self.leader_position_controlled = not manual
         if policy_trajectory:
             for u in self.units:
                 stamps[f"{u.name}_follower"] = time.monotonic()
         else:
-            submitted = self._write_followers(target, gravity=gravity)
-            for u in self.units:
-                stamps[f"{u.name}_follower"] = time.monotonic()
+            submitted, arm_stamps = self._write_followers(target, gravity=gravity, timing=True)
+            for name, times in arm_stamps.items():
+                stamps[f"{name}_follower"] = times["sdk_call_returned_at"]
+                self.write_timings_s[f"{name}_follower"] = times["sdk_call_returned_at"] - times["sdk_call_started_at"]
         return submitted, stamps
 
     def take_policy_trace(self):
@@ -255,43 +290,70 @@ class StationIO:
                 }
         return (target, arm_stamps) if timing else target
 
-    def hold(self):
+    def _stop_trajectory(self):
         errors = []
         if self._policy_trajectory is not None:
-            try:
-                self._policy_trajectory.close()
-            except Exception as exc:
-                errors.append(f"policy trajectory: {exc}")
-            self._policy_trajectory = None
+            errors = close_resources([("policy trajectory", self._policy_trajectory.close)])
+            if not self._policy_trajectory.alive:
+                self._policy_trajectory = None
+        return errors
+
+    def hold(self):
+        """Position HOLD on healthy arms, never implicit manual/gravity mode.
+
+        Reject stale hold targets separately, but still attempt the other arms.
+        SDK acceptance alone is not proof of physical holding or tracking.
+        """
+        errors = self._stop_trajectory()
+        if self._policy_trajectory is not None:
+            return errors  # Never add a second writer while the first still lives.
         for u in self.units:
             try:
-                u.robot.command_joint_pos(u.robot.get_joint_pos())
+                if self.mock:
+                    position = u.robot.get_joint_pos()
+                else:
+                    position, age = u.robot.hil_read()
+                    self._check_hold_feedback(position, age)
+                u.robot.command_joint_pos(position)
             except Exception as exc:
                 errors.append(f"{u.name} follower: {exc}")
             if not self.mock:
                 try:
-                    u.agent.hil_leader_command(np.zeros(6), manual=True)
+                    position, _, age = u.agent.hil_read()
+                    self._check_hold_feedback(position, age)
+                    u.agent.hil_leader_command(
+                        position[:6], manual=False,
+                        gain_scale=getattr(self, "interaction_rules", interaction_rules).HOLD_GAIN,
+                    )
                 except Exception as exc:
                     errors.append(f"{u.name} leader: {exc}")
+        self._manual = False
         return errors
 
+    def _check_hold_feedback(self, position, age):
+        if not np.isfinite(age) or not 0 <= age <= self.max_state_age:
+            raise RuntimeError("反馈过期，不能确认位置保持；请现场支撑机械臂")
+        position = np.asarray(position)
+        if position.shape != (7,) or not np.isfinite(position).all():
+            raise RuntimeError("反馈无效，不能确认位置保持；请现场支撑机械臂")
+
     def close(self):
+        # This is explicit release, not HOLD. Runtime has already requested HOLD;
+        # stale feedback must not prevent closing an otherwise releasable SDK.
+        errors = self._stop_trajectory()
         if self._policy_trajectory is not None:
-            self._policy_trajectory.close()
-            self._policy_trajectory = None
+            return errors
         if self._read_pool is not None:
-            self._read_pool.shutdown(wait=True, cancel_futures=True)
+            errors += close_resources([
+                ("state readers", lambda: self._read_pool.shutdown(wait=True, cancel_futures=True))
+            ])
             self._read_pool = None
-        self.hold()
-        errors = []
+        resources = []
         for u in self.units:
-            for device in (u.agent, u.robot):
-                try:
-                    close = getattr(device, "close_hil", None)
-                    if close:
-                        close()
-                    elif self.mock:
-                        device.stop()
-                except Exception as exc:
-                    errors.append(str(exc))
-        return errors
+            for role, device in (("leader", u.agent), ("follower", u.robot)):
+                close = getattr(device, "close_hil", None)
+                if close:
+                    resources.append((f"{u.name} {role}", close))
+                elif self.mock:
+                    resources.append((f"{u.name} {role}", device.stop))
+        return errors + close_resources(resources)

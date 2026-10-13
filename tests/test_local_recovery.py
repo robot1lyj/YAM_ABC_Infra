@@ -115,10 +115,11 @@ def test_malformed_plan_is_local_policy_fault(plan):
 
 
 @pytest.mark.parametrize("recorder_type", [RecordingSession, RemoteRecordingSession])
-def test_recording_recovery_keeps_control_ticks_and_retains_old_session(tmp_path, recorder_type):
+def test_recording_recovery_keeps_control_ticks_and_retains_old_session(tmp_path, recorder_type, healthy_runtime):
     recorder = recorder_type(tmp_path / "failed", mode="collect", metadata={"task": "test"})
     io = IO()
     runtime = Runtime(io, cameras(), None, recorder, mode="collect")
+    healthy_runtime(runtime)
     thread = threading.Thread(target=runtime.run, daemon=True)
     thread.start()
     try:
@@ -159,17 +160,17 @@ def test_failed_candidate_does_not_replace_or_clear_latched_error(tmp_path, monk
     recorder.error = "original writer failed"
     runtime = Runtime(IO(), cameras(), None, recorder, mode="collect")
     runtime.recording_error = recorder.error
-    original = RecordingSession._write_manifest
+    original = RecordingSession._open_storage
 
-    def fail_new(self, **kwargs):
+    def fail_new(self):
         if self is recorder:
-            original(self, **kwargs)
+            original(self)
         else:
-            self.error = "new storage unavailable"
+            raise OSError("new storage unavailable")
 
-    monkeypatch.setattr(RecordingSession, "_write_manifest", fail_new)
+    monkeypatch.setattr(RecordingSession, "_open_storage", fail_new)
     try:
-        with pytest.raises(RuntimeError, match="new storage unavailable"):
+        with pytest.raises(OSError, match="new storage unavailable"):
             recover_recording(runtime, DataChange())
         assert runtime.recorder is recorder
         assert runtime.recording_error == "original writer failed"
@@ -200,15 +201,16 @@ def test_sdk_stale_still_latches_hardware_fault(tmp_path):
         recorder.close("aborted")
 
 
-def test_recording_failure_can_explicitly_end_intervention_without_motion(tmp_path):
+def test_recording_failure_can_explicitly_end_intervention_without_motion(tmp_path, healthy_runtime):
     recorder = RecordingSession(tmp_path / "intervention", mode="hil")
     runtime = Runtime(IO(), cameras(), None, recorder)
+    healthy_runtime(runtime)
     q = np.zeros(14)
     a = runtime.session.arbiter
     a.start(q)
     a.takeover(q, q)
     a.manual_ready(q, q)
-    runtime._recording_failed(q, "disk unavailable")
+    runtime._recording_failed(q, q, "disk unavailable")
     assert a.intervention_pending
     try:
         runtime.event("end_intervention:teleop")

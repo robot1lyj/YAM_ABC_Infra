@@ -77,8 +77,8 @@ def _serve_recording(connection, ready, progress, options):
             progress.value = recorder.save_progress_at()
             connection.send(
                 {
-                    "error": recorder.error if kind in ("rotate", "delete") else error or recorder.error,
-                    "command_error": error if kind in ("rotate", "delete") else None,
+                    "error": recorder.error if kind in ("bind", "rotate", "delete") else error or recorder.error,
+                    "command_error": error if kind in ("bind", "rotate", "delete") else None,
                     "deleted": deleted,
                     "recording": recorder.recording,
                     "saving": recorder.saving,
@@ -122,6 +122,7 @@ class RemoteRecordingSession:
         min_free_bytes=512 * 1024**2,
         video_backend=None,
         capacity=None,
+        defer_storage=False,
     ):
         self.path = Path(path)
         # Preserve the exact construction contract for independent recovery.
@@ -165,6 +166,7 @@ class RemoteRecordingSession:
                     segment_seconds=segment_seconds,
                     min_free_bytes=min_free_bytes,
                     video_backend=video_backend,
+                    defer_storage=defer_storage,
                 ),
             ),
             name="yam-recording-owner",

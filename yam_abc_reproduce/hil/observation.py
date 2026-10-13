@@ -23,7 +23,12 @@ class Observations:
         self.states.append((now, q.copy()))
 
     def snapshot(self, now, prompt):
-        history = {r: c.history() for r, c in self.cameras.items()}
+        # Camera threads continue publishing while the control owner reads SDK
+        # state. Use frames available by this tick's anchor, rather than rejecting
+        # the entire observation just because a newer frame has since arrived.
+        history = {r: [frame for frame in c.history()
+                       if frame.meta["host_received_at"] <= now]
+                   for r, c in self.cameras.items()}
         if any(not h for h in history.values()) or not self.states:
             return None
         anchor = min(h[-1].meta["host_received_at"] for h in history.values())
@@ -33,7 +38,7 @@ class Observations:
         }
         times = [f.meta["host_received_at"] for f in frames.values()]
         age, skew = now - min(times), max(times) - min(times)
-        if max(times) > now or age < 0 or age > self.max_age or skew > self.max_skew:
+        if age > self.max_age or skew > self.max_skew:
             return None
         stamps = np.array([t for t, _ in self.states])
         # Only interpolate observed history. Startup waits until it brackets anchor.

@@ -254,10 +254,9 @@ function renderTaskDataset() {
 function camerasConnected() {
   return online && state.camera_connection === "connected";
 }
-function policySettingsEditable({connected, paused, latched, recording, maint, recovery = false}) {
-  return connected && paused && !latched && !recording && maint === "idle" &&
-    !state.initializing && !state.task_switching && state.policy_command?.state !== "queued" &&
-    (recovery || (!state.recording_saving && !state.intervention_pending));
+function policySettingsEditable({connected, recovery = false}) {
+  return connected && !state.initializing &&
+    state.policy_controls?.[recovery ? "reload" : "configure"]?.allowed === true;
 }
 function renderPolicyControls(rlView, editable) {
   // Move the same form instead of duplicating IDs, drafts or restart handlers.
@@ -271,7 +270,7 @@ function renderPolicyControls(rlView, editable) {
     state.policy_fusion === "rtc" ? `当前：RTC · 前缀 ${state.rtc_delay_steps ?? "—"} 步` : "当前：同步推理 · 完整 50 步");
   $("policy-restart").title = editable
     ? "重连当前推理服务并刷新握手；不重启 Thor 服务或机械臂，不自动开始运动"
-    : "连接后暂停运动并结束当前维护操作，即可重载；无需断开机械臂";
+    : state.policy_controls?.reload?.reason || "连接并退出初始化后，可在保持状态重载；无需断开机械臂";
 }
 function render() {
   const xr1Replay = state.policy_url === "ws://127.0.0.1:8003";
@@ -395,7 +394,7 @@ function render() {
     $("policy-fusion").value = state.policy_fusion || "sync_hold";
     $("rtc-delay-steps").value = state.rtc_delay_steps ?? 9;
   }
-  const policyContext = {connected, paused, latched, recording, maint};
+  const policyContext = {connected};
   const policyEditable = policySettingsEditable(policyContext);
   const policyRecoveryEditable = policySettingsEditable({...policyContext, recovery: true});
   renderPolicyControls(rlView, policyRecoveryEditable);
@@ -478,6 +477,7 @@ function render() {
   );
   const intervening = mode === "hil" && (state.intervention_pending || ["takeover", "human"].includes(state.phase));
   $("start").disabled = !(canRun && paused && idle) || intervening;
+  $("start").disabled ||= !state.device_health?.ok;
   if (rlView) {
     const pldMode = pld?.mode || state.pld_configuration?.mode || "off";
     text("start", pldMode === "off" ? "开始原 Pi" : pldMode === "probe" || pldMode === "shadow" ? "开始基础策略记录" : "开始专家执行");
@@ -486,6 +486,7 @@ function render() {
   $("start").title = ["inference", "hil"].includes(mode) && !state.policy_ready
     ? "推理通信尚未就绪；可在保持状态重载推理通信" : "";
   if (intervening) $("start").title = "介入期间只能暂停或明确交还模型";
+  if (state.device_health?.reason) $("start").title = state.device_health.reason;
   renderRL({connected, idle, paused, latched, recording, policyEditable, mode, pld});
   renderKeyboardHil(connected, idle, paused, latched, recording, mode);
   $("header-stop").disabled =
@@ -576,7 +577,7 @@ function render() {
     "output",
     state.output || "逐集保存 MP4＋HDF5 · 可上传服务器后独立转换",
   );
-  text("latency", state.performance?.control_work?.p95_ms?.toFixed(2) + " ms");
+  text("latency", state.performance?.control_work ? state.performance.control_work.p95_ms.toFixed(2) + " ms" : "—");
   if (!connected) text("latency", "— ms");
   const skew = state.arrival_skew_s;
   text(
@@ -625,6 +626,7 @@ function render() {
     ["右 Leader", 3],
   ];
   $("health").replaceChildren();
+  healthRow("关节检查", state.device_health?.ok ? "检查通过" : connected ? "需检查" : "未连接", !!state.device_health?.ok);
   for (const [label, i] of devices) {
     const ok = connected && Number.isFinite(ages[i]) && ages[i] < 0.25;
     healthRow(
@@ -685,11 +687,13 @@ function render() {
     );
   }
   const errors = [
+    connected && state.device_health?.reason,
     !online ? "界面连接中断。工作台心跳超时将请求暂停；请检查现场状态。" : null,
     state.connection_error,
     state.camera_error,
     state.task_error,
     state.error,
+    state.hold_errors?.length ? `部分机械臂未能确认位置保持，请现场支撑并检查：${state.hold_errors.join("；")}` : null,
     state.recording_error,
     state.recording_recovery?.error,
     ["inference", "hil"].includes(mode) ? state.policy_error : null,
@@ -980,6 +984,61 @@ function healthRow(label, value, ok) {
   row.append(a, b);
   $("health").append(row);
 }
+
+async function checkDeviceHealth() {
+  const dialog = $("device-health-dialog");
+  if (!dialog.open) dialog.showModal();
+  text("device-health-result", "正在读取设备诊断…");
+  $("device-health-ack").hidden = true;
+  try {
+    const response = await fetch("/device/health", {signal: AbortSignal.timeout(5000)});
+    const health = await response.json();
+    if (!response.ok) throw Error(health.detail || "设备诊断读取失败");
+    text("device-health-result", health.ok ? "通信与报警检查通过；未自动开始运动。" : operatorHint(health.reason));
+    if (health.tracking_fault) {
+      const fault = health.tracking_fault;
+      $("device-health-result").append(document.createTextNode(
+        ` 告警时目标 ${(fault.target_rad * 180 / Math.PI).toFixed(1)}°，反馈 ${(fault.measured_rad * 180 / Math.PI).toFixed(1)}°。`));
+    }
+    const root = $("device-health-details");
+    root.replaceChildren();
+    for (const arm of health.arms || []) {
+      const section = document.createElement("details");
+      const title = document.createElement("summary");
+      const age = arm.feedback_age_s == null ? "未知" : `${(arm.feedback_age_s * 1000).toFixed(0)} ms`;
+      title.textContent = `${arm.label} · ${arm.running ? "线程运行" : "线程已停止"} · 反馈年龄 ${age}`;
+      const table = document.createElement("table");
+      const head = table.createTHead().insertRow();
+      for (const label of ["关节", "最后发布的报警码", "驱动温度", "电机温度"]) {
+        const th = document.createElement("th"); th.textContent = label; head.append(th);
+      }
+      const body = table.createTBody();
+      const codes = {0:"未使能",1:"正常",8:"过压",9:"欠压",10:"过流",11:"驱动过温",12:"电机过温",13:"通信丢失",14:"过载"};
+      for (const motor of arm.motors || []) {
+        const row = body.insertRow();
+        for (const value of [motor.joint, `${codes[motor.error_code] || "未知"} (0x${motor.error_code?.toString(16)})`,
+          motor.temp_mos_c == null ? "—" : `${motor.temp_mos_c} °C`,
+          motor.temp_rotor_c == null ? "—" : `${motor.temp_rotor_c} °C`]) row.insertCell().textContent = value;
+      }
+      section.append(title, table); root.append(section);
+    }
+    $("device-health-ack").hidden = !health.tracking_fault;
+    $("device-health-ack").disabled = !online || state.phase !== "hold";
+  } catch (error) {
+    $("device-health-details").replaceChildren();
+    text("device-health-result", operatorHint(error.message));
+  }
+}
+$("check-device-health").onclick = checkDeviceHealth;
+$("check-device-health-detail").onclick = checkDeviceHealth;
+$("device-health-refresh").onclick = checkDeviceHealth;
+$("device-health-close").onclick = () => $("device-health-dialog").close();
+$("device-health-ack").onclick = () => {
+  $("device-health-dialog").close();
+  confirmAction("确认已处理跟随异常？", "请先检查异常关节、红灯和连接。解除后不会自动运动，也不会清除电机报警；重新启动仍会进行健康检查，运动中继续检测跟随。", async () => {
+    await action("/event/ack_device_health"); await checkDeviceHealth();
+  });
+};
 let renderedPldMode = null;
 let pldEvaluationEpisode = null;
 function renderRL({connected, paused, latched, recording, policyEditable, mode, pld}) {

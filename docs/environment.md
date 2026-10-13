@@ -98,11 +98,13 @@ uv run --no-sync yam-workstation --mock --mode collect --web-port 8766
 
 ### IPC连接与地址
 
-IPC SSH用户名为`linux`，不是开发机用户名`wuyan-lyj`；密码不入库。**Wi-Fi地址由DHCP分配，连接前确认，不把日期快照当固定入口。**2026-10-12经Thor直连复核：连接`琶洲模方`，`wlan0=192.168.110.87/23`；开发机同名Wi-Fi却为另一网段，不能仅凭SSID判断互通。开发机可通过已配置Thor跳板访问`linux@192.168.250.2`查询IPC实际地址，核对已有SSH主机密钥，不绕过验证。
+IPC SSH用户名为`linux`，不是开发机用户名`wuyan-lyj`；密码不入库。**Wi-Fi地址由DHCP分配，连接前确认，不把日期快照当固定入口。**稳定维护路径为开发机USB数据线→Thor→直连网线→IPC。开发机现有`thor`与`thor-usb`别名均走Thor USB设备网卡`192.168.55.1`，复用已登记主机密钥；IPC仍为`linux@192.168.250.2`。`thor-wifi`仅作临时Wi-Fi入口，使用前须从已连通路径核对地址，不绕过主机密钥验证。
+
+2026-10-13实测：三台设备都连接`琶洲模方`，但开发机接入的BSSID尾号`AB`分配`10.18.10.0/23`，Thor与IPC接入尾号`A7`分配`192.168.110.0/23`，DHCP服务器也不同。Thor在13:37重新获取地址后，旧Wi-Fi跳板失效；不是IPC服务退出。具体网络分区配置未向管理员核验，不认定为设备故障。14:16已通过USB恢复本地面板，IPC Web/设备PID未变；不将Wi-Fi租约作为长期入口。
 
 `10.18.31.234:8767`是独立x86数据集服务器，不是设备IPC。新版Web的[start_ipc_web.sh](../scripts/start_ipc_web.sh)使用`0.0.0.0 --web-allow-local-addresses`，不再读取并固定启动时的wlan0地址，Wi-Fi临时失联也不挡住Web启动。HTTP Host只动态信任实际接收该请求的本机IPv4地址（由ASGI/socket提供，不读取转发头）；任意域名/非本机目标地址与跨站控制仍拒绝。DHCP换址后通过新地址访问，无需重启Web或设备；原来的浏览器地址不会自动变成新IP，也不能解决跨网段不通。此监听是局域网入口，不应映射到公网。2026-10-12该修复已只重启Web部署，设备进程未重启；测试与运行边界见[验收](acceptance.md)。
 
-办公Wi-Fi不互通时，开发机使用独立用户服务[yam-ipc-panel-tunnel.service](../deploy/yam-ipc-panel-tunnel.service)复用Thor直连，入口固定为`http://127.0.0.1:8876/`。服务只安装在操作电脑，不安装到IPC/Thor，不依赖或控制`yam-device`、Web、SDK或CAN。复用本机已登记的`thor` SSH别名、主机密钥和`~/.ssh/id_ed25519_condapi_yam`私钥，不复制凭据、不依赖桌面SSH agent。首次安装前须验证两跳免交互认证；主机密钥变化时明确失败，不自动接受。
+办公Wi-Fi不互通时，开发机使用独立用户服务[yam-ipc-panel-tunnel.service](../deploy/yam-ipc-panel-tunnel.service)复用Thor直连，入口固定为`http://127.0.0.1:8876/`。**当前`thor`别名走USB，须保持开发机与Thor的数据线连接；Thor端使用HDMI旁支持设备模式的USB-C口，不拔供电线。**HP应出现NVIDIA USB设备与USB网卡，取得`192.168.55.x`地址；只有充电或未识别USB设备时不能建立该通道。服务只安装在操作电脑，不安装到IPC/Thor，不依赖或控制`yam-device`、Web、SDK或CAN。复用本机已登记的`thor` SSH别名、主机密钥和`~/.ssh/id_ed25519_condapi_yam`私钥，不复制凭据、不依赖桌面SSH agent。首次安装前须验证两跳免交互认证；主机密钥变化时明确失败，不自动接受。
 
 ```bash
 install -Dm644 deploy/yam-ipc-panel-tunnel.service \
@@ -112,7 +114,7 @@ systemctl --user enable --now yam-ipc-panel-tunnel.service
 systemctl --user status yam-ipc-panel-tunnel.service
 ```
 
-该电脑目前`Linger=no`，自启指用户登录后启动，不承诺未登录时运行；无需为本机浏览器面板开启linger。SSH两跳均设置连接超时6秒、保活10秒/3次；服务退出后5秒重试，不因短期失败次数锁死。仅绑定`127.0.0.1:8876`，端口被占用则报错重试，不终止未知进程。IPC Wi-Fi换址不影响直连目标；Thor别名自身失效、密钥变化、IPC Web未运行仍需分别排查，重连不是网络发现或远程Web自启动。查看日志用`journalctl --user -u yam-ipc-panel-tunnel -n 30 --no-pager`；停用用`systemctl --user disable --now yam-ipc-panel-tunnel.service`。本机断网/退出登录时该入口不可用。
+该电脑目前`Linger=no`，自启指用户登录后启动，不承诺未登录时运行；无需为本机浏览器面板开启linger。SSH两跳均设置连接超时6秒、保活10秒/3次；服务退出后5秒重试，不因短期失败次数锁死。仅绑定`127.0.0.1:8876`，端口被占用则报错重试，不终止未知进程。USB与Thor到IPC网线均连接时，两台设备的Wi-Fi换址不影响该路径；拔掉USB/网线则中断，插回并恢复接口后自动重试。主机密钥变化、IPC Web未运行仍需分别排查，重连不是网络发现或远程Web自启动。查看日志用`journalctl --user -u yam-ipc-panel-tunnel -n 30 --no-pager`；不能只看`active`，还应检查`ss -ltn '( sport = :8876 )'`和`curl --noproxy '*' -sS --max-time 5 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8876/`。停用用`systemctl --user disable --now yam-ipc-panel-tunnel.service`。本机退出登录时该入口不可用。
 
 隧道断线不重启IPC进程，但操作台失联仍按现有安全策略暂停，恢复通信不自动恢复运动。该服务不发送控制/心跳或清除SDK故障；用户仍需现场确认后显式开始。Web代码更新才单独重启Web，重新附着仅请求HOLD，不自动连接/运动。
 

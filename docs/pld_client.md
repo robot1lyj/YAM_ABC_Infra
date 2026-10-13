@@ -1,6 +1,6 @@
 # PLD-Grasp 抓取修正专家客户端
 
-状态：2026-10-12，已增量部署IPC；用户随后采集的probe第01/02集已核对：逐tick来源、前缀、完整回复和三路视频无错位，边界说明见[验收](acceptance.md)。完整替换旧PARTS模块，不兼容旧配置、接口或原始包；TDA/raw代码也已删除，仅保留完整50步同步和原生RTC。当前probe、RTC d=9、30 Hz直达SDK，Thor实际握手仅支持off/probe诊断、未加载正式专家；不能把链路验收当作SAC训练就绪或抓取效果证明。
+状态：2026-10-13，客户端已增量部署IPC；10月12日probe第01/02集已核对：逐tick来源、前缀、完整回复和三路视频无错位，边界说明见[验收](acceptance.md)。完整替换旧PARTS模块，不兼容旧配置、接口或原始包；TDA/raw代码也已删除，仅保留完整50步同步和原生RTC。当前RTC d=9、30 Hz直达SDK。10月13日只读状态显示Thor已声明五模式、actor_loaded/replay_contract_ready=true，合同/快照与旧probe启动配置不同，客户端因此拒绝开始；新专家仍须显式应用并验收，不能沿用昨日诊断probe的结果作为正式collect验收。
 
 ## 职责和模式
 
@@ -55,6 +55,8 @@ shadow/probe 顶层 actions 必须与回复 base 完全相同；核对身份、�
 ### 操作员页面与整轮评估
 
 RL页复用三路相机、开始/暂停、当前任务总集数和原“删除上一集”流程，不另造一套计数或删除接口。技术字段收在默认关闭的诊断详情；修改页面不改设备控制。C/N在暂停并保存后填写，关联当前刚结束的原episode_id；进入新集清空输入，防止上一集数字被误带入。
+
+RL页与推理/DAgger页共用同一个推理设置表单：动作块模式、RTC前缀步数、当前生效值和“重载Thor推理”。只在HOLD、介入/维护/保存结束且无待处理设置时开放；PLD非off时不允许同步模式。重载只重连客户端推理通信子进程、刷新握手，不重启Thor模型服务或设备SDK，不开始运动。若专家版本变化，先重载，再选择RL模式点击“应用”，显式建立绑定当前握手的新run；旧run不会随重载悄悄换身份。页面应用是本次Runtime配置，重连Runtime仍按启动文件恢复，不能声称已永久更新启动SHA。
 
 点击“记录本轮评估”后，写入**本次session根目录的`policy_events.jsonl`**：`event=evaluation`、`episode_id=原UUID`、`time=IPC单调秒`、`details.evaluation={C,N,purpose:"evaluation_only"}`。不是每帧HDF5字段，不会自动改manifest的outcome，也不是SAC奖励。重复提交是追加事件，不覆盖旧行，不能把点击次数当独立实验次数。页面成功提示指写入录制队列已接受，不是新的逐帧标签。
 

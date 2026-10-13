@@ -254,6 +254,25 @@ function renderTaskDataset() {
 function camerasConnected() {
   return online && state.camera_connection === "connected";
 }
+function policySettingsEditable({connected, paused, latched, recording, maint}) {
+  return connected && paused && !latched && !recording && maint === "idle" &&
+    !state.initializing && !state.task_switching && !state.recording_saving &&
+    !state.intervention_pending && state.policy_command?.state !== "queued";
+}
+function renderPolicyControls(rlView, editable) {
+  // Move the same form instead of duplicating IDs, drafts or restart handlers.
+  const controls = $("policy-execution-controls");
+  const slot = $(rlView ? "rl-policy-settings-slot" : "policy-settings-slot");
+  if (controls.parentElement !== slot) slot.append(controls);
+  const pldEnabled = (state.pld?.mode || state.pld_configuration?.mode || "off") !== "off";
+  $("policy-fusion").querySelector('option[value="sync_hold"]').disabled = pldEnabled;
+  $("policy-fusion").title = pldEnabled ? "PLD-Grasp 使用原生 RTC；切换同步推理前请先将 RL 模式设为 off" : "";
+  text("policy-execution-current", !state.policy_fusion ? "当前模式待确认" :
+    state.policy_fusion === "rtc" ? `当前：RTC · 前缀 ${state.rtc_delay_steps ?? "—"} 步` : "当前：同步推理 · 完整 50 步");
+  $("policy-restart").title = editable
+    ? "重连当前推理服务并刷新握手；不重启 Thor 服务或机械臂，不自动开始运动"
+    : "连接后暂停运动，结束介入并等待保存完成后可重载；无需断开机械臂";
+}
 function render() {
   const xr1Replay = state.policy_url === "ws://127.0.0.1:8003";
   const connected = activeDevice(),
@@ -376,7 +395,8 @@ function render() {
     $("policy-fusion").value = state.policy_fusion || "sync_hold";
     $("rtc-delay-steps").value = state.rtc_delay_steps ?? 9;
   }
-  const policyEditable = connected && !state.task_switching && paused && !latched && !recording && maint === "idle";
+  const policyEditable = policySettingsEditable({connected, paused, latched, recording, maint});
+  renderPolicyControls(rlView, policyEditable);
   if (recordingDraft === state.recording_mode) recordingDraft = null;
   if (!recordingDraft) $("inference-recording-mode").value = state.recording_mode || "standard";
   $("inference-recording-form").hidden = mode !== "inference";
@@ -990,7 +1010,10 @@ function renderRL({connected, paused, latched, recording, policyEditable, mode, 
   text("pld-window", pld?.window_id || pld?.gate?.window_id || "—");
   text("pld-decision", pld?.decision_id || "—");
   text("pld-gate", pld?.gate ? pld.gate.active ? "Thor 窗口活动" : "Thor 未介入" : "等待 Thor");
-  text("rl-readiness", pld?.error || (runMode === "off" ? "off · 执行原 Pi" :
+  const identityMismatch = /合同或快照与配置不匹配|专家身份.*变化/.test(pld?.error || "");
+  text("rl-readiness", identityMismatch
+    ? "Thor 专家版本已更新。先重载 Thor 推理，再选择 RL 模式并点击“应用”核对新版本；不会自动开始运动。"
+    : pld?.error || (runMode === "off" ? "off · 执行原 Pi" :
     runMode === "probe" ? (pld?.replay_contract_ready === false ?
       "只记录原 Pi 动作，当前尚未启用专家修正。" : "probe · 执行原 Pi，完整记录专家链路") :
     runMode === "shadow" ? "shadow · 计算修正但不执行" :
@@ -1533,6 +1556,7 @@ $("inference-recording-form").onsubmit = async (e) => {
   } else recordingDraft = null;
 };
 $("policy-fusion").onchange = keepPolicyDraft;
+$("rtc-delay-steps").oninput = keepPolicyDraft;
 $("rtc-delay-steps").onchange = keepPolicyDraft;
 $("policy-form").onsubmit = async (e) => {
   e.preventDefault();

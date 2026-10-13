@@ -392,6 +392,8 @@
                 </form>
                 <p class="muted" id="grasp-recording-status" role="status"></p>
                 <details class="policy-disclosure"><summary>推理设置</summary>
+                <div id="policy-settings-slot">
+                <div id="policy-execution-controls">
                 <form id="policy-form" class="policy-settings">
                   <label>动作块模式
                     <select id="policy-fusion"><option value="sync_hold">同步推理 · 完整 50 步</option><option value="rtc">RTC 推理 · 原生</option></select>
@@ -401,6 +403,12 @@
                   </label>
                   <button class="button primary" id="policy-apply" type="submit">应用</button>
                 </form>
+                <div class="policy-execution-actions">
+                  <span class="muted" id="policy-execution-current" role="status">当前模式待确认</span>
+                  <button class="button subtle" id="policy-restart" type="button">重载 Thor 推理</button>
+                </div>
+                </div>
+                </div>
                 <form id="policy-source-form" class="policy-settings">
                   <label>推理 / 回放地址<input id="policy-source-url" type="text" placeholder="ws://主机:端口" /></label>
                   <button class="button" id="interaction-reload" type="button">重载交互规则</button>
@@ -410,7 +418,6 @@
                   <button class="button" id="policy-source-apply" type="submit">切换来源</button>
                 </form>
                 <p class="muted" id="policy-source-current"></p>
-                <button class="button subtle policy-restart" id="policy-restart" type="button">重载推理通信</button>
                 <button class="button subtle policy-restart" id="planner-restart" type="button">重载动作规划</button>
                 </details>
               </section>
@@ -427,6 +434,9 @@
                   <button class="button primary" id="pld-apply" type="submit">应用</button>
                 </form>
                 <p id="rl-readiness" class="rl-readiness" role="status">off · 执行原 Pi</p>
+                <section class="rl-policy-settings" aria-label="推理设置">
+                  <div id="rl-policy-settings-slot"></div>
+                </section>
                 <div class="rl-run-actions"><span id="rl-recording" role="status">未开始</span><button class="button" id="rl-prepare" type="button">使用推理控制</button></div>
                 <section class="rl-evaluation" aria-labelledby="pld-evaluation-title">
                   <h3 id="pld-evaluation-title">整轮评估 C/N</h3>

@@ -381,6 +381,32 @@ def test_pld_mode_changes_reject_active_episode_and_wrong_control_path():
         runtime.configure_pld(mode="collect")
 
 
+def test_explicit_apply_adopts_new_handshake_without_silently_rebinding_old_run():
+    from yam_abc_reproduce.hil.core import Phase
+
+    runtime = Runtime.__new__(Runtime)
+    runtime.pld = PldClient(dict(mode="probe", snapshot_sha256="c" * 64))
+    runtime.session = SimpleNamespace(arbiter=SimpleNamespace(
+        phase=Phase.HOLD, intervention_pending=False, rtc_timeline=object()))
+    runtime.recorder = SimpleNamespace(recording=False, saving=False)
+    runtime.maintenance = SimpleNamespace(state="idle", latched=False)
+    runtime.worker = SimpleNamespace(client=SimpleNamespace(metadata=metadata()))
+    queued = []
+    runtime._queue_policy_command = queued.append
+    assert not runtime.pld.snapshot(metadata())["ready"]
+    # The operator's Apply creates a new run from the fresh handshake. Reload
+    # alone must never mutate the old pin or enable motion.
+    runtime.configure_pld(mode="collect")
+    operation, candidate = queued.pop()
+    assert operation == "pld" and candidate.config.mode == "collect"
+    assert candidate.identity["snapshot_sha256"] == "b" * 64
+    assert candidate.run_id != runtime.pld.run_id
+    assert runtime.pld.config.snapshot_sha256 == "c" * 64
+    with pytest.raises(ValueError, match="不匹配"):
+        runtime.configure_pld(mode="collect", snapshot_sha256="c" * 64)
+    assert not queued
+
+
 def test_round_c_n_is_evaluation_only_and_checks_episode_identity():
     from yam_abc_reproduce.hil.core import Phase
 
@@ -453,6 +479,64 @@ $('pld-correct').value='5'; $('pld-total').value='10';
 renderRL(props); assert.equal($('pld-correct').value, '5');
 state.episode_id='episode-two'; renderRL(props);
 assert.equal($('pld-correct').value, ''); assert.equal($('pld-total').value, '');
+props.pld.error='PLD-Grasp 合同或快照与配置不匹配'; renderRL(props);
+assert.match($('rl-readiness').textContent, /重载 Thor 推理/);
+assert.match($('rl-readiness').textContent, /点击“应用”/);
+assert.match($('rl-readiness').textContent, /不会自动开始/);
+"""
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+
+
+def test_rl_and_dagger_share_policy_controls_and_restart_without_starting():
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node unavailable")
+    html = Path("yam_abc_reproduce/hil/static/index.html").read_text()
+    for control in ("policy-form", "policy-fusion", "rtc-delay-steps", "policy-restart",
+                    "policy-execution-controls", "rl-policy-settings-slot", "policy-settings-slot"):
+        assert html.count(f'id="{control}"') == 1
+    assert "重载 Thor 推理" in html
+    source = Path("yam_abc_reproduce/hil/static/app.js").read_text()
+    helpers = source.split("function policySettingsEditable(", 1)[1].split("function render()", 1)[0]
+    assert '$("rtc-delay-steps").oninput = keepPolicyDraft;' in source
+    restart = source.split('$("policy-restart").onclick = ', 1)[1].split('\n$("recording-restart")', 1)[0]
+    script = """
+const assert = require('assert/strict'), nodes = new Map(), requests = [];
+const $ = id => { if (!nodes.has(id)) nodes.set(id, {
+  value:'', append(child) { child.parentElement=this; }, querySelector() { return $('sync-option'); }
+}); return nodes.get(id) };
+const text = (id,v) => $(id).textContent=v;
+const state = {policy_fusion:'rtc',rtc_delay_steps:9,pld:{mode:'probe'}};
+const action = async endpoint => { requests.push(endpoint); return true; }, toast = () => {};
+""" + "function policySettingsEditable(" + helpers + "const restart = " + restart + """
+const context = {connected:true,paused:true,latched:false,recording:false,maint:'idle'};
+assert.equal(policySettingsEditable(context), true);
+for (const key of ['initializing','task_switching','recording_saving','intervention_pending']) {
+  state[key]=true; assert.equal(policySettingsEditable(context), false); state[key]=false;
+}
+state.policy_command={state:'queued'}; assert.equal(policySettingsEditable(context), false);
+for (const status of ['accepted','rejected']) {
+  state.policy_command={state:status}; assert.equal(policySettingsEditable(context), true);
+}
+for (const changes of [{connected:false},{paused:false},{latched:true},{recording:true},{maint:'homing'}]) {
+  assert.equal(policySettingsEditable({...context,...changes}), false);
+}
+const shared=$('policy-execution-controls');
+$('policy-fusion').value='rtc'; $('rtc-delay-steps').value='7'; // Unsubmitted draft.
+renderPolicyControls(true, true);
+assert.equal(shared.parentElement, $('rl-policy-settings-slot'));
+assert.match($('policy-execution-current').textContent, /RTC.*9/); // Actual, not draft.
+assert.equal($('sync-option').disabled, true);
+renderPolicyControls(false, true);
+assert.equal(shared.parentElement, $('policy-settings-slot'));
+assert.equal($('rtc-delay-steps').value, '7');
+state.pld.mode='off'; renderPolicyControls(true, true);
+assert.equal($('sync-option').disabled, false);
+(async () => { await restart(); assert.deepEqual(requests, ['/policy/restart']); })().catch(e=>{console.error(e);process.exit(1)});
 """
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 

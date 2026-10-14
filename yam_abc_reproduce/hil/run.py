@@ -219,17 +219,24 @@ class Runtime:
         self.recording_error = None
         self._record_started = None
         self.recording_allowed = True
-        self.pld = PldClient(settings.get("pld"))
-        self.session.pld = self.pld
+        self._set_pld(PldClient(settings.get("pld")))
         self._submitted_history = deque(maxlen=128)
         self._pld_pending = None
-        if self.pld.enabled:
-            self.io.grasp_diagnostics_enabled = True
+
+    def _set_pld(self, client):
+        """Install on the control owner; in-flight requests retain their own identity."""
+        self.pld = self.session.pld = client
+        self.io.grasp_diagnostics_enabled = client.enabled or self.recording_mode == "grasp_diagnostics"
+
+    def _apply_plain_policy_selection(self, event):
+        # The ordinary-inference card/shortcut is an explicit opt-out, not a
+        # fallback when expert validation fails. RL Apply is a separate command.
+        if event in ("mode:inference", "end_intervention:inference"):
+            self._set_pld(PldClient())
 
     def rotate_pld_session(self):
         """A task/data-session change starts an independent Thor run, not a grasp."""
-        self.pld = PldClient(self.pld.config.as_dict())
-        self.session.pld = self.pld
+        self._set_pld(PldClient(self.pld.config.as_dict()))
 
     def configure_pld(self, **settings):
         candidate = PldConfig.from_dict(settings)
@@ -611,9 +618,11 @@ class Runtime:
             if frozen is not None:
                 a._leader_frozen = frozen
             if kind == "pld":
-                self.pld = command[1]
-                self.session.pld = self.pld
-                self.io.grasp_diagnostics_enabled = self.pld.enabled or self.recording_mode == "grasp_diagnostics"
+                self._set_pld(command[1])
+                if a.mode not in (Mode.INFERENCE, Mode.HIL):
+                    # RL Apply prepares policy control as well as the selected
+                    # experiment mode, but never starts execution or enables Leaders.
+                    a.change_mode(Mode.INFERENCE, q)
             elif kind == "interaction":
                 a.interaction_rules = self.io.interaction_rules = command[1]
                 self.handle_buttons.interaction_rules = command[1]
@@ -1019,6 +1028,7 @@ class Runtime:
                     self.operator_error = "介入状态已变化，模式切换未执行；请明确确认结束介入"
                     event = None
                 self.session.check_policy_recovery()
+                self._apply_plain_policy_selection(event)
                 if not self._prepare_policy_recording(event, q, leader):
                     event = None
                 decision = self.session.tick(
@@ -1664,6 +1674,10 @@ def main(argv=None, *, service=None):
     hil_cfg = dict(hil_cfg)
     if args.pld_config:
         hil_cfg["pld"] = json.loads(args.pld_config.read_text())
+    if service is not None:
+        # Interactive connections never restore a previously enabled experiment.
+        # Headless CLI --pld-config remains explicit; GUI RL needs operator Apply.
+        hil_cfg["pld"] = {"mode": "off"}
     if args.action_dt is not None:
         hil_cfg["action_dt"] = args.action_dt
     action_dt = float(hil_cfg.get("action_dt", 1 / 30))

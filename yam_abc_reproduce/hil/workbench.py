@@ -30,11 +30,6 @@ class Workbench:
     def __init__(self, args):
         self.args = args
         self.mode = args.mode
-        self._pld_configuration = {"mode": "off"}
-        pld_path = getattr(args, "pld_config", None)
-        if pld_path:
-            from .pld import PldConfig
-            self._pld_configuration = PldConfig.from_dict(json.loads(Path(pld_path).read_text())).as_dict()
         self.preview_enabled = True
         self._encoder = None
         self._preview_at = 0.0
@@ -305,7 +300,7 @@ class Workbench:
             "task_error": self.tasks.error,
             "mock": self.args.mock,
             "mode": live.get("mode", self.mode),
-            "pld_configuration": getattr(self, "_pld_configuration", {"mode": "off"}),
+            "pld_configuration": (live.get("pld") or {}).get("config", {"mode": "off"}),
             "connection_error": self.error,
             "recording_error": live.get("recording_error") or self.recording_error,
             "recording_recovery": self.recording_recovery,
@@ -759,7 +754,6 @@ class Workbench:
         if getattr(self.args, "executor_socket", None):
             argv.extend(("--executor-socket", self.args.executor_socket))
         for option, value in (
-            ("--pld-config", getattr(self.args, "pld_config", None)),
             ("--policy-fusion", getattr(self.args, "policy_fusion", None)),
             ("--action-dt", getattr(self.args, "action_dt", None)),
             ("--expected-policy-latency", getattr(self.args, "expected_policy_latency", None)),

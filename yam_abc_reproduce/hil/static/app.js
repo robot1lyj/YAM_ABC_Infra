@@ -301,6 +301,7 @@ function render() {
     canMaintain = connected && !latched && paused && !recording,
     idle = maint === "idle";
   const rlView = page === "rl", pld = state.pld;
+  const pldMode = pld?.mode || state.pld_configuration?.mode || "off";
   text("environment", state.mock ? "模拟工作站" : "真实设备");
   $("environment").className = "pill" + (state.mock ? "" : " ok");
   const cNames = {
@@ -349,9 +350,10 @@ function render() {
       ? "断开机械臂"
       : "连接机械臂";
   document.querySelectorAll("[data-mode]").forEach((b) => {
-    b.classList.toggle("active", !rlView && b.dataset.mode === mode);
+    const ordinaryPolicy = b.dataset.mode !== "inference" || pldMode === "off";
+    b.classList.toggle("active", !rlView && b.dataset.mode === mode && ordinaryPolicy);
     b.querySelector(".mode-state").textContent =
-      b.dataset.mode === mode ? "● 当前模式" : "选择模式 →";
+      b.dataset.mode === mode && ordinaryPolicy ? "● 当前模式" : "选择模式 →";
     b.disabled =
       !online ||
       transitional ||
@@ -482,12 +484,17 @@ function render() {
   const leaders = state.leader_connection || {}, needsLeader = ["teleop", "collect"].includes(mode);
   $("start").disabled ||= !!leaders.busy || (needsLeader && !state.leaders_connected);
   if (rlView) {
-    const pldMode = pld?.mode || state.pld_configuration?.mode || "off";
     text("start", pldMode === "off" ? "开始原 Pi" : pldMode === "probe" || pldMode === "shadow" ? "开始基础策略记录" : "开始专家执行");
-    $("start").disabled ||= !["inference", "hil"].includes(mode) || (pldMode !== "off" && !pld?.ready);
+    $("start").disabled ||= !["inference", "hil"].includes(mode);
+  } else if (["inference", "hil"].includes(mode) && pldMode !== "off") {
+    text("start", `▶ 开始 PLD · ${pldMode}`);
   }
+  if (["inference", "hil"].includes(mode) && pldMode !== "off")
+    $("start").disabled ||= !pld?.ready;
   $("start").title = ["inference", "hil"].includes(mode) && !state.policy_ready
     ? "推理通信尚未就绪；可在保持状态重载推理通信" : "";
+  if (["inference", "hil"].includes(mode) && pldMode !== "off" && !pld?.ready)
+    $("start").title = pld?.error || "PLD 尚未就绪；可在 RL 页检查设置，或选择模型推理关闭 PLD";
   if (intervening) $("start").title = "介入期间只能暂停或明确交还模型";
   if (state.device_health?.reason) $("start").title = state.device_health.reason;
   if (needsLeader && !state.leaders_connected) $("start").title = "请先点击启用 Leader；Follower无需断开";
@@ -715,6 +722,7 @@ function render() {
     state.recording_error,
     state.recording_recovery?.error,
     ["inference", "hil"].includes(mode) ? state.policy_error : null,
+    ["inference", "hil"].includes(mode) && pldMode !== "off" ? pld?.error : null,
     state.cleanup_error,
     state.maintenance_error,
     state.operator_error,
@@ -1118,8 +1126,9 @@ function renderRL({connected, paused, latched, recording, policyEditable, mode, 
     runMode === "shadow" ? "shadow · 计算修正但不执行" :
     runMode === "collect" ? "collect · 执行有界随机修正；先完成 probe 核验" :
     "eval · 执行无探索噪声的专家输出"));
-  $("rl-prepare").disabled = !policyEditable || mode === "inference" || !state.selected_task || state.intervention_pending;
-  $("rl-prepare").hidden = mode === "inference";
+  const policyMode = ["inference", "hil"].includes(mode);
+  $("rl-prepare").disabled = !policyEditable || policyMode || !state.selected_task || state.intervention_pending;
+  $("rl-prepare").hidden = policyMode;
   $("pld-evaluation-apply").disabled = !connected || !paused || latched || recording ||
     state.recording_saving || !state.episode_id;
 }
@@ -1186,7 +1195,7 @@ document
     }
   }));
 $("rl-entry").onclick = () => switchPage("rl");
-$("rl-prepare").onclick = () => action("/event/mode:inference");
+$("rl-prepare").onclick = () => $("pld-form").requestSubmit();
 $("pld-form").onsubmit = async (event) => {
   event.preventDefault();
   const payload = {mode: $("pld-mode").value};

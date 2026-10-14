@@ -14,6 +14,26 @@ from yam_abc_reproduce.hil.maintenance import Maintenance
 from yam_abc_reproduce.hil.web import create_app
 
 
+def test_gui_pld_status_uses_live_config_and_never_restores_startup_probe(tmp_path):
+    from yam_abc_reproduce.hil.workbench import Workbench
+
+    config = tmp_path / "probe.json"
+    config.write_text(json.dumps({"mode": "probe", "snapshot_sha256": "a" * 64}))
+    service = Workbench(SimpleNamespace(
+        mode="inference", mock=True, url=None, task_root=tmp_path / "tasks", pld_config=config,
+    ))
+    try:
+        assert service.status["pld_configuration"] == {"mode": "off"}
+        service.runtime = SimpleNamespace(status={"pld": {"config": {"mode": "collect"}}},
+            maintenance=SimpleNamespace(factory_zero=False), task_switching=False)
+        assert service.status["pld_configuration"] == {"mode": "collect"}
+        service.runtime = None
+        assert service.status["pld_configuration"] == {"mode": "off"}
+    finally:
+        service.runtime = None
+        service.close()
+
+
 def test_policy_source_can_be_configured_without_constructing_devices(tmp_path):
     from yam_abc_reproduce.hil.workbench import Workbench
     service = Workbench(SimpleNamespace(

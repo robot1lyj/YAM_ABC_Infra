@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from yam_abc_reproduce.camera.mock_camera import MockCamera
 from yam_abc_reproduce.camera.worker import CameraWorker
 from yam_abc_reproduce.config import StationConfig
-from yam_abc_reproduce.hil.core import Arbiter, Mode, Request
+from yam_abc_reproduce.hil.core import Arbiter, Mode, Phase, Request
 from yam_abc_reproduce.hil.pld import MODES, SCHEMA, PldClient, PldConfig, validate_reply
 from yam_abc_reproduce.hil.policy import PolicyWorker, Reply, RtcJob
 from yam_abc_reproduce.hil.policy_process import ProcessPolicyClient
@@ -23,7 +23,7 @@ from yam_abc_reproduce.hil.recording import RecordingSession
 from yam_abc_reproduce.hil.recording_service import RemoteRecordingSession
 from yam_abc_reproduce.hil.rtc_protocol import build_rtc_request
 from yam_abc_reproduce.hil.rtc_timeline import RtcCommitment
-from yam_abc_reproduce.hil.run import Runtime
+from yam_abc_reproduce.hil.run import MockPolicy, Runtime
 from yam_abc_reproduce.hil.session import Session
 from yam_abc_reproduce.hil.station import StationIO
 from yam_abc_reproduce.hil.storage import read_rows
@@ -103,6 +103,126 @@ def test_identity_pin_and_config_mismatch_cannot_silently_reload():
     with pytest.raises(TypeError):
         PldConfig.from_dict({"mode": "probe", "selector": {"schema": "rules_auto_v2"}})
     assert PldClient({"mode": "probe"}).snapshot(metadata())["ready"]  # No first-start UI deadlock.
+
+
+def mode_runtime(mode="inference", pld_mode="probe"):
+    io = SimpleNamespace(mock=True, leaders_connected=False, limit_policy_target=lambda q: q)
+    cameras = [SimpleNamespace(role=role) for role in ("top", "left", "right")]
+    worker = SimpleNamespace(client=SimpleNamespace(metadata=metadata()), planner=None, ready=True,
+                             poll=lambda: None)
+    return Runtime(io, cameras, worker, SimpleNamespace(recording=False, saving=False),
+                   mode=mode, settings={"policy_fusion": "rtc", "pld": {"mode": pld_mode}})
+
+
+@pytest.mark.parametrize("event", ["mode:inference", "end_intervention:inference"])
+@pytest.mark.parametrize("pld_mode", MODES)
+def test_explicit_plain_inference_clears_pld_but_not_request_audit(event, pld_mode):
+    runtime = mode_runtime(mode="hil", pld_mode=pld_mode)
+    q = np.zeros(14)
+    a = runtime.session.arbiter
+    a.start(q)
+    a.rtc_timeline.record_submitted(0, q)
+    token, _ = a.request_rtc(1, 0, 0, 0, 0, lambda action: action)
+    pending = dict(token=token, recording_session="original-session", pld_request={"mode": pld_mode})
+    runtime._pld_pending = pending
+    # The service no longer advertises an expert. Explicit original Pi must not
+    # need a PLD handshake; cancelled work keeps its original provenance.
+    runtime.worker.client.metadata = {"rtc_mode": "trained"}
+    runtime._apply_plain_policy_selection(event)
+    runtime.session.tick(q, q, now=.01, dt=1/30, observation_id=2, event=event)
+    assert runtime.pld.config.mode == "off" and runtime.session.pld is runtime.pld
+    assert runtime.pld.snapshot(runtime.worker.client.metadata)["ready"]
+    assert runtime._pld_pending is pending
+    assert not runtime.io.grasp_diagnostics_enabled
+    assert a.mode == Mode.INFERENCE and a.phase == Phase.HOLD
+    assert token.epoch != a.epoch and a.pending is None
+    assert not a.accept_rtc(token, np.zeros((50, 14)), .02, 1, lambda action: action)
+
+
+@pytest.mark.parametrize("event", [None, "start", "hold", "mode:hil", "mode:teleop"])
+def test_other_events_never_silently_disable_expert(event):
+    runtime = mode_runtime()
+    original = runtime.pld
+    runtime._apply_plain_policy_selection(event)
+    assert runtime.pld is original
+
+
+def test_plain_inference_retains_independently_selected_grasp_diagnostics():
+    runtime = mode_runtime()
+    runtime.recording_mode = "grasp_diagnostics"
+    runtime._apply_plain_policy_selection("mode:inference")
+    assert runtime.pld.config.mode == "off" and runtime.io.grasp_diagnostics_enabled
+
+
+@pytest.mark.parametrize("mode", ["teleop", "collect", "hil", "inference"])
+@pytest.mark.parametrize("pld_mode", MODES)
+def test_explicit_rl_apply_prepares_policy_in_hold_without_starting(mode, pld_mode):
+    runtime = mode_runtime(mode=mode, pld_mode="off")
+    runtime.configure_pld(mode=pld_mode)
+    assert runtime.pld.config.mode == "off"  # HTTP queue admission is not application.
+    _, command, receipt = runtime.policy_commands.get_nowait()
+    q = np.zeros(14)
+    runtime._apply_settings_command(command, q, q, receipt)
+    a = runtime.session.arbiter
+    assert receipt["state"] == "accepted"
+    assert a.mode == (Mode.HIL if mode == "hil" else Mode.INFERENCE)
+    assert a.phase == Phase.HOLD and not runtime.leaders_connected
+    assert runtime.pld.config.mode == pld_mode
+    assert not runtime.recorder.recording
+
+
+def test_failed_explicit_rl_apply_stays_off_instead_of_claiming_enabled():
+    runtime = mode_runtime(mode="collect", pld_mode="off")
+    runtime.worker.client.metadata = {"rtc_mode": "trained"}
+    with pytest.raises(ValueError, match="未加载"):
+        runtime.configure_pld(mode="collect")
+    assert runtime.policy_commands.empty()
+    assert runtime.pld.config.mode == "off" and runtime.session.arbiter.mode == Mode.COLLECT
+
+
+def test_plain_mode_event_runs_without_expert_and_records_only_original_pi(tmp_path):
+    policy = MockPolicy(rtc=True)
+    policy.metadata = {"rtc_mode": "trained"}  # An ordinary Thor endpoint, no PLD.
+    io = StationIO(build_arm_units(StationConfig(), mock=True, followers_only=True), mock=True)
+    cameras = [CameraWorker(MockCamera(r, r, width=32, height=32)) for r in ("top", "left", "right")]
+    worker = PolicyWorker(policy)
+    recorder = RecordingSession(tmp_path / "plain", video_backend="libx264")
+    runtime = Runtime(io, cameras, worker, recorder, mode="inference",
+        settings={"policy_fusion": "rtc", "pld": {"mode": "probe"}, "tick_timeout": 2})
+    runtime.event("mode:inference")
+    started = threading.Event()
+
+    def start_after_selection():
+        deadline = time.monotonic() + 3
+        while runtime.status.get("tick", 0) < 1 and time.monotonic() < deadline:
+            time.sleep(.005)
+        if runtime.pld.config.mode == "off" and runtime.status.get("tick", 0) >= 1:
+            runtime.event("start")
+            started.set()
+
+    driver = threading.Thread(target=start_after_selection)
+    try:
+        for camera in cameras:
+            camera.start()
+        driver.start()
+        status = runtime.run(duration=1.2)
+        driver.join(3)
+        assert started.is_set()
+        assert not status.get("error") and not status.get("operator_error"), status
+        assert not runtime.recording_error
+    finally:
+        driver.join(3)
+        worker.close()
+        recorder.close()
+        for camera in cameras:
+            camera.stop()
+        io.close()
+    episode = recorder.path / "episode_000001"
+    rows = list(read_rows(episode))
+    replies = [r["policy_reply"] for r in rows if r.get("policy_reply")]
+    assert replies and all(r.get("pld") is None and r.get("pld_request") is None for r in replies)
+    assert any(r.get("policy_selection") for r in rows)
+    assert json.loads((episode / "manifest.json").read_text())["pld"] == {"mode": "off"}
 
 
 @pytest.mark.parametrize("mode", ["shadow", "probe"])
@@ -466,7 +586,7 @@ def test_frontend_capabilities_preserve_draft_and_block_unloaded_actor_modes():
 const assert = require('assert/strict'), nodes = new Map();
 const $ = id => { if (!nodes.has(id)) nodes.set(id, {value:'', options:[], textContent:''}); return nodes.get(id) };
 const text = (id, v) => $(id).textContent = v;
-const state = {phase:'hold'}, names = {inference:'模型推理'}, phases = {hold:'已保持'};
+const state = {phase:'hold',intervention_pending:false}, names = {inference:'模型推理'}, phases = {hold:'已保持'};
 let renderedPldMode = null, pldEvaluationEpisode = null;
 for (const value of ['off','shadow','probe','collect','eval']) $('pld-mode').options.push({value});
 """ + "function renderRL(" + function + """
@@ -481,6 +601,12 @@ props.pld.mode='probe'; props.pld.replay_contract_ready=false; renderRL(props);
 assert.match($('rl-readiness').textContent, /尚未启用专家修正/);
 assert.match($('rl-capability').textContent, /不可用于 SAC/);
 assert.equal($('rl-prepare').hidden, true); // No redundant prepare action in inference.
+props.mode='hil'; renderRL(props);
+assert.equal($('rl-prepare').hidden, true); // RL Apply must not discard HIL control.
+props.mode='collect'; state.selected_task={id:'task'}; renderRL(props);
+assert.equal($('rl-prepare').hidden, false);
+assert.equal($('rl-prepare').disabled, false);
+props.mode='inference';
 state.episode_id='episode-one'; renderRL(props);
 $('pld-correct').value='5'; $('pld-total').value='10';
 renderRL(props); assert.equal($('pld-correct').value, '5');
@@ -549,6 +675,46 @@ assert.equal($('sync-option').disabled, false);
     subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
 
 
+def test_frontend_plain_card_and_rl_prepare_have_distinct_intent():
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node unavailable")
+    source = Path("yam_abc_reproduce/hil/static/app.js").read_text()
+    card = source.split('  document.querySelectorAll("[data-mode]").forEach((b) => {', 1)[1].split('\n  });', 1)[0]
+    prepare = source.split('$("rl-prepare").onclick = ', 1)[1].split('\n', 1)[0]
+    start = source.split('  if (rlView) {\n    text("start",', 1)[1].split('\n  if (intervening)', 1)[0]
+    script = """
+const assert = require('assert/strict'), nodes = new Map();
+const $ = id => { if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id); };
+const text = (id, value) => $(id).textContent = value;
+const state = {selected_task:{id:'task'},policy_ready:true};
+const online=true,transitional=false,latched=false,rlView=false,mode='inference';
+let pldMode='probe', pld = {ready:false,error:'Thor 未加载 PLD-Grasp 专家'};
+""" + "function renderCard(b) {" + card + "}" + """
+const b = {dataset:{mode:'inference'},classList:{toggle(name,value){b.active=value}},
+  querySelector(){return $('mode-state')}};
+renderCard(b); assert.equal(b.active,false); assert.match($('mode-state').textContent,/选择模式/);
+pldMode='off'; renderCard(b); assert.equal(b.active,true);
+let submitted=0; $('pld-form').requestSubmit=()=>{submitted++};
+const prepare = """ + prepare + """
+prepare(); assert.equal(submitted,1); // Never route RL prepare through the plain-inference event.
+function renderStart() {
+  $('start').disabled=false;
+  if (rlView) { text("start",""" + start + """
+}
+pldMode='probe'; renderStart();
+assert.match($('start').textContent,/PLD.*probe/);
+assert.equal($('start').disabled,true);
+assert.match($('start').title,/未加载/);
+pldMode='off'; renderStart(); assert.equal($('start').disabled,false);
+"""
+    subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+
+
 def test_cli_accepts_new_config_and_rejects_legacy_without_hardware(tmp_path, capsys):
     from yam_abc_reproduce.hil.core import Phase
     from yam_abc_reproduce.hil.run import main
@@ -557,6 +723,11 @@ def test_cli_accepts_new_config_and_rejects_legacy_without_hardware(tmp_path, ca
     config.write_text(json.dumps({"mode": "probe"}))
     main(["--mock", "--mode", "inference", "--policy-fusion", "rtc", "--check", "--pld-config", str(config)])
     assert json.loads(capsys.readouterr().out)["pld_mode"] == "probe"
+    # A GUI reconnect starts original Pi, even when an old unit still names the
+    # diagnostic probe file. Explicit headless use above remains unchanged.
+    main(["--mock", "--mode", "inference", "--policy-fusion", "rtc", "--check", "--pld-config", str(config)],
+         service=SimpleNamespace(initializing=False))
+    assert json.loads(capsys.readouterr().out)["pld_mode"] == "off"
     with pytest.raises(SystemExit):
         main(["--mock", "--check", "--parts-config", str(config)])
     runtime = Runtime.__new__(Runtime)

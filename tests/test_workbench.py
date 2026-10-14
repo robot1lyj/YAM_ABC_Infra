@@ -465,9 +465,11 @@ def test_initialization_connect_does_not_require_collection_task(tmp_path, monke
         assert len(saved["gripper_measurements"]) == 2
         assert not service.initializing and service.taskless_teleop
         deadline = time.monotonic() + 3
-        while service.runtime.status["mode"] != "teleop" and time.monotonic() < deadline:
+        # Mode publication may precede the asynchronous recorder stop marker.
+        while (service.runtime.status["mode"] != "teleop" or service.runtime.recorder.saving) and time.monotonic() < deadline:
             time.sleep(0.02)
         assert service.runtime.status["mode"] == "teleop"
+        assert not service.runtime.recorder.saving
         task = service.create_task("分拣", "采集分拣示范", "sort the objects")
         assert service.selected_task == task and not service.taskless_teleop
         service.event("mode:collect")

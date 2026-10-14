@@ -344,7 +344,7 @@ class Runtime:
         if reason := self._leader_event_error(event):
             raise ValueError(reason)
         if event in MOTION_EVENTS:
-            self._require_device_health()
+            self._require_device_health(event)
         if event == "ack_device_health" and self.status.get("phase") != "hold":
             raise ValueError("请先暂停，再确认设备故障已处理")
         if event.startswith("mode:") and self.session.arbiter.intervention_pending:
@@ -434,8 +434,19 @@ class Runtime:
             raise ValueError("录制或紧急暂停时不可点动")
         self.jog.request(arm, joint, delta, target=target)
 
-    def _require_device_health(self):
-        reason = self.device_health.blocking_reason()
+    def _follower_home_recovery(self, event=None):
+        # Only factory-zero Follower homing may run with a historical tracking
+        # latch. It never clears that latch or authorizes policy/teleop/jog.
+        return self.maintenance.factory_zero and (event == "home" or (
+            self.maintenance.state == "homing" and not self.maintenance.home_leader_only))
+
+    def _motion_health_reason(self, event=None):
+        if event == "home" and self._follower_home_recovery(event):
+            return self.device_health.feedback_reason()
+        return self.device_health.blocking_reason()
+
+    def _require_device_health(self, event=None):
+        reason = self._motion_health_reason(event)
         if reason:
             raise ValueError(reason)
 
@@ -952,14 +963,15 @@ class Runtime:
                     event = None
                 health_reason = self.device_health.blocking_reason()
                 if health_reason:
-                    if event in MOTION_EVENTS:
-                        self.operator_error = health_reason
+                    if event in MOTION_EVENTS and (reason := self._motion_health_reason(event)):
+                        self.operator_error = reason
                         event = None
                     if self.device_health.active_tracking_fault():
                         self.jog.clear()
                         self.cartesian.cancel()
-                        if event != "stop" and (a.phase not in (Phase.HOLD, Phase.FAULT)
-                                                or self.maintenance.state != "idle"):
+                        if (event != "stop" and not self._follower_home_recovery(event)
+                                and (a.phase not in (Phase.HOLD, Phase.FAULT)
+                                     or self.maintenance.state != "idle")):
                             self.outcome = "aborted"
                             event = "hold"
                         # HOLD must not silently return the Leaders to manual mode.
@@ -1081,7 +1093,18 @@ class Runtime:
                     and self.maintenance.home_leader_only
                     and not self.maintenance.latched
                 )
+                was_homing = self.maintenance.state == "homing"
                 maintenance_action = self.maintenance.step(q, leader, now=now, dt=period)
+                if was_homing and maintenance_action is None and self.maintenance.error:
+                    # A blocked/aborted home must stop pushing its previous
+                    # trajectory target into the obstacle; HOLD fresh feedback.
+                    a.hold(q)
+                    a._leader_frozen = leader.copy()
+                    decision.action = q.copy()
+                    decision.selected_action = q.copy()
+                    decision.leader_manual = False
+                    decision.leader_freeze = True
+                    decision.leader_hold_target = leader.copy()
                 jog_action = self.jog.step(
                     q,
                     allowed=(

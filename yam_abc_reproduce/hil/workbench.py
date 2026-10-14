@@ -273,11 +273,14 @@ class Workbench:
         updated = live.get("updated_at")
         age = None if updated is None else max(0, time.monotonic() - updated)
         device_health = dict(live.get("device_health") or {})
+        unavailable = None
         if self.state != "connected" or live.get("phase") == "fault":
-            device_health.update(ok=False, reason=self.error or live.get("error")
-                                 or "机械臂未连接，无法检查电机反馈；连接后保持，不会自动运动")
+            unavailable = (self.error or live.get("error")
+                           or "机械臂未连接，无法检查电机反馈；连接后保持，不会自动运动")
         elif age is None or age > .25:
-            device_health.update(ok=False, reason="控制状态已过期，不能据此判断设备正常")
+            unavailable = "控制状态已过期，不能据此判断设备正常"
+        if unavailable:
+            device_health.update(ok=False, reason=unavailable, feedback_ok=False, feedback_reason=unavailable)
         device_health.setdefault("arms", [])
         health = dict(self._snapshot)
         sampled = health.get("health_sample_at", 0)

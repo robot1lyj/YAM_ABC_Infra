@@ -716,7 +716,7 @@ function render() {
     state.recording_recovery?.error,
     ["inference", "hil"].includes(mode) ? state.policy_error : null,
     state.cleanup_error,
-    maint !== "idle" ? state.maintenance_error : null,
+    state.maintenance_error,
     state.operator_error,
     state.leader_alignment_error,
     state.policy_wait_reason,
@@ -828,6 +828,9 @@ function render() {
   $("gripper-apply").textContent = state.jog_active ? "调节中…" : "应用";
   $("gripper-apply").title = "将所选 Follower 夹爪调至目标开度；不移动臂关节";
   const factoryZero = !!state.factory_zero_home;
+  const homeHealthReason = factoryZero
+    ? (state.device_health?.feedback_ok ? "" : state.device_health?.feedback_reason || "等待新鲜设备反馈，不能回零")
+    : (state.device_health?.ok ? "" : state.device_health?.reason || "设备检查未通过，不能回位");
   const homeBlockReason = !connected
     ? "机械臂未连接或状态已过期"
     : latched
@@ -838,7 +841,9 @@ function render() {
           ? "请先结束当前录制"
           : !idle
             ? "请先结束当前维护操作"
-            : !state.home_available
+            : homeHealthReason
+              ? homeHealthReason
+              : !state.home_available
               ? state.home_reason || "零位当前不可用"
               : "";
   $("capture-home").hidden = factoryZero;
@@ -847,8 +852,9 @@ function render() {
   $("home").disabled = !!homeBlockReason;
   $("home").title = homeBlockReason;
   $("home-leader").hidden = !factoryZero;
-  $("home-leader").disabled = !!homeBlockReason || state.leaders_connected === false;
-  $("home-leader").title = state.leaders_connected === false ? "请先独立启用Leader；Follower无需断开" : homeBlockReason;
+  const leaderHomeReason = homeBlockReason || (state.device_health?.ok ? "" : state.device_health?.reason);
+  $("home-leader").disabled = !!leaderHomeReason || state.leaders_connected === false;
+  $("home-leader").title = state.leaders_connected === false ? "请先独立启用Leader；Follower无需断开" : leaderHomeReason;
   $("gravity").disabled = !(canMaintain && idle);
   $("gravity-exit").disabled = !(connected && !latched && maint === "gravity");
   text("maintenance-title", factoryZero ? "零位与重力补偿" : "准备位与重力补偿");
@@ -860,7 +866,8 @@ function render() {
       ? factoryZero ? "两台 Follower 回到官方关节零位；Leader 未连接。" : "仅恢复已保存的 Follower 准备位；完整四臂准备位请在遥操作或 HIL 模式示教。"
       : factoryZero ? "两台 Follower 回到官方关节零位，Leader 不主动运动。" : "保存合适的四臂姿态，供下一次采集恢复。",
   );
-  text("home-label", factoryZero ? "Follower 回零" : "回准备位");
+  const recoveryHome = factoryZero && !!state.device_health?.tracking_fault;
+  text("home-label", recoveryHome ? "Follower 恢复回零" : factoryZero ? "Follower 回零" : "回准备位");
   text(
     "home-subtitle",
     state.leaders_connected === false ? "仅 Follower · 夹爪保持当前开度"
@@ -880,6 +887,12 @@ function render() {
         : "正在回准备位，完成后保持不动"
       : maint === "gravity"
         ? "重力补偿中：请手扶机械臂调整姿态"
+        : state.maintenance_error
+          ? state.maintenance_error
+        : homeHealthReason
+          ? homeHealthReason
+        : recoveryHome
+          ? "跟随告警已锁存 · 排除阻挡并确认完整路径后可慢速回零；模型仍暂停"
         : state.home_available
           ? factoryZero
             ? "零位可用 · 回零前请清空完整运动路径"
@@ -1047,7 +1060,8 @@ async function checkDeviceHealth() {
       section.append(title, table); root.append(section);
     }
     $("device-health-ack").hidden = !health.tracking_fault;
-    $("device-health-ack").disabled = !online || state.phase !== "hold";
+    $("device-health-ack").disabled = !online || state.phase !== "hold"
+      || state.maintenance !== "idle" || !health.feedback_ok;
   } catch (error) {
     $("device-health-details").replaceChildren();
     text("device-health-result", operatorHint(error.message));
@@ -1241,8 +1255,11 @@ $("capture-home").onclick = () =>
   );
 $("home").onclick = () =>
   confirmAction(
-    state.factory_zero_home ? "两台 Follower 回零？" : "回到准备位？",
-    state.factory_zero_home
+    state.factory_zero_home && state.device_health?.tracking_fault ? "受阻后 Follower 慢速回零？"
+      : state.factory_zero_home ? "两台 Follower 回零？" : "回到准备位？",
+    state.factory_zero_home && state.device_health?.tracking_fault
+      ? "先排除墙面等阻挡并确认整个回零路径安全，不能用回零强行顶开障碍。两台Follower以现有0.12 rad/s慢速回零，Leader与夹爪保持；再次受阻会停止，可随时暂停或急停。原跟随告警不自动解除，模型不会自动恢复。"
+      : state.factory_zero_home
       ? "两台 Follower 将沿关节插值路径回到六关节零位；Leader 不接收位置目标，夹爪保持。请确认完整路径没有人员或障碍，可随时按暂停。"
       : "回位将独占四臂控制，并沿关节插值路径运动。请确认完整路径没有人员或障碍；夹爪保持当前开度。可随时按暂停。",
     () => action("/event/home"),

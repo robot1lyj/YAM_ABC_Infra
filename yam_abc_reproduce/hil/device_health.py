@@ -83,7 +83,8 @@ class DeviceHealth:
                     target_rad=float(target[i]), measured_rad=float(measured[i]),
                     detected_at=now,
                     message=(f"{side} {role} J{i % 7 + 1} 疑似不跟随：偏差 {math.degrees(abs(error)):.1f}°，持续超过 10° 达 1 秒，"
-                             "实测位移不足 1°。已请求暂停；检查红灯、供电与连接，处理后检查并确认。"),
+                             "实测位移不足 1°。已请求暂停；也可能是碰撞或外部阻挡。"
+                             "先排除阻挡并确认完整路径安全，可慢速Follower回零；模型仍暂停，处理后检查并确认。"),
                 )
 
     def submitted(self, follower, leader, *, enabled, now):
@@ -102,12 +103,18 @@ class DeviceHealth:
             return None
         return self.tracking_fault
 
-    def blocking_reason(self, *, now=None):
+    def feedback_reason(self, *, now=None):
+        """Live communication/motor alarms; distinct from a past tracking latch."""
         now = time.monotonic() if now is None else now
         if self.checked_at is None or not 0 <= now - self.checked_at <= self.max_age:
             return "设备健康状态尚未更新或已过期；请检查连接，等待新鲜反馈"
         if self.issues:
             return "；".join(self.issues)
+        return None
+
+    def blocking_reason(self, *, now=None):
+        if reason := self.feedback_reason(now=now):
+            return reason
         fault = self.active_tracking_fault()
         return fault["message"] if fault else None
 
@@ -123,7 +130,9 @@ class DeviceHealth:
 
     def snapshot(self, *, now=None):
         reason = self.blocking_reason(now=now)
+        feedback_reason = self.feedback_reason(now=now)
         return dict(ok=reason is None, checked_at=self.checked_at, reason=reason,
+                    feedback_ok=feedback_reason is None, feedback_reason=feedback_reason,
                     arms=self.arms, tracking_fault=self.active_tracking_fault(),
                     thresholds=dict(error_deg=10, duration_s=1, movement_deg=1),
                     scope="只读通信与报警检查；静止通过不代表运动跟随已验证")

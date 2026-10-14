@@ -7,6 +7,7 @@ import pytest
 
 from yam_abc_reproduce.config import StationConfig
 from yam_abc_reproduce.hil.device_health import MOTION_EVENTS, DeviceHealth
+from yam_abc_reproduce.hil.maintenance import Maintenance
 from yam_abc_reproduce.hil.run import Runtime
 from yam_abc_reproduce.hil.station import StationIO
 from yam_abc_reproduce.robot.yam_adapter import _motor_health
@@ -67,6 +68,65 @@ def test_stuck_joint_latches_and_only_explicit_fresh_ack_clears():
     assert health.tracking_fault
     health.acknowledge(now=1.4)
     assert not health.tracking_fault and health._previous is None
+
+
+def test_tracking_latch_is_not_a_current_motor_alarm_or_missing_feedback():
+    health = DeviceHealth()
+    for tick in range(40):
+        sample(health, tick / 30)
+    state = health.snapshot(now=1.3)
+    assert not state["ok"] and state["feedback_ok"]
+    assert state["feedback_reason"] is None and state["tracking_fault"]
+    assert "阻挡" in state["reason"]
+    assert health.feedback_reason(now=1.3) is None
+    assert health.feedback_reason(now=3)  # Even recovery needs fresh feedback.
+
+
+@pytest.mark.parametrize("event", ["start", "resume_policy", "gravity", "home_leader"])
+def test_only_factory_follower_home_can_bypass_a_historical_tracking_latch(event):
+    io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
+    runtime = Runtime(io, [NS(role=r) for r in ("top", "left", "right")], None,
+        NS(recording=False, saving=False), mode="teleop")
+    runtime.maintenance = Maintenance(factory_zero=True)
+    runtime.status = {"phase": "hold"}
+    runtime.device_health.update(io.device_health(), now=time.monotonic(), follower=np.zeros(14), leader=np.zeros(14))
+    runtime.device_health.tracking_fault = {"arm": "右 Follower", "message": "collision latch"}
+    try:
+        runtime.event("home")
+        assert runtime.events.get_nowait()[0] == "home"
+        assert runtime.device_health.tracking_fault
+        with pytest.raises(ValueError, match="collision latch"):
+            runtime.event(event)
+        with pytest.raises(ValueError, match="collision latch"):
+            runtime.request_jog("right", 4, .01)
+        runtime.maintenance.factory_zero = False
+        with pytest.raises(ValueError, match="collision latch"):
+            runtime.event("home")
+    finally:
+        io.close()
+
+
+@pytest.mark.parametrize("problem", ["stale", "motor_alarm", "stopped"])
+def test_recovery_home_still_rejects_actual_device_failure(problem):
+    io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)
+    runtime = Runtime(io, [NS(role=r) for r in ("top", "left", "right")], None,
+        NS(recording=False, saving=False), mode="teleop")
+    runtime.maintenance = Maintenance(factory_zero=True)
+    runtime.status = {"phase": "hold"}
+    report = io.device_health()
+    if problem == "motor_alarm":
+        report[1]["motors"][4]["error_code"] = 14
+    elif problem == "stopped":
+        report[1]["running"] = False
+    runtime.device_health.update(report, now=time.monotonic() - (1 if problem == "stale" else 0),
+                                 follower=np.zeros(14), leader=np.zeros(14))
+    runtime.device_health.tracking_fault = {"arm": "右 Follower", "message": "collision latch"}
+    try:
+        with pytest.raises(ValueError):
+            runtime.event("home")
+        assert runtime.events.empty() and runtime.device_health.tracking_fault
+    finally:
+        io.close()
 
 
 @pytest.mark.parametrize("scenario", ["below_threshold", "transient", "moving", "manual", "gripper", "loop_gap", "direction_change"])
@@ -151,6 +211,7 @@ def test_page_never_reuses_green_health_after_disconnect_fault_or_stall(tmp_path
                                   "device_health": {"ok": True}},
                            maintenance=NS(factory_zero=False), task_switching=False)
         assert not owner.status["device_health"]["ok"]
+        assert not owner.status["device_health"]["feedback_ok"]
         assert owner.check_device_health()["reason"]
     finally:
         owner.runtime = None

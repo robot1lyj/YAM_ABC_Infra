@@ -82,6 +82,25 @@ def test_tracking_latch_is_not_a_current_motor_alarm_or_missing_feedback():
     assert health.feedback_reason(now=3)  # Even recovery needs fresh feedback.
 
 
+@pytest.mark.parametrize("problem", ["stale", "motor_alarm", "stopped", "missing"])
+def test_explicit_ack_never_clears_current_device_failure(problem):
+    health = DeviceHealth()
+    fault = {"arm": "右 Follower", "joint": "J4", "message": "historical tracking warning"}
+    health.tracking_fault = fault
+    report = arms()
+    if problem == "motor_alarm":
+        report[1]["motors"][3]["error_code"] = 14
+    elif problem == "stopped":
+        report[1]["running"] = False
+    elif problem == "missing":
+        report = []
+    sample(health, 1, report=report)
+    with pytest.raises(ValueError):
+        health.acknowledge(now=2 if problem == "stale" else 1)
+    assert health.tracking_fault is fault
+    assert not health.snapshot(now=2 if problem == "stale" else 1)["feedback_ok"]
+
+
 @pytest.mark.parametrize("event", ["start", "resume_policy", "gravity", "home_leader"])
 def test_only_factory_follower_home_can_bypass_a_historical_tracking_latch(event):
     io = StationIO(build_arm_units(StationConfig(), mock=True), mock=True)

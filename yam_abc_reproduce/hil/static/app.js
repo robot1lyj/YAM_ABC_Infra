@@ -230,6 +230,30 @@ function activeDevice() {
     state.phase !== "fault"
   );
 }
+function trackingRecoveryBlockReason(health = state.device_health) {
+  if (!activeDevice()) return "设备未连接或状态过期，请先检查连接";
+  if (state.stop_latched) return "请先检查现场并解除软件急停锁存";
+  if (state.phase !== "hold") return "请先暂停运动，再确认恢复";
+  if (state.maintenance !== "idle") return "请先结束回零或重力补偿，再确认恢复";
+  if (!health?.feedback_ok) return health?.feedback_reason || "设备反馈检查未通过，不能解除告警";
+  return "";
+}
+function renderTrackingRecovery() {
+  const health = state.device_health, fault = health?.tracking_fault;
+  $("tracking-recovery").hidden = !fault;
+  const reason = trackingRecoveryBlockReason(health);
+  for (const id of ["tracking-recover", "device-health-ack"]) {
+    $(id).hidden = !fault;
+    $(id).disabled = !!reason;
+    $(id).title = reason || "仅解除历史跟随告警，仍保持暂停；不自动执行、不强制回零";
+  }
+  if (fault) {
+    const deviation = Number.isFinite(fault.error_deg) ? `（触发时偏差 ${fault.error_deg.toFixed(1)}°）` : "";
+    text("tracking-recovery-summary", `${fault.arm || "机械臂"} ${fault.joint || ""} 跟随告警已锁存${deviation}，模型已暂停。`);
+    text("tracking-recovery-hint", reason || "现场确认已排除阻挡或异常后，可直接确认恢复；回零只是可选操作，不是恢复的前提。");
+  }
+  return !!fault;
+}
 function canDeleteEpisode() {
   const dataset = state.task_dataset;
   return online && !deletingEpisode && !busy && !!state.selected_task
@@ -302,6 +326,10 @@ function render() {
     idle = maint === "idle";
   const rlView = page === "rl", pld = state.pld;
   const pldMode = pld?.mode || state.pld_configuration?.mode || "off";
+  // The existing owner reports this acknowledgement as operator_error, but it
+  // is an informational success, not another fault requiring recovery.
+  const trackingAcknowledged = !state.device_health?.tracking_fault &&
+    state.operator_error === "已确认；未自动恢复运动。静止检查不证明关节跟随已恢复。";
   text("environment", state.mock ? "模拟工作站" : "真实设备");
   $("environment").className = "pill" + (state.mock ? "" : " ok");
   const cNames = {
@@ -467,7 +495,7 @@ function render() {
             : paused
               ? state.recording_error
                 ? "录制失败，已保持；排除存储或编码原因后可恢复录制服务"
-                : "等待开始指令"
+                : trackingAcknowledged ? "跟随告警已解除 · 可手动重新开始" : "等待开始指令"
               : state.phase === "human"
                 ? state.hil_input === "keyboard" && mode === "hil" ? "键盘微调 · 模型已暂停" : "Leader 正在控制 Follower"
                 : xr1Replay ? "末端回放执行中" : "本地策略控制中",
@@ -712,7 +740,8 @@ function render() {
     );
   }
   const errors = [
-    connected && state.device_health?.reason,
+    connected && (state.device_health?.tracking_fault
+      ? state.device_health.feedback_reason : state.device_health?.reason),
     !online ? "界面连接中断。工作台心跳超时将请求暂停；请检查现场状态。" : null,
     state.connection_error,
     state.camera_error,
@@ -725,7 +754,7 @@ function render() {
     ["inference", "hil"].includes(mode) && pldMode !== "off" ? pld?.error : null,
     state.cleanup_error,
     state.maintenance_error,
-    state.operator_error,
+    trackingAcknowledged ? null : state.operator_error,
     state.leader_alignment_error,
     state.policy_wait_reason,
     ["inference", "hil"].includes(mode) ? state.policy_restart_error : null,
@@ -739,8 +768,10 @@ function render() {
       : null,
   ];
   const error = errors.filter(Boolean).map(operatorHint).join(" · ");
-  text("alert", error);
-  $("alert").hidden = !error;
+  text("alert-message", error);
+  $("alert-message").hidden = !error;
+  const trackingAlert = renderTrackingRecovery();
+  $("alert").hidden = !error && !trackingAlert;
   $("episodes").replaceChildren();
   const episodes = state.episodes || [];
   if (!episodes.length) {
@@ -900,7 +931,7 @@ function render() {
         : homeHealthReason
           ? homeHealthReason
         : recoveryHome
-          ? "跟随告警已锁存 · 排除阻挡并确认完整路径后可慢速回零；模型仍暂停"
+          ? "跟随告警未解除 · 现场检查后可确认恢复；回零为可选操作"
         : state.home_available
           ? factoryZero
             ? "零位可用 · 回零前请清空完整运动路径"
@@ -1039,7 +1070,10 @@ async function checkDeviceHealth() {
     const response = await fetch("/device/health", {signal: AbortSignal.timeout(5000)});
     const health = await response.json();
     if (!response.ok) throw Error(health.detail || "设备诊断读取失败");
-    text("device-health-result", health.ok ? "通信与报警检查通过；未自动开始运动。" : operatorHint(health.reason));
+    text("device-health-result", health.ok ? "通信与报警检查通过；未自动开始运动。"
+      : health.tracking_fault && health.feedback_ok
+        ? "设备通信与电机报警检查通过；历史跟随告警待你确认。排除现场异常后可直接恢复，无需先回零。"
+        : operatorHint(health.reason));
     if (health.tracking_fault) {
       const fault = health.tracking_fault;
       $("device-health-result").append(document.createTextNode(
@@ -1068,8 +1102,8 @@ async function checkDeviceHealth() {
       section.append(title, table); root.append(section);
     }
     $("device-health-ack").hidden = !health.tracking_fault;
-    $("device-health-ack").disabled = !online || state.phase !== "hold"
-      || state.maintenance !== "idle" || !health.feedback_ok;
+    $("device-health-ack").disabled = !!trackingRecoveryBlockReason(health);
+    $("device-health-ack").title = trackingRecoveryBlockReason(health);
   } catch (error) {
     $("device-health-details").replaceChildren();
     text("device-health-result", operatorHint(error.message));
@@ -1079,12 +1113,20 @@ $("check-device-health").onclick = checkDeviceHealth;
 $("check-device-health-detail").onclick = checkDeviceHealth;
 $("device-health-refresh").onclick = checkDeviceHealth;
 $("device-health-close").onclick = () => $("device-health-dialog").close();
-$("device-health-ack").onclick = () => {
-  $("device-health-dialog").close();
-  confirmAction("确认已处理跟随异常？", "请先检查异常关节、红灯和连接。解除后不会自动运动，也不会清除电机报警；重新启动仍会进行健康检查，运动中继续检测跟随。", async () => {
-    await action("/event/ack_device_health"); await checkDeviceHealth();
+function confirmTrackingRecovery() {
+  const reason = trackingRecoveryBlockReason();
+  if (reason) return toast(reason);
+  if (!state.device_health?.tracking_fault) return toast("跟随告警已解除，当前仍保持暂停");
+  if ($("device-health-dialog").open) $("device-health-dialog").close();
+  confirmAction("确认已处理，恢复可用？", "请确认现场已排除碰撞、阻挡或关节异常。无需先回零；本次只解除历史跟随告警，仍保持当前位置和暂停。之后由你点击开始；真实电机报警、反馈超时与急停不会被清除。", async () => {
+    const currentReason = trackingRecoveryBlockReason();
+    if (currentReason) return toast(currentReason);
+    if (await action("/event/ack_device_health"))
+      toast(state.device_health?.tracking_fault ? "确认请求已提交；解除后可再次开始，当前仍保持暂停" : "跟随告警已解除，可重新开始；当前仍保持暂停");
   });
-};
+}
+$("device-health-ack").onclick = confirmTrackingRecovery;
+$("tracking-recover").onclick = confirmTrackingRecovery;
 let renderedPldMode = null;
 let pldEvaluationEpisode = null;
 function renderRL({connected, paused, latched, recording, policyEditable, mode, pld}) {

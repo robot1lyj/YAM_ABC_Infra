@@ -421,6 +421,16 @@ main {
   padding: 12px 16px;
   margin-bottom: 14px;
 }
+.tracking-recovery {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+.tracking-recovery > div { flex: 1 1 320px; }
+.tracking-recovery p { margin: 5px 0 0; }
+.tracking-recovery .button { flex: 0 0 auto; }
+#alert-message:not([hidden]) + .tracking-recovery { margin-top: 10px; }
 .task-card {
   display: flex;
   align-items: center;

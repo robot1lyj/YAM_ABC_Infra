@@ -101,7 +101,16 @@
             <button id="header-reset" class="button" hidden>解除锁存</button>
           </div>
         </section>
-        <div id="alert" class="alert" role="alert" hidden></div>
+        <div id="alert" class="alert" role="alert" hidden>
+          <div id="alert-message"></div>
+          <div id="tracking-recovery" class="tracking-recovery" hidden>
+            <div>
+              <strong id="tracking-recovery-summary"></strong>
+              <p id="tracking-recovery-hint"></p>
+            </div>
+            <button class="button" id="tracking-recover" type="button">确认已处理，恢复可用</button>
+          </div>
+        </div>
         <div id="workspace-page">
           <section class="task-section" aria-label="当前采集任务">
             <div class="task-card">
@@ -755,7 +764,7 @@
       <div id="device-health-details"></div>
       <div class="dialog-actions">
         <button class="button" id="device-health-refresh">重新检查</button>
-        <button class="button" id="device-health-ack" hidden>已处理，确认解除跟随告警</button>
+        <button class="button" id="device-health-ack" hidden>确认已处理，恢复可用</button>
         <button class="button primary" id="device-health-close">关闭</button>
       </div>
     </dialog>

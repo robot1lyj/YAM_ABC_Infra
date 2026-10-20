@@ -31,16 +31,13 @@ def _serve(conn, url: str, timeout: float, rtc: bool):
             if observation is None:
                 break
             try:
-                if rtc and isinstance(observation, dict) and observation.get("transport") == "human_rtc":
-                    result = client.infer_human_rtc(observation["observation"], human_rtc=observation["human_rtc"])
-                elif rtc:
-                    if not isinstance(observation, tuple) or len(observation) not in (3, 4, 5):
+                if rtc:
+                    if not isinstance(observation, tuple) or len(observation) not in (3, 4):
                         raise ValueError("RTC transport requires observation, tick, prefix")
                     result = client.infer_rtc(
                         observation[0], target_start_tick=observation[1],
                         committed_actions=observation[2],
-                        **({"pld": observation[3]} if len(observation) >= 4 else {}),
-                        **({"human_rtc": observation[4]} if len(observation) == 5 else {}),
+                        **({"pld": observation[3]} if len(observation) == 4 else {}),
                     )
                 else:
                     result = client.infer(observation)
@@ -93,12 +90,7 @@ class ProcessPolicyClient:
     def infer(self, observation):
         return self._infer(observation)
 
-    def infer_human_rtc(self, observation, *, human_rtc):
-        return self._infer(dict(transport="human_rtc", observation=observation, human_rtc=human_rtc))
-
-    def infer_rtc(self, observation, *, target_start_tick: int, committed_actions, pld=None, human_rtc=None):
-        if human_rtc is not None:
-            return self._infer((observation, target_start_tick, committed_actions, pld, human_rtc))
+    def infer_rtc(self, observation, *, target_start_tick: int, committed_actions, pld=None):
         return self._infer((observation, target_start_tick, committed_actions) if pld is None else
                            (observation, target_start_tick, committed_actions, pld))
 

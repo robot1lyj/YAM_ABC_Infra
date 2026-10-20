@@ -849,7 +849,7 @@ def test_panel_stop_overrides_mirror_and_holds_both_leaders_and_followers():
             np.testing.assert_allclose(target, .2)
 
 
-def test_runtime_keyboard_priority_and_handle_only_hands_back(tmp_path):
+def test_runtime_keyboard_priority_and_primary_directly_hands_back(tmp_path):
     import time
 
     cfg = StationConfig()
@@ -902,10 +902,8 @@ def test_runtime_keyboard_priority_and_handle_only_hands_back(tmp_path):
         wait(lambda: runtime.status["tick"] > tick + 2)
         assert runtime.status["phase"] == "human"
         keys[1][0] = True
-        wait(lambda: runtime.status["phase"] == "hold")
-        assert runtime.status["leader_locked"]
-        runtime.event("resume_policy")
         wait(lambda: runtime.status["phase"] == "policy")
+        assert not runtime.status["leader_locked"]
         keys[1][1] = True
         tick = runtime.status["tick"]
         wait(lambda: runtime.status["tick"] > tick + 2)

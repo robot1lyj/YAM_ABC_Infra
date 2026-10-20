@@ -30,6 +30,7 @@
 | request | 当前动作来源的请求标识，结构见下 |
 | policy_reply | 本tick收到的模型回复及计时，不是每帧都有 |
 | policy_selection | 规划器的选择来源信息，结构随模式变化，可空 |
+| handover | 本地人工交还过渡的来源：source_epoch、start_tick、衰减步数、速度上限及两条实际下发样本（tick/submitted_at/submitted_action）；其余帧为空 |
 | grasp_diagnostics | 可选抓取诊断快照，普通记录不写；见下 |
 | policy_write_trace | 可选高频写入追踪；当前30Hz直发可空，不能宣称每次电机写入均有独立追踪 |
 | policy_url | 当前代码仍写入策略来源地址；无模型名称/检查点指纹字段 |
@@ -39,6 +40,8 @@
 | omitted_intervention_wait | 被删等待段之后第一条保留帧附带的区间摘要 |
 
 所有14D向量顺序：左J1–J6、左夹爪、右J1–J6、右夹爪。关节rad，夹爪名义0闭1开。submitted_action是训练动作候选；measured_state是反馈，两者不可混淆。真实YAM下发夹爪沿用既有[0.02,0.98]端点余量，RTC承诺和记录使用同一限幅；其语义是归一化SDK入口目标，不含SDK内部受阻软限力再次调整后的电机目标。
+
+本地趋势延续帧`source=handover`、`expert_valid=false`、`policy_valid=false`、`policy_action=null`，不能冒充人工专家或模型输出。`policy_selection.fusion=rtc_handover`记录来源；后续普通RTC请求的`request_context.prefix_sources`保留这些原始来源。完整LeRobot导出保留过渡帧，`complementary_info.action_source=3`表示handover（原0人工/1策略/2保持不变），collector_policy_id为空；专家导出继续只接受显式有效人工帧。
 
 ### 设备与执行诊断
 
@@ -51,8 +54,6 @@
 request及policy_reply.token：`epoch, request_id, observation_id, created_at, observed_at, queue_size_at_request, observation_policy_tick, rtc_delay_steps`；时间为IPC单调秒，TDA/RTC专属值可空。
 
 policy_reply：`token, received_at, discarded, error, worker_elapsed_ms, server_timing, client_timing, actions, pld, pld_request, recording_session, request_context`；RTC额外`rtc_takeover_tick, rtc_reply_tick, rtc_slack_ticks`。actions为原始返回动作块（通常50×14），异常可空。server_timing按服务返回保留，非固定训练字段。client_timing可含`pack_ms, send_ms, wait_response_ms, unpack_ms, payload_bytes`。
-
-Human RTC扩展增加`human_rtc_request`（完整参考动作、原token、参考起始tick及来源）、`human_rtc`（服务确认）。`request_context.human_rtc_samples`保留两条实际提交的`tick/submitted_at/submitted_action`，使等待删帧后仍可复算速度。shadow回复显式`execution_eligible=false`：即使`discarded=false`也仅表示参考缓存接收成功，不表示动作执行。其原始actions不能替代逐帧`submitted_action`或作为专家标签。handover参考保留原shadow的`source_request/source_model_index`，实际策略帧仍关联新RTC请求。全部扩展请求、回复、取消与晚到响应复用session的`policy_events.jsonl`，不受介入等待删帧影响；完整合同见[Human RTC接口](condapi_interface.md#human-rtc-人工参考扩展控制侧实现thor待对接)。
 
 sync：`age_s, arrival_skew_s, sync_warning, reference_time, state_bracket, cameras`。cameras按top/left/right含`device_timestamp_ms, timestamp_domain, device_frame_number, host_received_at, color_space, sequence`。无有效观测时sync可为空；沿用上一帧图像时observation_valid=false，应按标志过滤。
 

@@ -115,7 +115,7 @@ def test_replay_refusal_holds_without_fault_or_consumption():
 def test_reload_rules_is_fresh_module_and_has_no_hardware():
     first, second = load_rules(), load_rules()
     assert first is not second and first.revision == second.revision
-    assert first.button_event("hil", "human", True, True) == "handback_hold"
+    assert first.button_event("hil", "human", True, True) == "resume_policy"
 
 
 def test_intervention_start_cannot_bypass_pause_or_handback():

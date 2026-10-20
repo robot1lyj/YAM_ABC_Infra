@@ -42,7 +42,7 @@ def button_event(mode, phase, right_edge, primary_edge):
     if phase == "takeover" and right_edge and primary_edge:
         return "manual_ready"
     if phase == "human" and primary_edge:
-        return "handback_hold"
+        return "resume_policy"
     return None
 
 
@@ -88,7 +88,8 @@ def resume_policy(a, state):
         a.phase == Phase.HUMAN or (a.phase in (Phase.HOLD, Phase.TAKEOVER)
                                   and (a.intervention_pending or a._leader_frozen is not None))
     ):
-        a._transition(Phase.RESUME, state)
+        keep_history = a.phase == Phase.HUMAN and a.rtc_timeline is not None
+        a._transition(Phase.RESUME, state, keep_rtc_history=keep_history)
         a.intervention_pending = False
         a.intervention_waiting = False
 

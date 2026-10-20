@@ -422,8 +422,8 @@ function render() {
   const humanRtc = state.human_rtc;
   $("human-rtc-status").hidden = mode !== "hil" || !humanRtc?.configured;
   text("human-rtc-status", humanRtc?.available
-    ? `人工接力推理可用 · 后台回复 ${humanRtc.accepted_replies ?? 0} 次 · ${humanRtc.pending ? "推理中" : "待请求"}`
-    : `人工接力推理未启用：${humanRtc?.reason || "等待服务确认"}`);
+    ? `①直接交还 · 趋势延续 ${(humanRtc.velocity_decay_seconds ?? 0).toFixed(2)} s · 夹爪保持`
+    : `人工趋势延续未启用：${humanRtc?.reason || "等待推理通信就绪"}`);
   if (policyDraft && state.policy_fusion === policyDraft.fusion &&
       (policyDraft.fusion !== "rtc" || state.rtc_delay_steps === policyDraft.rtc_delay_steps)) policyDraft = null;
   if (!policyDraft) {
@@ -565,7 +565,7 @@ function render() {
       ? "手柄① 开始 / 结束录制　\n手柄② 放弃当前集"
       : mode === "hil"
         ? state.hil_input === "keyboard" ? "I 暂停模型并微调 · 点击交还模型继续　\nLeader 保持 · 手柄按钮不接管"
-        : "I 介入锁定 → 右①遥操作 → ①锁定待交还　\n点击交还模型继续 · ② 无功能"
+        : "I 介入锁定 → 右①遥操作 → 任一①直接交还模型　\n也可点击交还模型 · ② 无功能"
         : state.leaders_connected ? "普通推理只控制Follower · 已启用的Leader保持，可单独停用" : "普通推理只控制Follower · Leader未启用",
   );
   text(

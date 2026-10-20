@@ -40,8 +40,6 @@ class Reply:
     pld_request: dict | None = None
     recording_session: str | None = None
     request_context: dict | None = None
-    human_rtc_request: dict | None = None
-    human_rtc: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -49,15 +47,6 @@ class RtcJob:
     observation: dict[str, Any]
     commitment: RtcCommitment
     pld: dict | None = None
-    recording_session: str | None = None
-    request_context: dict | None = None
-    human_rtc: dict | None = None
-
-
-@dataclass(frozen=True)
-class HumanRtcJob:
-    observation: dict[str, Any]
-    human_rtc: dict
     recording_session: str | None = None
     request_context: dict | None = None
 
@@ -70,9 +59,7 @@ def reply_record(reply, *, now, discarded):
         actions=reply.actions if reply.actions is not None and np.isfinite(reply.actions).all() else None,
         pld=getattr(reply, "pld", None), pld_request=getattr(reply, "pld_request", None),
         recording_session=getattr(reply, "recording_session", None),
-        request_context=getattr(reply, "request_context", None),
-        human_rtc_request=getattr(reply, "human_rtc_request", None),
-        human_rtc=getattr(reply, "human_rtc", None))
+        request_context=getattr(reply, "request_context", None))
 
 
 class PolicyResponseError(ValueError):
@@ -242,39 +229,31 @@ class PolicyWorker:
                 planning = False
                 response = None
                 request_pld = observation.pld if isinstance(observation, RtcJob) else None
-                guidance = getattr(observation, "human_rtc", None)
-                audit = dict(pld_request=request_pld, human_rtc_request=guidance,
+                audit = dict(pld_request=request_pld,
                     recording_session=getattr(observation, "recording_session", None),
                     request_context=getattr(observation, "request_context", None))
                 try:
                     started = time.monotonic()
-                    if isinstance(observation, HumanRtcJob):
-                        response = self.client.infer_human_rtc(observation.observation,
-                            human_rtc=observation.human_rtc)
-                    elif isinstance(observation, RtcJob):
+                    if isinstance(observation, RtcJob):
                         response = self.client.infer_rtc(
                             observation.observation,
                             target_start_tick=observation.commitment.observation_tick,
                             committed_actions=observation.commitment.actions,
                             **({"pld": observation.pld} if observation.pld is not None else {}),
-                            **({"human_rtc": guidance} if guidance is not None else {}),
                         )
                     else:
                         response = self.client.infer(observation)
                     actions = np.array(response["actions"], copy=True)
                     if actions.shape != (50, 14) or not np.isfinite(actions).all():
                         raise ValueError("policy response must be finite (50,14)")
-                    if guidance is not None:
-                        from .human_rtc import validate_confirmation
-                        validate_confirmation(guidance, response)
                     from .pld import validate_reply
                     validate_reply(request_pld, response, token=token,
-                        observation=observation.observation if isinstance(observation, (RtcJob, HumanRtcJob)) else observation)
+                        observation=observation.observation if isinstance(observation, RtcJob) else observation)
                     server_timing = response.get("server_timing")
                     if server_timing is not None and not isinstance(server_timing, dict):
                         raise ValueError("policy server_timing must be a mapping")
                     plan = None
-                    if self.planner is not None and not isinstance(observation, (RtcJob, HumanRtcJob)):
+                    if self.planner is not None and not isinstance(observation, RtcJob):
                         planning = True
                         action_source = (
                             "recorded_replay"
@@ -290,15 +269,14 @@ class PolicyWorker:
                         server_timing=server_timing,
                         client_timing=getattr(self.client, "last_timing", None),
                         plan=plan,
-                        pld=response.get("pld"), human_rtc=response.get("human_rtc"), **audit,
+                        pld=response.get("pld"), **audit,
                     )
                 except Exception as exc:
                     error = f"{type(exc).__name__}: {exc}"
                     self.mark_failed(error, planner=planning)
                     response = getattr(exc, "response", response)
                     reply = Reply(token, None, error, planner_error=planning,
-                        pld=response.get("pld") if isinstance(response, dict) else None,
-                        human_rtc=response.get("human_rtc") if isinstance(response, dict) else None, **audit)
+                        pld=response.get("pld") if isinstance(response, dict) else None, **audit)
                 self._replies.put_nowait(reply)
         finally:
             from .cleanup import close_resources

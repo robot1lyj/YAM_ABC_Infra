@@ -157,7 +157,7 @@ class Arbiter:
         self.intervention_waiting = False
         self.hil_input = "leader"
 
-    def _transition(self, phase: Phase, state: np.ndarray):
+    def _transition(self, phase: Phase, state: np.ndarray, *, keep_rtc_history=False):
         self._leader_frozen = None
         self._alignment = None
         self.alignment_error = None
@@ -170,8 +170,10 @@ class Arbiter:
         self._index = 0
         self._chunk_deadline = 0.0
         if self.rtc_timeline is not None:
-            self.rtc_timeline.clear()
+            self.rtc_timeline.clear(keep_submitted=keep_rtc_history)
         self._hold = vector(state)
+        if keep_rtc_history and self.rtc_timeline.last_target is not None:
+            self._hold = self.rtc_timeline.last_target
         self.phase = phase
 
     def start(self, state, leader=None):
@@ -452,7 +454,9 @@ class Arbiter:
                 selected = q.copy()
             else:
                 selected = target
-                if rtc_source != "hold":
+                if rtc_source == "handover":
+                    source = "handover"
+                elif rtc_source != "hold":
                     policy = target.copy()
                     source = "policy"
                     self.phase = Phase.POLICY
@@ -489,7 +493,7 @@ class Arbiter:
             (self.rtc_timeline.last_selection if self.rtc_timeline is not None else {
                 "fusion": "sync_hold", "request": vars(self._active_request),
                 "model_index": action_index, "target_tick": policy_tick,
-            }) if policy is not None else None,
+            }) if policy is not None or source == "handover" else None,
             self._leader_frozen.copy() if self._leader_frozen is not None else None,
             self.mode == Mode.HIL and self.hil_input == "keyboard",
         )

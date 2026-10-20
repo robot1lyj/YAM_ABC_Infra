@@ -76,7 +76,7 @@ def _groups(path):
     """Preserve temporal gaps as boundaries, never silently stitch removed rows."""
     segment, previous = 0, None
     for row in read_rows(path):
-        valid = row.get("source") in ("human", "policy", "hold") and set(
+        valid = row.get("source") in ("human", "policy", "hold", "handover") and set(
             row.get("video_indices", {})
         ) == set(ROLES)
         if not valid:
@@ -219,7 +219,7 @@ class DatasetWriter:
                         else np.asarray(row["policy_action"], dtype=np.float32)
                     ).tolist(),
                     "complementary_info.state": intervention_state,
-                    # HOLD is a workstation-only state, not a model/human
+                    # HOLD/handover are workstation-only states, not a model/human
                     # action. Keep it null rather than inventing provenance.
                     "complementary_info.collector_policy_id": (
                         row["source"] if row["source"] in ("human", "policy") else None
@@ -233,7 +233,7 @@ class DatasetWriter:
                     "index": self.total + n,
                     "task_index": task_index,
                     "complementary_info.is_intervention": bool(row["is_intervention"]),
-                    "complementary_info.action_source": {"human": 0, "policy": 1, "hold": 2}[
+                    "complementary_info.action_source": {"human": 0, "policy": 1, "hold": 2, "handover": 3}[
                         row["source"]
                     ],
                     "complementary_info.event": sum(
@@ -497,7 +497,7 @@ def export_session(source: Path, output: Path, *, expert_only=False, allow_recov
         "skipped": skipped,
         "state": "camera-aligned follower feedback; raw feedback is complementary_info.measured_state",
         "action": "absolute command submitted to followers after constraints",
-        "action_source": {"0": "human", "1": "policy", "2": "hold"},
+        "action_source": {"0": "human", "1": "policy", "2": "hold", "3": "handover"},
         "event_bits": {
             "1": "takeover_applied",
             "2": "human_started",

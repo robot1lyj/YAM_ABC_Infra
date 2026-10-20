@@ -32,7 +32,7 @@ from ..robot.can_bus import bring_up_can_buses, check_can_up, stop_can_buses
 from ..runtime import build_arm_units, build_cameras_from_config, iter_leader_agents
 from .buttons import HandleButtons
 from .cleanup import close_resources
-from .core import Arbiter, Mode, Phase, Request
+from .core import Arbiter, Mode, Phase
 from .device_health import MOTION_EVENTS, DeviceHealth
 from .human_rtc import SETTINGS as HUMAN_RTC_SETTINGS
 from .human_rtc import HumanRtc, HumanRtcConfig
@@ -42,7 +42,7 @@ from .metrics import Latencies
 from .observation import Observations
 from .planner_process import ProcessActionPlanner
 from .pld import PldClient, PldConfig
-from .policy import HumanRtcJob, PolicyWorker, RtcJob, reply_record, validate_policy_url
+from .policy import PolicyWorker, RtcJob, reply_record, validate_policy_url
 from .policy_process import ProcessPolicyClient
 from .recording import RecordingSession
 from .recording_service import RemoteRecordingSession
@@ -54,8 +54,6 @@ from .station import StationIO
 class MockPolicy:
     def __init__(self, *, rtc=False):
         self.rtc = rtc
-        self.metadata = {"human_rtc": {"schema": "yam_human_rtc_v1", "modes": ["shadow", "handover"],
-            "max_prefix_attention_horizon": 49, "max_velocity_decay_steps": 49}}
 
     def set_rtc(self, enabled):
         self.rtc = bool(enabled)
@@ -66,20 +64,10 @@ class MockPolicy:
         actions[:, [0, 7]] += 0.04 * np.sin(np.arange(50)[:, None] / 15)
         return {"actions": actions}
 
-    def infer_human_rtc(self, obs, *, human_rtc):
+    def infer_rtc(self, obs, *, target_start_tick, committed_actions):
         result = self.infer(obs)
-        result["actions"] = human_rtc["reference_actions"].copy()
-        result["human_rtc"] = {key: value for key, value in human_rtc.items() if key != "reference_actions"}
-        result["server_timing"] = {"human_rtc_used": True, "rtc_used": False}
-        return result
-
-    def infer_rtc(self, obs, *, target_start_tick, committed_actions, human_rtc=None):
-        result = self.infer(obs)
-        if human_rtc is not None:
-            result["actions"] = human_rtc["reference_actions"].copy()
-            result["human_rtc"] = {key: value for key, value in human_rtc.items() if key != "reference_actions"}
         result["actions"][:len(committed_actions)] = committed_actions
-        result["server_timing"] = {"rtc_used": True, "human_rtc_used": human_rtc is not None}
+        result["server_timing"] = {"rtc_used": True}
         return result
 
 
@@ -285,38 +273,12 @@ class Runtime:
         return None
 
     def _audit_pld(self, payload, *, event, session_path=None, now=None, tick=None):
-        """Shared PLD/Human RTC append to the recorder owner, including late replies."""
+        """Nonblocking append to the existing recorder owner, including late replies."""
         if not getattr(self.recorder, "record_policy_reply", lambda *a, **k: False)(
             dict(event=event, time=time.monotonic() if now is None else now,
                  tick=tick, details={"policy_reply": payload}),
             session_path=session_path):
             raise RuntimeError("PLD-Grasp 完整响应记录失败；已拒绝继续执行")
-
-    def _submit_human_shadow(self, obs, obs_id, observed_at, quality, policy_tick_times, tick, now):
-        a, human = self.session.arbiter, self.session.human_rtc
-        if (not human.background_allowed(a) or self.worker is None or not self.worker.ready
-                or obs is None or observed_at is None or now - observed_at > self.max_frame_age):
-            return
-        observation_tick, mapped_at = min(policy_tick_times, key=lambda item: abs(item[1] - observed_at))
-        if abs(mapped_at - observed_at) > 1 / self.hz:
-            return
-        token = Request(a.epoch, a._serial + 1, obs_id, now, observed_at,
-                        observation_policy_tick=observation_tick)
-        guidance = human.shadow_request(a, token, tick=tick, now=now,
-                                       limit_target=self.io.limit_policy_target)
-        if guidance is None:
-            return
-        context = dict(sync=quality, observation_reference_time=observed_at,
-            human_rtc_reference_only=True, execution_eligible=False,
-            human_rtc_samples=[dict(tick=k, submitted_at=t, submitted_action=command.copy())
-                               for k, t, command in human.samples])
-        job = HumanRtcJob(obs, guidance, str(self.recorder.path), context)
-        if self.worker.submit(token, job):
-            a._serial += 1
-            human.pending, human.last_request_at = token, now
-            self._pld_pending = dict(token=dataclasses.asdict(token), human_rtc_request=guidance,
-                recording_session=str(self.recorder.path), request_context=context, cancelled=False)
-            self._audit_pld(self._pld_pending, event="request", tick=tick, now=now)
 
     def _finish_pld_request(self):
         """After physical HOLD only: retire a bounded in-flight reply, never act on it.
@@ -744,8 +706,6 @@ class Runtime:
                     mode=self.pld.config.mode, run_id=self.pld.run_id, **self.pld.identity)
             else:
                 self.recorder.metadata["pld"] = {"mode": "off"}
-            if self.session.human_rtc.active:
-                self.recorder.metadata["policy_events"] = "../policy_events.jsonl"
             self.recorder.start_episode()
         if not self.recorder.recording or self.recorder.error:
             self._recording_failed(state, leader, self.recorder.error or "episode start was not admitted")
@@ -1074,7 +1034,6 @@ class Runtime:
                 self.session.check_policy_recovery()
                 self._apply_plain_policy_selection(event)
                 self.session.human_rtc.refresh(a,
-                    getattr(self.worker.client, "metadata", None) if self.worker else None,
                     leaders_connected=self.leaders_connected, pld=self.pld.enabled,
                     ready=self.worker is not None and self.worker.ready and not self.session.policy_error)
                 if not self._prepare_policy_recording(event, q, leader):
@@ -1100,8 +1059,7 @@ class Runtime:
                     decision.leader_hold_target = a._leader_frozen.copy()
                 reply = self.session.last_reply
                 if reply is not None and ((reply.get("pld_request") or {}).get("mode", "off") != "off"
-                                          or reply.get("pld") is not None
-                                          or reply.get("human_rtc_request") is not None):
+                                          or reply.get("pld") is not None):
                     self._audit_pld(reply, event="reply", tick=tick, now=now,
                                     session_path=reply.get("recording_session"))
                     self._pld_pending = None
@@ -1249,26 +1207,21 @@ class Runtime:
                                         committed_actions=commitment.actions.copy(),
                                         sync=quality, prefix_sources=a.rtc_timeline.prefix_sources(
                                             observation_tick, commitment.delay_steps))
-                                    guidance = self.session.human_rtc.handover_request(token,
-                                        now=now, limit_target=self.io.limit_policy_target)
                                     job = RtcJob(obs, commitment, payload if self.pld.enabled else None,
-                                        str(self.recorder.path), context, guidance)
+                                        str(self.recorder.path), context)
                                 except ValueError as exc:
                                     self.session.suspend_policy(q, leader, str(exc))
                                     job = None
                                 if job is not None and self.worker.submit(token, job):
-                                    if self.pld.enabled or guidance is not None:
+                                    if self.pld.enabled:
                                         self._pld_pending = dict(token=dataclasses.asdict(token),
-                                            pld_request=payload if self.pld.enabled else None,
-                                            human_rtc_request=guidance, recording_session=str(self.recorder.path),
+                                            pld_request=payload, recording_session=str(self.recorder.path),
                                             request_context=context, cancelled=False)
                                         self._audit_pld(self._pld_pending, event="request", tick=tick, now=now)
-                                    self.session.human_rtc.handover = None
                                     a._last_request_at = now
                                 else:
                                     a.pending = None
                                     a.rtc_timeline.pending = None
-                self._submit_human_shadow(obs, obs_id, observed_at, quality, policy_tick_times, tick, now)
                 if (
                     jog_action is not None
                     or maintenance_action is not None
@@ -1302,6 +1255,7 @@ class Runtime:
                     "intervention_pending": a.intervention_pending,
                     "tick": tick,
                     "policy_reply": self.session.last_reply,
+                    "handover": (decision.policy_selection or {}).get("handover"),
                     "time": now,
                     "mode": a.mode.value,
                     "phase": decision.phase.value,
@@ -1421,7 +1375,6 @@ class Runtime:
                 )
                 self.status = {
                     "hil_input": a.hil_input,
-                    "human_rtc": self.session.human_rtc.snapshot(),
                     "cartesian": self.cartesian.snapshot(),
                     "epoch": a.epoch,
                     "episode_id": getattr(self.recorder, "episode_id", None),
@@ -1476,6 +1429,7 @@ class Runtime:
                         self.worker.planner_alive if self.worker and self.worker.planner
                         else False
                     ),
+                    "human_rtc": self.session.human_rtc.snapshot(),
                     "policy_transport_ready": (
                         self.worker._client_ready if self.worker else False
                     ),
@@ -1756,6 +1710,10 @@ def main(argv=None, *, service=None):
         cfg.control_hz != 30 or abs(action_dt - 1 / 30) > 1e-6
     ):
         p.error("RTC requires the trained 30 Hz policy tick")
+    try:
+        HumanRtcConfig.from_settings(hil_cfg)
+    except (ValueError, TypeError) as exc:
+        p.error(str(exc))
     for key, value in hil_cfg.items():
         if key in HUMAN_RTC_SETTINGS:
             continue
@@ -1784,7 +1742,6 @@ def main(argv=None, *, service=None):
         if not isinstance(value, (float, int)) or not np.isfinite(value) or value <= 0:
             p.error(f"invalid hil setting: {key}")
     try:
-        HumanRtcConfig.from_settings(hil_cfg)
         create_policy_timeline(hil_cfg.get("policy_fusion", "sync_hold"),
                                delay_steps=hil_cfg.get("rtc_delay_steps", 9))
     except ValueError as exc:

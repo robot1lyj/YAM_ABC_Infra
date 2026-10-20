@@ -84,7 +84,10 @@ class Session:
             # A queued start from before the failure must not resume motion.
             event = None
         # Local events take precedence over a policy response arriving this tick.
-        candidate = self.human_rtc.transition(self.arbiter, event, now) if self.human_rtc else None
+        handover = None
+        if event == "resume_policy" and fresh and self.human_rtc is not None:
+            handover = self.human_rtc.prepare(self.arbiter, tick=policy_tick, now=now,
+                limit_target=self.rtc_limit_target or (lambda target: target))
         if event in ("start", "resume_policy"):
             self.notice = None
         if event == "start":
@@ -110,8 +113,8 @@ class Session:
             self.arbiter.fail(state, "operator stop")
         elif event is not None:
             raise ValueError(f"unknown event: {event}")
-        if self.human_rtc:
-            self.human_rtc.after_transition(self.arbiter, event, candidate)
+        if self.human_rtc is not None:
+            self.human_rtc.after_transition(self.arbiter, handover)
         if (
             self.worker is not None
             and not getattr(self.worker, "planner_alive", True)
@@ -126,16 +129,9 @@ class Session:
         if self.worker:
             reply = self.worker.poll()
             if reply is not None:
-                shadow = (getattr(reply, "human_rtc_request", None) or {}).get("mode") == "shadow"
-                shadow_accepted = (self.human_rtc.accept(self.arbiter, reply, now=now)
-                                   if shadow and self.human_rtc else False)
                 self.last_reply = reply_record(reply, now=now,
-                    discarded=not shadow_accepted if shadow else reply.token != self.arbiter.pending)
-                if shadow:
-                    self.last_reply["execution_eligible"] = False
-                    if reply.error and reply.token.epoch == self.arbiter.epoch:
-                        self.suspend_policy(state, leader, reply.error)
-                if reply.token.observation_policy_tick is not None and not shadow:
+                    discarded=reply.token != self.arbiter.pending)
+                if reply.token.observation_policy_tick is not None:
                     takeover = (
                         reply.token.observation_policy_tick
                         + reply.token.rtc_delay_steps
@@ -146,7 +142,7 @@ class Session:
                         "rtc_slack_ticks": takeover - policy_tick,
                     })
 
-            if reply is not None and not shadow and reply.token == self.arbiter.pending:
+            if reply is not None and reply.token == self.arbiter.pending:
                 refusal = (reply.server_timing or {}).get("replay_refused")
                 if refusal and (reply.server_timing or {}).get("source") == "recorded_replay":
                     self.arbiter.hold(state)

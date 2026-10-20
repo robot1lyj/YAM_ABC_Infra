@@ -33,14 +33,12 @@ hil:
   # Trained RTC keeps an explicit committed prefix; ordinary checkpoints use sync_hold.
   policy_fusion: rtc
   rtc_delay_steps: 9
-  # Only active when Thor advertises yam_human_rtc_v1. Predictions are guidance,
-  # never committed physical actions. 20 steps at this station's 30 Hz = 0.667 s.
+  # Local explicit-handback continuation through the existing trained RTC API.
+  # Six 30 Hz steps = 0.2 seconds; grippers retain the last submitted opening.
   enable_human_rtc: true
-  human_rtc_prefix_attention_horizon: 20
-  human_rtc_velocity_decay_steps: 20
+  human_rtc_velocity_decay_steps: 6
   human_rtc_max_velocity: 2.0
-  human_rtc_max_gripper_velocity: 2.0
-  human_rtc_max_reference_age: 0.5
+  human_rtc_max_sample_age: 0.15
   max_frame_age: 0.5
   max_frame_skew: 0.12
   warn_frame_skew: 0.04

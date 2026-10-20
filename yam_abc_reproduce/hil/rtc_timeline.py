@@ -32,6 +32,7 @@ class RtcTimeline:
         self._submitted_owners = {}
         self._committed: dict[int, tuple[np.ndarray, str]] = {}
         self._plan: dict[int, np.ndarray] = {}
+        self._handover: dict[int, np.ndarray] = {}
         self._owners: dict[int, dict] = {}
         self.last_selection = None
         self._last_target: np.ndarray | None = None
@@ -40,16 +41,33 @@ class RtcTimeline:
         self.accepted_replies = 0
         self.late_replies = 0
 
-    def clear(self):
-        self._submitted.clear()
-        self._submitted_owners.clear()
+    def clear(self, *, keep_submitted=False):
+        if not keep_submitted:
+            self._submitted.clear()
+            self._submitted_owners.clear()
+            self._last_target = None
         self._committed.clear()
         self._plan.clear()
+        self._handover.clear()
         self._owners.clear()
         self.last_selection = None
-        self._last_target = None
         self.pending = None
         self.has_accepted_plan = False
+
+    @property
+    def last_target(self):
+        return None if self._last_target is None else self._last_target.copy()
+
+    def seed_handover(self, start_tick, targets, *, context):
+        """Stage an explicitly authorized continuation, before committing its ticks."""
+        if type(start_tick) is not int or start_tick < 0 or self.pending is not None:
+            raise ValueError("invalid handover start")
+        rows = np.asarray(targets)
+        if rows.ndim != 2 or rows.shape[1] != 14 or not 1 <= len(rows) <= self.delay_steps:
+            raise ValueError("handover must fit the RTC prefix budget")
+        self._handover = {start_tick + i: self._action(row) for i, row in enumerate(rows)}
+        self._owners.update({tick: {"fusion": "rtc_handover", "target_tick": tick,
+            "handover": context} for tick in self._handover})
 
     @staticmethod
     def _action(value) -> np.ndarray:
@@ -71,6 +89,11 @@ class RtcTimeline:
         if tick in self._plan:
             target = self._plan[tick].copy()
             return target, "policy"
+        if tick in self._handover:
+            return self._handover[tick].copy(), "handover"
+        if self._handover and tick > max(self._handover):
+            self.last_selection = None
+            return self._handover[max(self._handover)].copy(), "hold"
         self.last_selection = None
         return self._action(self._last_target if self._last_target is not None else hold_target), "hold"
 
@@ -96,12 +119,16 @@ class RtcTimeline:
                 del self._submitted_owners[old]
         self._last_target = action
         self._plan.pop(tick, None)
+        self._handover.pop(tick, None)
         for old in tuple(self._owners):
             if old <= tick:
                 del self._owners[old]
         for old in tuple(self._plan):
             if old < tick:
                 del self._plan[old]
+        for old in tuple(self._handover):
+            if old < tick:
+                del self._handover[old]
         for old in tuple(self._committed):
             if old < tick:
                 del self._committed[old]
@@ -165,6 +192,8 @@ class RtcTimeline:
             )
             for index, row in enumerate(rows[d:], start=d)
         }
+        self._handover = {tick: target for tick, target in self._handover.items()
+                          if tick < commitment.takeover_tick}
         # A new request owns only its suffix. The immutable prefix still belongs
         # to the older prediction that produced it, NOT the latest request.
         self._owners = {tick: owner for tick, owner in self._owners.items()

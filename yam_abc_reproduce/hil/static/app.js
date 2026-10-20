@@ -419,6 +419,11 @@ function render() {
     : "完整 50 步");
   text("policy-speed", state.policy_trajectory_active
     ? `${state.policy_trajectory_hz} Hz 二阶` : "30 Hz 直达 SDK");
+  const humanRtc = state.human_rtc;
+  $("human-rtc-status").hidden = mode !== "hil" || !humanRtc?.configured;
+  text("human-rtc-status", humanRtc?.available
+    ? `人工接力推理可用 · 后台回复 ${humanRtc.accepted_replies ?? 0} 次 · ${humanRtc.pending ? "推理中" : "待请求"}`
+    : `人工接力推理未启用：${humanRtc?.reason || "等待服务确认"}`);
   if (policyDraft && state.policy_fusion === policyDraft.fusion &&
       (policyDraft.fusion !== "rtc" || state.rtc_delay_steps === policyDraft.rtc_delay_steps)) policyDraft = null;
   if (!policyDraft) {

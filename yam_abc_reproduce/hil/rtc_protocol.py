@@ -18,6 +18,7 @@ def build_rtc_request(
     committed_actions,
     max_delay_steps: int,
     pld: dict | None = None,
+    human_rtc: dict | None = None,
 ) -> dict:
     """Build the strict condapi trained-RTC envelope without guessing a tick.
 
@@ -63,6 +64,15 @@ def build_rtc_request(
     }
     if pld is not None:
         payload["pld"] = pld
+    if human_rtc is not None:
+        from .human_rtc import validate_guidance
+        validate_guidance(human_rtc)
+        if human_rtc["mode"] != "handover" or human_rtc["observation_policy_tick"] != target_start_tick:
+            raise ValueError("human RTC handover must match committed observation tick")
+        if pld is not None:
+            raise ValueError("Human RTC cannot be combined with PLD")
+        import copy
+        payload["human_rtc"] = copy.deepcopy(human_rtc)
     return payload
 
 
@@ -86,13 +96,38 @@ class RtcPolicyClient(PlainPolicyClient):
             raise ValueError("Thor endpoint does not advertise trained RTC H50/14D")
         self.max_delay_steps = meta["rtc_max_delay_steps"]
 
-    def infer_rtc(self, observation: dict, *, target_start_tick: int, committed_actions, pld=None):
+    def infer_human_rtc(self, observation, *, human_rtc):
+        from .human_rtc import require_capability, validate_confirmation, validate_guidance
+        require_capability(self.metadata)
+        validate_guidance(human_rtc, metadata=self.metadata)
+        if human_rtc["mode"] != "shadow":
+            raise ValueError("shadow inference requires shadow guidance")
+        payload = build_rtc_request(observation, target_start_tick=human_rtc["observation_policy_tick"],
+            committed_actions=[], max_delay_steps=self.max_delay_steps)
+        payload.pop("rtc")  # Human futures are guidance, never a physical commitment.
+        payload["human_rtc"] = human_rtc
+        result = super().infer(payload)
+        try:
+            validate_confirmation(human_rtc, result)
+            actions = np.asarray(result.get("actions"), dtype=float)
+            if actions.shape != (50, 14) or not np.isfinite(actions).all():
+                raise ValueError("shadow actions must be finite (50,14)")
+        except (ValueError, TypeError) as exc:
+            self.close()
+            raise PolicyResponseError(str(exc), result) from exc
+        return result
+
+    def infer_rtc(self, observation: dict, *, target_start_tick: int, committed_actions, pld=None, human_rtc=None):
+        if human_rtc is not None:
+            from .human_rtc import validate_guidance
+            validate_guidance(human_rtc, metadata=self.metadata)
         payload = build_rtc_request(
             observation,
             target_start_tick=target_start_tick,
             committed_actions=committed_actions,
             max_delay_steps=self.max_delay_steps,
             pld=pld,
+            human_rtc=human_rtc,
         )
         result = super().infer(payload)
         timing = result.get("server_timing") if isinstance(result, dict) else None
@@ -107,4 +142,11 @@ class RtcPolicyClient(PlainPolicyClient):
         if not np.allclose(actions[:len(prefix)], prefix, rtol=0, atol=2e-6):
             self.close()
             raise PolicyResponseError("Thor RTC response changed committed actions", result)
+        if human_rtc is not None:
+            from .human_rtc import validate_confirmation
+            try:
+                validate_confirmation(human_rtc, result)
+            except (ValueError, TypeError) as exc:
+                self.close()
+                raise PolicyResponseError(str(exc), result) from exc
         return result

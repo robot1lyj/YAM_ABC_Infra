@@ -46,6 +46,27 @@ IPC 使用相机配对帧并打包；模型训练一致的 resize/padding/normal
 
 ## 故障与独立更新
 
+### Human RTC 人工参考扩展（控制侧实现，Thor待对接）
+
+参考 VAM `1b32062` 的 [human_rtc.py](https://github.com/Virlus/VaM/blob/1b32062cae0aca2edcb60cead74f81145cbfdbd9/deployment/utils/human_rtc.py)、[policy_connector.py](https://github.com/Virlus/VaM/blob/1b32062cae0aca2edcb60cead74f81145cbfdbd9/deployment/consumer/policy_connector.py)。IPC保持30 Hz和H50，不照搬100 Hz时间轴。本站默认配置请求启用，只有Leader HIL、原生RTC、PLD关闭、Leader在线且握手声明兼容能力时实际启用；旧Thor继续原有人工/交还行为，状态明确未支持。键盘HIL、普通推理、回放、遥操作和采集不使用本扩展。
+
+握手增加 `human_rtc={schema:"yam_human_rtc_v1", modes:["shadow","handover"], max_prefix_attention_horizon:49, max_velocity_decay_steps:49}`；原有RTC的H50/14D/30 Hz要求不变。**这是新增对接合同，不代表现有Thor已经实现。**
+
+请求保留 `{type:"infer",obs}`，增加外层 `human_rtc`：
+
+- `schema`、`mode`（shadow/handover），以及原本地token的`epoch/request_id/observation_id/observation_policy_tick`，不另造一套计数。
+- `action_dt_s=1/30`、有限绝对`reference_actions(50,14)`、`reference_start_tick`。参考维度与状态相同；只作模型生成引导，**不是committed_actions，不能据此直接驱动机器人**。
+- `prefix_attention_horizon`和`velocity_decay_steps`默认各20，对应本站约0.667秒；两者分别控制模型引导范围和人工参考的速度衰减，不能解释为同一种延迟。
+- `source_tick`、`reference_source`、`source_request`、`source_model_index`保留参考来源和位移。shadow的参考来自最近两条成功提交SDK的人工目标（含硬限位及夹爪软接管），按实际提交时间差估速度；关节默认上限2 rad/s、夹爪2归一化单位/s，按三次曲线降速并沿用SDK输入限位。`reference_start_tick`是最新人工提交tick，可能晚于观测tick；Thor须据此对齐，不能将其冒充观测时刻的目标。
+
+shadow请求**不带rtc**，真实动作仍由人工控制；Thor基于观测和参考运行前缀引导，返回以`observation_policy_tick`为第0步的候选H50。后台与正常策略共用同一个单在途worker/传输进程，按原重规划周期请求，不等待、不积压。明确人工结束锁定的等待期继续后台推理（实际保持目标使速度逐渐估为零）；普通暂停、急停、换模式/任务、切输入/来源、故障清缓存，迟到回复不可恢复计划。
+
+handover只在明确交还后使用新epoch、新观测、新承诺RTC请求，额外携带最近有效shadow块作为模型参考，按原观测tick差裁掉已过去的步并补齐末值。`reference_start_tick`为本次观测tick，`source_request/source_model_index`保留原候选来源。默认候选从请求时刻起最多0.5秒；过期或无候选则走原有普通RTC请求。Thor须将旧块用作新一轮推理参考，优先满足新`rtc.committed_actions`，返回的新块仍须通过现有前缀不变/目标tick/迟到检查。IPC不把旧shadow块直接改签为新epoch执行，因此不承诺零等待交还。
+
+所有扩展回复增加`human_rtc`，准确回显`schema/mode/epoch/request_id/observation_id/observation_policy_tick/source_tick/reference_start_tick`，并声明`server_timing.human_rtc_used=true`；仅handover还必须声明`rtc_used=true`且保留真实承诺前缀。缺少确认、身份不符、非法形状或改前缀拒收。`human_rtc_used`应代表实际模型使用参考，不能只回显字段。模型侧归condapi；不得仅在IPC加入字段就宣称真机接力完成。
+
+控制侧原始请求、完整候选/确认、取消与晚到回复写现有`policy_events.jsonl`，正常录制帧仍保存`policy_reply`。shadow标记`execution_eligible=false`，不能作为实际执行动作、专家示范或SAC经验；介入等待删帧规则不变，sidecar不受删段影响。测试范围和部署状态见[验收](acceptance.md)。
+
 Thor通信、动作规划不拥有SDK。HOLD且无活动录制时可切模式/来源、独立重载对应子进程；新配置不会自动运动。网络/协议/规划故障清计划并HOLD，SDK故障仍是独立FAULT，不能用策略重载清除。新版故障分域已离线验证，待IPC部署；生命周期见 [架构](dagger_architecture.md#故障等级与恢复合同)。
 
 ## 计时和记录边界

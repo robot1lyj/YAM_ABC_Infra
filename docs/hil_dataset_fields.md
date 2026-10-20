@@ -52,6 +52,8 @@ request及policy_reply.token：`epoch, request_id, observation_id, created_at, o
 
 policy_reply：`token, received_at, discarded, error, worker_elapsed_ms, server_timing, client_timing, actions, pld, pld_request, recording_session, request_context`；RTC额外`rtc_takeover_tick, rtc_reply_tick, rtc_slack_ticks`。actions为原始返回动作块（通常50×14），异常可空。server_timing按服务返回保留，非固定训练字段。client_timing可含`pack_ms, send_ms, wait_response_ms, unpack_ms, payload_bytes`。
 
+Human RTC扩展增加`human_rtc_request`（完整参考动作、原token、参考起始tick及来源）、`human_rtc`（服务确认）。`request_context.human_rtc_samples`保留两条实际提交的`tick/submitted_at/submitted_action`，使等待删帧后仍可复算速度。shadow回复显式`execution_eligible=false`：即使`discarded=false`也仅表示参考缓存接收成功，不表示动作执行。其原始actions不能替代逐帧`submitted_action`或作为专家标签。handover参考保留原shadow的`source_request/source_model_index`，实际策略帧仍关联新RTC请求。全部扩展请求、回复、取消与晚到响应复用session的`policy_events.jsonl`，不受介入等待删帧影响；完整合同见[Human RTC接口](condapi_interface.md#human-rtc-人工参考扩展控制侧实现thor待对接)。
+
 sync：`age_s, arrival_skew_s, sync_warning, reference_time, state_bracket, cameras`。cameras按top/left/right含`device_timestamp_ms, timestamp_domain, device_frame_number, host_received_at, color_space, sequence`。无有效观测时sync可为空；沿用上一帧图像时observation_valid=false，应按标志过滤。
 
 ### 抓取诊断（可选，不改变控制）

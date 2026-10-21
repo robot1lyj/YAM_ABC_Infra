@@ -6,6 +6,8 @@ robot:
   arm_type: yam
   num_arm_joints: 6
   leader_gripper_type: yam_teaching_handle
+  # Leader-only trial: uniform 1.1 replaces SDK [1,1.1,1.1,1.2,1,1], not an extra scale.
+  leader_gravity_comp_factor: 1.1
   bilateral_kp: 0.0
   robots:
     # 2026-10-21: original finger material restored; reuse the pre-calibration mapping.

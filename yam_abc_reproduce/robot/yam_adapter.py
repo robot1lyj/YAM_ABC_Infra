@@ -47,6 +47,7 @@ def _build_yam(
     *,
     use_coulomb_friction: bool = False,
     gripper_force_limit_n: float | None = None,
+    gravity_comp_factor: np.ndarray | None = None,
 ):
     """Construct an i2rt YAM robot, converting our string config to i2rt enums.
 
@@ -87,6 +88,8 @@ def _build_yam(
         ),
         use_coulomb_friction=use_coulomb_friction,
     )
+    if gravity_comp_factor is not None:
+        options["gravity_comp_factor"] = gravity_comp_factor
     if gripper_force_limit_n is not None:
         if (
             type(gripper_force_limit_n) not in (int, float)
@@ -365,6 +368,7 @@ class YamLeaderArm:
         gripper_type: str = "yam_teaching_handle",
         ee_mass: float | None = None,
         bilateral_kp: float = 0.0,
+        gravity_comp_factor: float | None = None,
     ):
         # Official teaching handles contribute their 0.258 kg inertial model.
         # Use SDK friction feedforward in both manual and powered control.
@@ -374,6 +378,12 @@ class YamLeaderArm:
             gripper_type,
             ee_mass,
             use_coulomb_friction=True,
+            # Replace, never multiply, the SDK's six per-joint factors. Followers
+            # use a separate constructor and keep their native compensation.
+            gravity_comp_factor=(
+                None if gravity_comp_factor is None
+                else np.full(num_arm_joints, gravity_comp_factor, dtype=float)
+            ),
         )
         try:
             self._n = num_arm_joints
@@ -455,6 +465,7 @@ class YamLeaderArm:
             "kp": np.asarray(command.kp).tolist() if command is not None else None,
             "kd": np.asarray(command.kd).tolist() if command is not None else None,
             "friction_compensation": getattr(self._robot, "use_coulomb_friction", None),
+            "gravity_comp_factor": np.asarray(self._robot.gravity_comp_factor).tolist(),
         }
 
     def command_arm(self, arm_joints: np.ndarray) -> None:

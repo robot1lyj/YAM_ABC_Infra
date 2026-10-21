@@ -80,7 +80,8 @@ def _build_leader(cfg, controller):
         )
     return YamLeaderArm(channel=channel, num_arm_joints=n, arm_type=cfg.robot.arm_type,
         gripper_type=cfg.robot.leader_gripper_type, ee_mass=cfg.robot.ee_mass,
-        bilateral_kp=cfg.robot.bilateral_kp)
+        bilateral_kp=cfg.robot.bilateral_kp,
+        gravity_comp_factor=cfg.robot.leader_gravity_comp_factor)
 
 
 def iter_leader_agents(cfg, units, *, mock=False):

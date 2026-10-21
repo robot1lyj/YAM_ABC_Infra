@@ -211,6 +211,8 @@ class RobotConfig:
     num_arm_joints: int = 6  # arm DOFs, excluding the gripper
     gripper_type: str = "linear_4310"  # follower's powered gripper (fallback)
     leader_gripper_type: str = "yam_teaching_handle"
+    # Uniform Leader-only gravity multiplier; None keeps the SDK's per-joint defaults.
+    leader_gravity_comp_factor: float | None = None
     ee_mass: float | None = None  # override link_6 mass (kg) for i2rt gravity comp
     follower_channel: str = "can_left"
     leader_channel: str = "can_lead_l"
@@ -233,6 +235,13 @@ class RobotConfig:
     # needed. The runtime drives robots[0] and the controller bound to it.
     robots: list[RobotUnitConfig] = field(default_factory=_default_robots)
     controllers: list[ControllerConfig] = field(default_factory=_default_controllers)
+
+    def __post_init__(self):
+        value = self.leader_gravity_comp_factor
+        if value is not None and (
+            type(value) not in (int, float) or not isfinite(value) or value <= 0
+        ):
+            raise ValueError("leader_gravity_comp_factor must be finite and positive")
 
     def active_robot(self) -> RobotUnitConfig:
         return self.robots[0] if self.robots else RobotUnitConfig()

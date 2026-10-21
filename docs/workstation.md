@@ -2,6 +2,20 @@
 
 本文的枚举、延迟和故障段落均为带日期的现场快照，不代表设备此刻在线。当前操作以[采集手册](collect.md)、[部署边界](deploy.md)为准；实测范围与日期以各节证据为准。2026-09-22已修复现场gs_usb中确认缺失的上游生命周期补丁；原故障完整因果链及NVMe掉盘根因仍未确定。
 
+## Leader 重力补偿试验：统一 1.1
+
+本站 `robot.leader_gravity_comp_factor: 1.1` 将两台电动 Leader 的六个关节
+重力补偿系数直接替换为 `[1.1,1.1,1.1,1.1,1.1,1.1]`，不是在原系数上叠乘。
+Follower 仍使用 SDK 原值 `[1,1.1,1.1,1.2,1,1]`；Leader 手柄惯性模型、
+摩擦补偿和人工操作 `Kp=Kd=0` 不变，普通遥操作和 HIL 复用同一构造入口。
+`leader_control` 诊断同时提供实际 `gravity_comp_factor`，现场手感改善待用户验证。
+删除或设为 `null` 可恢复 SDK 默认系数；配置由新会话读取，在构造 Leader 时生效，
+不在运动中热改。
+
+参考 [Raiden Leader 设置](https://github.com/TRI-ML/raiden/blob/main/raiden/robot/controller.py)：
+其固定旧 SDK 原统一系数为 1.3，Raiden 单独将 Leader 设为 1.1；
+本站为不同 SDK 版本，因此这不是六个关节都降低，也不能据此认定漂移或沉重的唯一原因。
+
 ## 当前夹爪配置：2026-10-21 恢复原夹指，工作软限力 1 N
 
 用户已恢复原来的夹爪接触材质，要求恢复当天标定前的映射；从 IPC 原始备份

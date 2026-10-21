@@ -357,6 +357,14 @@
                   <span id="leader-connection-status" class="muted" role="status">Leader 未启用</span>
                   <button class="button" id="leader-connection-toggle" type="button">启用 Leader</button>
                 </div>
+                <details id="leader-gravity-panel" hidden>
+                  <summary>Leader 重力补偿</summary>
+                  <form id="leader-gravity-form" class="leader-gravity-form">
+                    <label>补偿系数<input id="leader-gravity-factor" type="number" min="0.5" max="1.5" step="any" value="1.1" required /></label>
+                    <button id="leader-gravity-apply" class="button" type="submit">应用到本会话</button>
+                  </form>
+                  <span id="leader-gravity-status" class="muted" role="status"></span>
+                </details>
                 <div class="handle-hint" id="handle-hint">
                   手柄① 开始 / 结束录制<br />手柄② 放弃当前集
                 </div>

@@ -457,6 +457,11 @@ class YamLeaderArm:
     def close_hil(self):
         self._robot.close()
 
+    def set_gravity_comp_factor(self, factor: float):
+        # Publish a new complete array: the SDK thread may still be using the old
+        # reference. Do not mutate it in-place or reset gains/position commands.
+        self._robot.gravity_comp_factor = np.full(self._n, factor, dtype=float)
+
     def control_status(self):
         # Idle commands use _grav_comp_kd, not the configured position _kd.
         command = getattr(self._robot, "_commands", None)
@@ -539,6 +544,9 @@ class YamTeleop(TeleopAgent):
 
     def hil_leader_status(self):
         return self._require_leader().control_status()
+
+    def hil_set_leader_gravity(self, factor):
+        self._require_leader().set_gravity_comp_factor(factor)
 
     def hil_health(self):
         return _motor_health(self._require_leader()._robot)

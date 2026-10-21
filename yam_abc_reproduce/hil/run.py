@@ -22,6 +22,7 @@ import numpy as np
 
 from ..camera.worker import CameraWorker
 from ..config import (
+    RobotConfig,
     build_station_config,
     controller_channel_for,
     load_yaml,
@@ -139,8 +140,12 @@ class Runtime:
         leader_factory=None,
         leader_prepare=None,
         leader_stop=None,
+        leader_config=None,
     ):
         self.io, self.cameras, self.worker, self.recorder = io, cameras, worker, recorder
+        # Shared with the existing Leader factory so a later independent enable
+        # uses the accepted session setting, not the original startup value.
+        self.leader_config = leader_config if leader_config is not None else RobotConfig()
         self.leaders_connected = getattr(io, "leaders_connected", True)
         self.leader_connection = None
         if leader_factory is not None:
@@ -494,7 +499,7 @@ class Runtime:
         """
         if self.task_switching:
             return "任务切换中，设置未提交；完成后可重试"
-        if kind == "leaders" and self.leader_connection and self.leader_connection.busy:
+        if kind in ("leaders", "leader_gravity") and self.leader_connection and self.leader_connection.busy:
             return "Leader连接操作正在进行，请等待；Follower仍保持"
         a = self.session.arbiter
         if a.phase != Phase.HOLD or getattr(self.recorder, "recording", False):
@@ -556,6 +561,21 @@ class Runtime:
             raise ValueError(control["reason"])
         self._queue_policy_command(("leaders", enabled))
 
+    def leader_settings(self):
+        reason = self._settings_error("leader_gravity")
+        return dict(gravity_comp_factor=self.leader_config.leader_gravity_comp_factor,
+                    allowed=reason is None, reason=reason)
+
+    def configure_leader_gravity(self, *, gravity_comp_factor, ready=False):
+        if not ready:
+            raise ValueError("请确认Leader已支撑、行程清空且有人照看，再更新重力补偿")
+        if gravity_comp_factor is None:
+            raise ValueError("请填写Leader重力补偿系数")
+        RobotConfig(leader_gravity_comp_factor=gravity_comp_factor)
+        if not .5 <= gravity_comp_factor <= 1.5:
+            raise ValueError("Leader在线试调范围为0.5至1.5；请勿大幅改变重力补偿")
+        self._queue_policy_command(("leader_gravity", float(gravity_comp_factor)))
+
     def _refresh_leaders(self, *, poll=True):
         if self.leader_connection is None:
             return
@@ -591,7 +611,7 @@ class Runtime:
             reason = "状态已变化，介入方式未切换"
         if kind == "leaders" and command[1] and a.mode == Mode.INFERENCE:
             reason = "模式已变化；普通推理不启用Leader"
-        if kind not in {"leaders", "recording_mode", "hil_input", "pld", "interaction", "configure",
+        if kind not in {"leaders", "leader_gravity", "recording_mode", "hil_input", "pld", "interaction", "configure",
                         "restart_planner", "source", "restart"}:
             reason = "未知设置请求，未应用"
         if reason:
@@ -606,6 +626,14 @@ class Runtime:
                 self.operator_error = str(exc)
                 receipt.update(state="rejected", error=str(exc))
                 return
+        elif kind == "leader_gravity":
+            try:
+                self.io.set_leader_gravity_comp_factor(command[1])
+            except Exception as exc:
+                self.operator_error = "Leader重力补偿更新失败，仍保持暂停：" + str(exc)
+                receipt.update(state="rejected", error=self.operator_error)
+                return
+            self.leader_config.leader_gravity_comp_factor = command[1]
         elif kind == "recording_mode":
             # Recording settings do not invalidate RTC epochs, targets or plans.
             self.recording_mode = command[1]
@@ -1246,6 +1274,7 @@ class Runtime:
                 if a.phase == Phase.POLICY and previous_phase != Phase.POLICY:
                     transitions.append("policy_started")
                 constraint_mask = np.abs(submitted - decision.selected_action) > 1e-8
+                leader_control = self.io.leader_control_status() if hasattr(self.io, "leader_control_status") else []
                 row = {
                     "event_requested_at": requested_at,
                     "event_applied_at": apply_done if transitions else None,
@@ -1288,6 +1317,8 @@ class Runtime:
                     "leader_state": leader if self.leaders_connected else None,
                     "leaders_connected": self.leaders_connected,
                     "leader_connection": self.leader_connection.snapshot() if self.leader_connection else None,
+                    "leader_control": leader_control,
+                    "leader_gravity_comp_factor": self.leader_config.leader_gravity_comp_factor,
                     "gripper_owned": decision.gripper_owned,
                     "observation_state": None if obs is None else obs["observation.state"],
                     "obs_id": obs_id,
@@ -1312,6 +1343,7 @@ class Runtime:
                     if not self.recorder.recording:
                         self.recorder.metadata.update({
                             "leaders_connected": self.leaders_connected,
+                            "leader_gravity_comp_factor": self.leader_config.leader_gravity_comp_factor,
                             "recording_mode": self.recording_mode,
                             "rtc": a.rtc_timeline is not None,
                             "policy_fusion": a.policy_fusion,
@@ -1398,7 +1430,7 @@ class Runtime:
                     "leader_alignment_error": a.alignment_error,
                     "leader_alignment_joint_error": a._alignment["error"] if a._alignment else None,
                     "intervention_pending": a.intervention_pending,
-                    "leader_control": self.io.leader_control_status() if hasattr(self.io, "leader_control_status") else [],
+                    "leader_control": leader_control,
                     "ready_pose": self.maintenance.ready,
                     "ready_version": self.maintenance.ready_version,
                     "updated_at": time.monotonic(),
@@ -1408,6 +1440,7 @@ class Runtime:
                     "leaders_connected": self.leaders_connected,
                     "leader_connection": self.leader_connection.snapshot() if self.leader_connection else None,
                     "leader_controls": self.leader_controls(),
+                    "leader_settings": self.leader_settings(),
                     "sdk_state_age_s": list(ages),
                     "gripper_limits": [
                         getattr(unit.robot, "gripper_limits", lambda: None)()
@@ -1894,6 +1927,7 @@ def main(argv=None, *, service=None):
             action_dt=action_dt,
             prompt=cfg.task_name,
             settings=hil_cfg,
+            leader_config=cfg.robot,
             **leader_options,
         )
         if service is not None:

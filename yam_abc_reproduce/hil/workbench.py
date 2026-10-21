@@ -910,6 +910,10 @@ class Workbench:
         self._require_runtime().configure_policy(fusion=fusion, rtc_delay_steps=rtc_delay_steps)
         self.log(f"推理动作块设置已提交：{fusion}")
 
+    def configure_leader_gravity(self, **body):
+        self._require_runtime().configure_leader_gravity(**body)
+        self.log("已提交Leader重力补偿设置；不重建或断开Follower，站点默认值不变")
+
     def restart_policy(self):
         self._require_runtime().restart_policy()
         self.log("已请求重载推理通信子进程；机械臂保持连接")

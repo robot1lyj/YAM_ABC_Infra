@@ -96,6 +96,9 @@ class DeviceClient:
             body["rtc_delay_steps"] = rtc_delay_steps
         return self._request("POST", "/policy/settings", body)
 
+    def configure_leader_gravity(self, **body):
+        return self._request("POST", "/leaders/settings", body)
+
     def restart_policy(self):
         return self._request("POST", "/policy/restart")
 

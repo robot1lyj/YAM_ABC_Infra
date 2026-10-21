@@ -30,6 +30,7 @@ let keyboardArm = "left", cartesianBusy = false, cartesianSerial = 0;
 let keyboardSuspendedEpoch = null;
 let cartesianHeld = null, cartesianTimer, cartesianAwaiting = null;
 let deletingEpisode = false;
+let leaderGravityDraft = null;
 const cartesianHoldDelayMs = 400, cartesianRepeatMs = 333;
 
 function keyboardActive() {
@@ -539,6 +540,16 @@ function render() {
   text("leader-connection-status", leaders.error ? "Leader启停失败：" + leaders.error
     : leaders.busy ? (leaders.state === "connecting" ? "正在启用Leader · Follower保持" : "正在停用Leader · Follower保持")
     : state.leaders_connected ? "Leader已启用" : connected ? "Leader未启用 · Follower已连接" : "先连接Follower");
+  $("leader-gravity-panel").hidden = $("leader-connection-panel").hidden;
+  const gravity = state.leader_settings || {}, gravityInput = $("leader-gravity-factor");
+  if (leaderGravityDraft === null && document.activeElement !== gravityInput)
+    gravityInput.value = gravity.gravity_comp_factor ?? 1.1;
+  const gravityPending = state.policy_command?.state === "queued";
+  $("leader-gravity-apply").disabled = !online || !connected || !gravity.allowed || gravityPending;
+  $("leader-gravity-apply").title = gravity.reason || "只更新Leader，不断开Follower";
+  text("leader-gravity-status", state.policy_command?.kind === "leader_gravity" && gravityPending
+    ? "等待控制端确认"
+    : `会话系数：${gravity.gravity_comp_factor ?? "SDK默认"} · ${state.leaders_connected ? "Leader已启用" : "下次启用Leader生效"}`);
   renderRL({connected, idle, paused, latched, recording, policyEditable, mode, pld});
   renderKeyboardHil(connected, idle, paused, latched, recording, mode);
   $("header-stop").disabled =
@@ -1333,6 +1344,20 @@ $("leader-connection-toggle").onclick = () => {
       ? "仅连接左右Leader并在各自当前位置保持，不自动对齐或启动遥操作。请确认Leader已支撑、手柄按钮释放、行程清空且有人照看。Follower保持连接，不会失能。"
       : "将释放左右Leader的力矩，请先稳妥支撑两台Leader并确认现场有人照看。Follower继续保持，不断开、不掉使能。",
     () => action("/leaders/connection", {enabled, ready:true}));
+};
+$("leader-gravity-factor").oninput = () => {
+  leaderGravityDraft = $("leader-gravity-factor").value;
+};
+$("leader-gravity-form").onsubmit = (event) => {
+  event.preventDefault();
+  if (!$("leader-gravity-factor").reportValidity()) return;
+  const factor = Number($("leader-gravity-factor").value);
+  confirmAction("更新 Leader 重力补偿？",
+    `两台Leader六个关节统一设为${factor}，保持当前姿态，不改变增益或摩擦补偿。请支撑Leader并确认现场有人照看。仅本会话生效；Follower保持连接，不重启设备服务。`,
+    async () => {
+      if (await action("/leaders/settings", {gravity_comp_factor: factor, ready: true}))
+        leaderGravityDraft = null;
+    });
 };
 $("gravity").onclick = () =>
   confirmAction(

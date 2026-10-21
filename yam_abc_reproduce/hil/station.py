@@ -308,6 +308,13 @@ class StationIO:
                 self.write_timings_s[f"{name}_follower"] = times["sdk_call_returned_at"] - times["sdk_call_started_at"]
         return submitted, stamps
 
+    def set_leader_gravity_comp_factor(self, factor):
+        """HOLD-only control-owner call; no Follower, SDK rebuild or CAN write."""
+        if not self.mock:
+            for unit in self.units:
+                if unit.agent is not None:
+                    unit.agent.hil_set_leader_gravity(factor)
+
     def take_policy_trace(self):
         trace, self._policy_trace = self._policy_trace, None
         return trace

@@ -106,6 +106,12 @@ class LeaderConnectionSettings(BaseModel):
     ready: bool = False
 
 
+class LeaderGravitySettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    gravity_comp_factor: float = Field(strict=True, ge=.5, le=1.5, allow_inf_nan=False)
+    ready: bool = False
+
+
 class JogRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     arm: str
@@ -334,6 +340,11 @@ def create_app(runtime, *, control_access=False):
     def leader_connection(body: LeaderConnectionSettings):
         invoke(runtime.configure_leaders, **body.model_dump())
         return {"queued": "leaders"}
+
+    @app.post("/leaders/settings")
+    def leader_settings(body: LeaderGravitySettings):
+        invoke(runtime.configure_leader_gravity, **body.model_dump())
+        return {"queued": "leader_gravity"}
 
     @app.post("/initialize/preflight")
     def initialize_preflight():

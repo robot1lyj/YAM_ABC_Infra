@@ -16,6 +16,28 @@ Follower 仍使用 SDK 原值 `[1,1.1,1.1,1.2,1,1]`；Leader 手柄惯性模型�
 其固定旧 SDK 原统一系数为 1.3，Raiden 单独将 Leader 设为 1.1；
 本站为不同 SDK 版本，因此这不是六个关节都降低，也不能据此认定漂移或沉重的唯一原因。
 
+初始配置 `79fcce4` 已于 2026-10-21 按现场许可部署：仅增量更新配置解析、
+构造工厂和适配器三份源码，并在原 IPC YAML 增加 Leader 系数，其他现场配置不变。
+IPC 隔离 42 项测试及无硬件配置检查通过；device/Web 各停启一次，恢复后均 active、
+无自动重启，机械臂及相机未连接、CAN DOWN，未做手感或运动验证。
+备份 `/data/YAM/data/deployment_backups/leader-gravity-1p1.Y5Nb94/`。
+随后普通遥操作只读诊断确认左右实际系数均为六个 1.1、人工 `Kp=Kd=0`、
+额外摩擦补偿仍开启，用户反馈手感改善；HIL 人工阶段复用相同 Leader 构造与切换入口，
+没有另一套增益或重力系数，不需要为 HIL 再部署一遍。
+
+后续独立调参入口仍在本地验证，**尚未部署 IPC**：遥操作/采集/HIL 的 Leader 区域
+可通过 `/leaders/settings` 提交 `0.5–1.5` 范围内的 `gravity_comp_factor` 并确认 `ready=true`。
+HTTP 仅排队，控制线程在 HOLD、无录制/保存/维护/介入、Leader未启停时再次检查后，
+替换现有 Leader 对象的完整系数数组，不改变增益、目标、摩擦补偿或 Follower 对象，
+不推进 RTC epoch 或取消请求。未启用 Leader 时更新会话配置，下次独立启用沿用；
+仅本会话有效，不覆盖站点 YAML 默认值。实际系数随逐帧 `details.leader_control`、
+会话选择值随 `details.leader_gravity_comp_factor` 和 episode 元数据保存。
+这不是 SDK 进程隔离；驱动或控制代码升级仍受原设备服务部署边界约束。
+本地新增 22 项调参测试通过，含双臂更新、排队后二次门禁、Unix代理、Follower对象及
+RTC不变、HDF5/清单读回；页面验证暂停前后门禁与未启用时的会话设置。全量 967 passed、
+4 skipped、21 subtests，另有此前已知的记忆文案固定短语断言失败；该测试和checkpoint
+未改，不将全量称为全绿。Ruff、JS语法及记忆预算检查通过；在线热调参尚未经真机验收。
+
 ## 当前夹爪配置：2026-10-21 恢复原夹指，工作软限力 1 N
 
 用户已恢复原来的夹爪接触材质，要求恢复当天标定前的映射；从 IPC 原始备份

@@ -11,8 +11,8 @@ robot:
     # 2026-10-21 contact-material change: official per-pass [closed, open] sample extrema.
     # Preserve each measured motor-turn branch; do not restore the old 6.9 rad bias.
     # User-selected low-force trial: official stalled-contact soft target, NOT a peak torque cap.
-    - {type: yam_left, gripper: linear_4310, gripper_limits: [0.25692378118562686, -5.0345235370412755], channel: can_left, gripper_force_limit_n: 3.0}
-    - {type: yam_right, gripper: linear_4310, gripper_limits: [6.544022278171969, 1.2315938048371091], channel: can_right, gripper_force_limit_n: 3.0}
+    - {type: yam_left, gripper: linear_4310, gripper_limits: [0.25692378118562686, -5.0345235370412755], channel: can_left, gripper_force_limit_n: 1.5}
+    - {type: yam_right, gripper: linear_4310, gripper_limits: [6.544022278171969, 1.2315938048371091], channel: can_right, gripper_force_limit_n: 1.5}
   controllers:
     - {type: yam_lead_left, controls: yam_left, channel: can_lead_l}
     - {type: yam_lead_right, controls: yam_right, channel: can_lead_r}

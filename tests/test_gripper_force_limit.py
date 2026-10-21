@@ -176,14 +176,15 @@ def test_official_limiter_does_not_claim_to_cap_fast_or_precontact_commands():
     assert limiter.update(state) == 6.9  # Not stalled: no false hard-limit guarantee.
 
 
-def test_station_selects_three_newtons_without_changing_calibration():
+def test_station_preserves_three_newtons_with_new_official_calibration():
     from pathlib import Path
 
     cfg = build_station_config(Path(__file__).resolve().parents[1] / "configs/station_hil.yaml")
     left, right = cfg.robot.robots
     assert left.gripper_force_limit_n == right.gripper_force_limit_n == 3.0
-    assert left.gripper_limits == [6.9, 1.2289234760051873]
-    assert right.gripper_limits == [6.9, 1.2434195468070488]
+    # Keep each 2026-10-21 measurement's original turn branch and both endpoints.
+    assert left.gripper_limits == [0.25692378118562686, -5.0345235370412755]
+    assert right.gripper_limits == [6.544022278171969, 1.2315938048371091]
 
 
 @pytest.mark.parametrize("section,key", [("follower", "gripper_force_limit"),
